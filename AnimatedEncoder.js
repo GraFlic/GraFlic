@@ -36,10 +36,8 @@ SOFTWARE.
 Note that this version is very early and allot of things will be missing
 or incomplete this early on.
 
-Version 0.0.1 Alpha
-Animated WEBP Export is pretty much working
-Other things are still pretty much under construction.
-Other formats will not work yet.
+Version 0.0.2
+Animated WEBP and Animated PNG output are working this version.
 Format support is based on what formats a given browser supports as
 an export type from <canvas>
 
@@ -54,29 +52,59 @@ but they WILL the first frame or APNG default image):
 
 Browser | Could generate (not necessarily view animation)
 --------+-------------------------------------------------------
-Chrome  | Animated PNG, Animated WEBP
+Chrome, | Animated PNG, Animated WEBP
+Opera   |
+--------+-------------------------------------------------------
 Firefox | Animated PNG
+--------+-------------------------------------------------------
 Safari  | Animated PNG, Animated GIF
+--------+-------------------------------------------------------
 Edge    | Animated PNG
 
+Note that Animated PNG support is possible in all major browsers without the need for a custom DEFLATE implementation
+because all major browsers consistently produce RGBA non-interlaced output via toDataURL() in all cases.
+Not sure if this behavior is part of the HTML5 spec or not.
 
 USAGE:
 
 var paramz = {
 	"format":'<png|gif|webp|webm>',
-	"configs":<array of advanced configurations to set delays, etc.>
 	"quality":<0-1> 0% - 100% quality. Lower quality saves more space.
 	"delay":<positive integer, 1 or greater>, delay in milliseconds
 			(may get limited to 600 on GIF due to browser implementations)
 	"width":<uint for pixel dimensions>,
 	"height":<uint for pixel dimensions>,
-	"onEncoded":<function to call when done>
+	"autoDimensions":<true|false>, (if true it will fit the size to hold all images added)
+	"fitting":<actual|stretch|crop|preserve>,
+	"animationStyle":<movie|sprite>,(Only applies to some types like PNG. Movie has inter-frame compression
+					by recycling pixels of previous frames with a transparent pixel,
+					'sprite' can have changing transparent areas in different frames,
+					but loses this extra compression savings.)
+------------Events----------------------------------------------------
+	"onEncoded":<function to call when done>,
+	"onProgress":<function to call as encoding progresses. receives a 0-1 number representing a percentage>,
+	"onFrameAdded":<function that will get called when a frame image has been fully added, after loading and such>
 }
-
 var ae = new AnimatedEncoder(paramz);
+	(The parameters can also be changed after initialization by setting ae.width = 500; for example.)
+
+	"fitting" describes how images are fit into the animation bounds.
+		'actual' = Draw image at actual size on the canvas at (0,0).
+			The image may be cropped,
+			or it may not fill the full area.
+				('actual' is the default.)
+		'stretch' = Stretch the image to fill dimensions.
+			it may be skewed.
+		'crop' = Make the image fill the canvas, but maintain aspect ratio
+			without being skewed.
+			The top and bottom may be cropped,
+			or the left and right may be cropped.
+			it will be centered either way.
+		'preserve' = preserves all areas of all images and all aspect ratios of all images.
+
 
 f = {
-	"file":<[Object File]>
+	"file":<[Object File]> OR "image":<[Object Image]>
 	<more optional parameters will be added later>
 };
 ae.addFrame(f);
@@ -128,27 +156,15 @@ function AnimatedEncoder(paramz,simpleQuality){
 	this.quality = '0.75';
 	this.width = 1;
 	this.height = 1;
-	this.autoDim= !(paramz.width&&paramz.height);//automatic dimensions
-		//automatically turn this on if no width/height set.
-		//it can be overridden with a paramz variable.
-		//(though that may be a bad idea because defaults to 1x1,
-		//allowing expansion when autoDim is true.)
-	this.delay = 75;//the delay for all frames, unless frame-specific delay set.
+	this.delay = 75;//The in milliseconds delay for all frames, unless frame-specific delay set.
 	this.onEncoded = null;
-	this.fitting = 'plain';
-	/*fitting
-		'plain' = Draw image at actual size on the canvas at (0,0).
-			The image may be cropped,
-			or it may not fill the full area.
-		'stretch' = Stretch the image to fill dimensions.
-			it may be skewed.
-		'snap' = Make the image fill the canvas, but maintain aspect ratio
-			without being skewed.
-			The top and bottom may be cropped,
-			or the left and right may be cropped.
-			it will be centered either way.
+	this.fitting = 'actual';
+	this.animationStyle = 'movie';
+	/*animationStyle is used by formats like PNG or GIF that use pixel recycling for their inter-frame compression
+		leaving it 'movie' allows for this greater compression, but pixels with transparency must be locked on the first frame.
+		changing it 'sprite' allows frames with differing transparent areas to work.
+		it may not effect other types
 	*/
-	
 	//following values should not be overridden:
 	this.output64 = null;
 	this.outputOctetStream = null;
@@ -157,13 +173,28 @@ function AnimatedEncoder(paramz,simpleQuality){
 	
 	for(var key in paramz){
 		this[key] = paramz[key];
-		//alert('this['+key+'] = '+paramz[key]);
-	}
-	this.sourceFormat = this.format;//in most cases these are the same.
-	if(this.format == 'webm'){
-		this.sourceFormat = 'webp';
 	}
 	this.encoderCanvas = document.createElement('canvas');
+}
+AnimatedEncoder.prototype.supportsFormat = function(desiredFormat){
+	//This means the animated format can be created in the user's current browser.
+	//It does not always mean that browser can display the animation.
+	desiredFormat = desiredFormat.toLowerCase();
+	if(desiredFormat=='png'){
+		return true;//HTML5 spec calls for canvas.toDataURL to always support PNG.
+	}
+	//===============these types are supported if .toDataURL() support is there:=============
+	if(desiredFormat=='webp'){//check list of types(currently just WEBP)
+		//Otherwise, check to see if it worked or defaulted to PNG.
+		//If it did not default to PNG due to unsupported type, return true.
+		var canv = document.createElement('canvas');
+		canv.width = 1;canv.height = 1;
+		if(canv.toDataURL('image/'+desiredFormat).substring(0,15)=='data:image/png;'){
+			return false;
+		}
+		return true;
+	}//===========end of types that are supported if toDataURL is available for them.========
+	return false;
 }
 AnimatedEncoder.prototype.initAnimation = function(){
 	//do stuff needed to initialize
@@ -204,9 +235,18 @@ AnimatedEncoder.prototype.addFrame = function(frameParamz){
 		This is a MODERN HTML input technique that works locally and
 		DOES NOT REQUIRE SERVER-SIDE INTERACTION
 	
-	{"url":[String to be used as 'src']}
+	{"url":[String to be used as 'src']} (this one may still need to be finished...)
 	*/
 	this_this = this;
+	//since a zero-length frame might be something some format supports at some point,
+	//auto detect and set custom delay to true if any delay parameter is set.
+	//depending on ===undefined is confusing and might be unreliable
+	frameParamz.hasCustomDelay = false;
+	for(var key in frameParamz){
+		if(key=='delay'){
+			frameParamz.hasCustomDelay = true;
+		}
+	}
 	if(frameParamz.image){
 		this.addFrameFromImage(frameParamz);
 	}else if(frameParamz.file){
@@ -227,32 +267,109 @@ AnimatedEncoder.prototype.addFrame = function(frameParamz){
 	}
 }
 AnimatedEncoder.prototype.addFrameFromImage = function(frameParamz){
-	//Note: must use .clientWidth, .clientHeight to measure added image.
-	//.width/height will be 'initial' without a number value
-	//TODO: maybe a reverse mode where it uses MINIMUM sizes?
-	if(this.autoDim){//autoDim will need to expand to fit all images.
-		alert('autoDim updated from '+this.width+'x'+this.height+' ...');
-
-		//note: clientWidth/H always returning 0
-		//it may have to be active in the page to have that
-		//value poulated    (be in the DOM tree)
-		this.width  = Math.max(frameParamz.image.clientWidth,this.width);
-		this.height = Math.max(frameParamz.image.clientHeight,this.height);
-
-		alert('...to '+this.width+'x'+this.height);
-	}
-	//frames should be added and size detected if autoDim,
-	//then processing will be done afterwards.
+	//frames should be added, then processing will be done afterwards.
 	this.frames.push(frameParamz);
-	//alert('frame added, now there are '+this.frames.length);
+	//alert('frame added, now there are '+this.frames.length+' f.image: '+frameParamz.image);
+	if(this.onFrameAdded){this.onFrameAdded();}
 }
 AnimatedEncoder.prototype.procFrame = function(){
-	var frameImg = this.frames[this.frameBeingProcessed].image;
+	var curFrame = this.frames[this.frameBeingProcessed];
+	var frameImg = curFrame.image;
 	this.encoderCanvas.width = this.width;
 	this.encoderCanvas.height = this.height;
 	ctx = this.encoderCanvas.getContext('2d');
+	ctx.save();//save context state before potentially transforming
+	var scX = 1;//scaling
+	var scY = 1;
+	var trX = 0;//translation vars
+	var trY = 0;
+	if(this.fitting == 'stretch'){
+		scX = this.width/frameImg.naturalWidth;
+		scY = this.height/frameImg.naturalHeight;
+		ctx.scale(scX,scY);
+	}
+	if(this.fitting == 'crop'){
+		scX = this.width/frameImg.naturalWidth;
+		scY = this.height/frameImg.naturalHeight;
+		if(scX<scY){
+			scX = scY;
+			trX = -(frameImg.naturalWidth*scY-this.width)/2;
+		}else{
+			scY = scX;
+			trY = -(frameImg.naturalHeight*scX-this.height)/2;
+		}
+		ctx.translate(trX,trY);
+		ctx.scale(scX,scY);
+	}
+	if(this.fitting == 'preserve'){//preserves all areas of all images and all aspect ratios of all images.
+		scX = this.width/frameImg.naturalWidth;
+		scY = this.height/frameImg.naturalHeight;
+		if(scX>scY){//currently the same logic as 'crop' completely, except this reversed condition.
+			scX = scY;
+			trX = -(frameImg.naturalWidth*scY-this.width)/2;
+		}else{
+			scY = scX;
+			trY = -(frameImg.naturalHeight*scX-this.height)/2;
+		}
+		ctx.translate(trX,trY);
+		ctx.scale(scX,scY);
+	}
 	ctx.drawImage(frameImg,0,0);
+	ctx.restore();//return context to default state with no transforms
 	//alert('quality: '+this.quality);
+	var i;//used in various loops.
+	
+	//these dimensions may be updated if only  a smaller section of the image has updates on it.
+	var frameFinalX = 0;//TODO, scrunch the frame down to only the region that is updated.
+	var frameFinalY = 0;
+	var frameFinalW = this.width;
+	var frameFinalH = this.height;
+	//TODO: Frame removal and make previous frame last longer if no changes.
+	//for testing of inter-frame and such:
+		//if(!this.encoderCanvas.parentNode){document.getElementsByTagName('body')[0].appendChild(this.encoderCanvas);}
+	//TODO: Put inter-frame pixel recycling and quantization here.
+	if(this.format=='png'||this.format=='gif'){//Inter-frame pixel recycling. Only PNG uses this currently. GIF will.
+		this.buildDithMasks();
+		var fRGBA = ctx.getImageData(0,0,this.encoderCanvas.width,this.encoderCanvas.height);
+		this.quant8Octets(fRGBA.data);
+		//Canvas ImageData is in RGBA format(not ARGB).
+		if(this.frameBeingProcessed>0){
+			for(i=0;i<fRGBA.data.length;i+=4){
+				//If the pixel is the same as previous frame, recycle it by drawing nothing over it.
+				if(this.animationStyle=='movie'&& 
+				   (this.transparencyLocks[i/4]
+				    ||
+				    (fRGBA.data[i]   == this.pRGBA.data[i]
+				  && fRGBA.data[i+1] == this.pRGBA.data[i+1]
+				  && fRGBA.data[i+2] == this.pRGBA.data[i+2]
+				  && fRGBA.data[i+3] == this.pRGBA.data[i+3] ) )
+				   ){
+					fRGBA.data[i]   = 0x00;
+					fRGBA.data[i+1] = 0x00;
+					fRGBA.data[i+2] = 0x00;
+					fRGBA.data[i+3] = 0x00;
+				}else{//Otherwise, draw it on the previous ImageData to be compared next frame.
+					this.pRGBA.data[i]   = fRGBA.data[i];
+					this.pRGBA.data[i+1] = fRGBA.data[i+1];
+					this.pRGBA.data[i+2] = fRGBA.data[i+2];
+					this.pRGBA.data[i+3] = fRGBA.data[i+3];
+				}
+					/*fRGBA.data[i]   = 0xFF;
+					fRGBA.data[i+1] = 0x00;
+					fRGBA.data[i+2] = 0xFF;
+					fRGBA.data[i+3] = 0x7F;*/
+			}
+		}else{
+			this.transparencyLocks = [];
+			for(i=0;i<fRGBA.data.length;i+=4){
+				//only lock the pixels in type 'movie' sprite disposes frames and can change transparency
+				this.transparencyLocks.push(this.animationStyle=='movie'&&fRGBA.data[i+3]<0xFF);//If any transparency, lock the pixel by setting true.
+			}
+			this.pRGBA = fRGBA;//If the first frame, just save the state of it for the next frame to compare.
+		}
+		ctx.putImageData(fRGBA,0,0);
+	}
+	
 	var datB64 = this.encoderCanvas.toDataURL('image/'+this.sourceFormat,parseFloat(this.quality));
 
 	//var datB64 = this.frames[this.frameBeingProcessed];
@@ -265,11 +382,27 @@ AnimatedEncoder.prototype.procFrame = function(){
 	//alert('datB64: '+datB64);
 	//alert('stripped: '+datB64.substring(stripB64));
 	var raw8 = this.string2uint8(atob(datB64.substring(stripB64)));
+	var upd8;
+	var frameDelay = this.delay;//delay in milliseconds
+	if(curFrame.hasCustomDelay){frameDelay=curFrame.delay;}//use frame-specific delay if set.
+	if(this.format == 'png'){//Only allocate this for formats that will use it.
+		upd8 = new Uint8Array(new ArrayBuffer(raw8.length*1.05));//add some extra space to hold things like frame sequence count and fcTL chunks. 
+	}
+	//for(i=0;i<upd8.length;i++){
+	//	upd8[i] = 0x50;//fill with 'P' to see if there are errors writing when viewed from text editor.
+	//}
+	var upd8_pos = 0;//this will keep track of how large
+		//the final frame section will be
+		//(fcTL chunk, IDAT/fdAT series of IDATs/fdATs)
+	//upd8 will hold the updated
+	//it must be able to hold extra bytes because fdAT chunks have
+	//the FrameSequenceCount added to the front of the data payload
 	//alert('dat8 len: '+raw8.length);
 	//alert('dat8: '+String.fromCharCode.apply(null,raw8));
 	var chunkSig;//aka 'FourCC'
 	var chunkLen;
 	var seekPos = 0;
+	var iData32;//canvas ImageData needed for pixel recycling on PNG/GIF
 	if(this.frameBeingProcessed==0){
 		if(this.format=='png'){
 			
@@ -286,17 +419,104 @@ AnimatedEncoder.prototype.procFrame = function(){
 		//(3) PNG
 		//(4) CRLF, EOF, UnixLineFeed
 		seekPos = 8;
+		var endIDAT;
+		var startIDAT = 0;//0 evaluates false for not set.
+		var is_fdAT = this.payloads.length;//only the first IDAT,
+			//or contiguous stream of IDATs will stay IDAT,
+			//the rest will be Animated PNG fdAT chunks
+		var crc;
 		while(seekPos<raw8.length){
 			chunkSig = String.fromCharCode.apply(null,raw8.subarray(seekPos+4,seekPos+8));
 			chunkLen = raw8[seekPos]*0x1000000+raw8[seekPos+1]*0x10000+raw8[seekPos+2]*0x100+raw8[seekPos+3];//Big Endian
-			alert('chunk: '+chunkSig+' len: '+chunkLen);
+			//alert('chunk: '+chunkSig+' len: '+chunkLen);
 			if(chunkSig == 'IDAT'){
-				this.payloads.push(raw8.subarray(seekPos,seekPos+chunkLen+8));//include FourCC and length itself (8)
-				alert('adding '+(chunkLen+8)+'-byte payload');
-				break;
+				if(!startIDAT){
+					startIDAT=seekPos;
+					//fcTL chunk needed for each animation frame
+					//only one fcTL, though there maybe multiple contiguous fdAT following.
+					this.writeUint32(upd8,26,upd8_pos,false);//length
+					this.writeFourCC(upd8,'fcTL',upd8_pos+4);
+					this.writeUint32(upd8,this.frameSequenceCount,upd8_pos+8,false);//Number of frames.
+					this.writeUint32(upd8,frameFinalW,upd8_pos+12,false);//width
+					this.writeUint32(upd8,frameFinalH,upd8_pos+16,false);//height
+					this.writeUint32(upd8,frameFinalX,upd8_pos+20,false);//x
+					this.writeUint32(upd8,frameFinalY,upd8_pos+24,false);//y
+					this.writeUint16(upd8,frameDelay,upd8_pos+28,false);//Numerator (16-bit uint)
+					this.writeUint16(upd8,1000,upd8_pos+30,false);//Denominator (16-bit uint)
+					if(this.animationStyle=='movie'){
+						upd8[upd8_pos+32] = 0x00;//Disposal. 0=none, 1=background, 2=previous
+						upd8[upd8_pos+33] = 0x01;//Blending. 0=source, 1 = over
+					}else{
+						upd8[upd8_pos+32] = 0x01;//Disposal. 0=none, 1=background, 2=previous
+						upd8[upd8_pos+33] = 0x00;//Blending. 0=source, 1 = over
+					}
+					this.writeUint32(upd8,this.getCRC32(upd8,upd8_pos+4,upd8_pos+34),34,false);
+					upd8_pos += 38;
+					this.frameSequenceCount++;
+				}
+				//there CAN and WILL be images with multiple IDATs.
+				//Combine them together. IDATs must be right after eachother according to the spec.
+				//will have to cycle thru, change IDAT to fdAT on frames after the first,
+				//and recalculate CRC
+				
+				//break;
+	//			var checkBrowserCRC = 
+	//// (raw8[seekPos+chunkLen+8]*0x1000000)//do this by multiplying so that high bit is not interpreted as sign
+	////+(
+	// (raw8[seekPos+chunkLen+8]<<24)
+	//|(raw8[seekPos+chunkLen+8+1]<<16)
+	//|(raw8[seekPos+chunkLen+8+2]<<8)
+	//| raw8[seekPos+chunkLen+8+3]
+	//;//for testing to make sure CRC function is correct
+				//alert('the browser CRC is: '+checkBrowserCRC.toString(16));
+				//alert('the JS CRC is: '+this.getCRC32(raw8,seekPos+4,seekPos+8+chunkLen).toString(16));
+				//CRC is calculated over the FourCC+Data
+				var copyEnd;
+				var destOffset;
+				var sourceOffset;
+				if(is_fdAT){
+					this.writeUint32(upd8,chunkLen+4,upd8_pos,false);//extra 4 to store frameSeqCount
+					this.writeFourCC(upd8,'fdAT',upd8_pos+4);//overwrite 'IDAT' with 'fdAT'
+					this.writeUint32(upd8,this.frameSequenceCount,upd8_pos+8,false);//fdAT needs a uint32 to store frameSequenceCount
+					copyEnd = 8+chunkLen;
+					destOffset = upd8_pos+12;//destination start point.
+					sourceOffset = seekPos+8;
+					for(i=0;i<copyEnd;i++){//copy everything over starting after length, FourCC, and FrameSequenceCount.
+						//Source starts after Length and FourCC.
+						upd8[destOffset+i] = raw8[sourceOffset+i];
+					}
+					//The CRC must be recalculated to cover 'fdAT' and the frame sequence number.
+					this.writeUint32(upd8,this.getCRC32(upd8,upd8_pos+4,upd8_pos+8+chunkLen),upd8_pos+12+chunkLen,false);//Must expand range to get the CRC over the FourCC and the extra 4 for the added FrameSequenceCount.
+					this.frameSequenceCount++;
+					upd8_pos += chunkLen+16;//must be 4 longer here to hold the FrameSequenceCount
+				}else{
+					copyEnd = 12+chunkLen;
+					destOffset = upd8_pos;
+					sourceOffset = seekPos;
+					for(i=0;i<copyEnd;i++){//copy everything, including length, FourCC, and CRC.
+						upd8[destOffset+i] = raw8[sourceOffset+i];
+					}
+					upd8_pos += chunkLen+12;
+				}
+			}else{
+				//the first non-IDAT chunk after IDATs start appearing
+				//will be the end of the contiguous stream of IDATs
+				if(startIDAT){endIDAT=seekPos;}
 			}
-			seekPos += chunkLen+8;
+			seekPos += chunkLen+12;//skip length, FourCC, and CRC
 		}
+		//if(is_fdAT){
+			//fdAT frames after the first must be altered to have fdAT instead of IDAT,
+			//and include the fcTL and a sequence number starting in the data on each fdAT
+			this.payloads.push(upd8.subarray(0,upd8_pos));
+
+		//}else{
+		//	this.payloads.push(raw8.subarray(startIDAT,endIDAT));
+		//	alert('adding payload from '+startIDAT+' to '+endIDAT);
+		//	//include FourCC and length itself (8)
+		//}
+		//alert('adding payload from '+startIDAT+' to '+endIDAT);
+		//alert('end of png chunks');
 	}//====================END PNG============================
 	//########################### WEBP #######################
 	if(this.sourceFormat=='webp'){
@@ -357,7 +577,38 @@ AnimatedEncoder.prototype.saveAnimatedFile = function(){
 	this.outputString = '';//intermediate state before base64 conversion can be done.
 	this.payloads = [];
 	this.frameBeingProcessed = 0;
-	this.procFrame();
+
+	this.sourceFormat = this.format;//in most cases these are the same.
+	if(this.format == 'webm'){
+		this.sourceFormat = 'webp';
+	}
+	if(this.format == 'png'){
+		this.frameSequenceCount = 0;//Animated PNG needs this.
+	}
+	
+	//===============Auto-Detect Image Size====================
+	
+	//autoDimensionsInternal will make the image size auto-calculated to hold all frames if .autoDimensions says that is desired,
+	//or if an invalid width/height for image size is detected.
+	this.autoDimensionsInternal = this.autoDimensions;//automatic dimensions
+		//automatically turn this on if no width/height set.
+		//it can be overridden with a paramz variable.
+		//(though that may be a bad idea because defaults to 1x1,
+		//allowing expansion when autoDim is true.)
+	
+	//TODO: maybe a reverse mode where it uses MINIMUM sizes?
+	if(this.autoDimensionsInternal){//autoDim will need to expand to fit all images.
+		//alert('autoDim updated from '+this.width+'x'+this.height+' ...');
+		for(var f=0;f<this.frames.length;f++){
+		//.naturalWidth/Height must be used to get the actual image size, NOT an html or styling that may be undefined.
+			this.width  = Math.max(this.frames[f].image.naturalWidth,this.width);
+			this.height = Math.max(this.frames[f].image.naturalHeight,this.height);
+			
+			//alert('...to '+this.width+'x'+this.height);
+		}
+	}
+	
+	this.procFrame();//begin the save process.
 }
 
 AnimatedEncoder.prototype.packAnimatedFile = function(){
@@ -369,6 +620,7 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 	var writePos = 0;
 	var payload;
 	var p;
+	var frameDelay;//if frame delay logic is being done here rather than elsewhere
 	//(NOTE: webp/webm may need logic to swap out VP8 for VP9/VP10, etc
 	//if it is detected that through a browser update, this has become
 	//the output of Canvas.toDataURL('webp'))
@@ -387,11 +639,11 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 		//alert('creating target octet with size: '+outputLen);
 		out8 = new Uint8Array(new ArrayBuffer(outputLen));
 		
-		this.writeChunkSig(out8,'RIFF',0);
+		this.writeFourCC(out8,'RIFF',0);
 		this.writeUint32(out8,outputLen-8,4,true);
-		this.writeChunkSig(out8,'WEBP',8);
+		this.writeFourCC(out8,'WEBP',8);
 		
-		this.writeChunkSig(out8,'VP8X',12);
+		this.writeFourCC(out8,'VP8X',12);
 		this.writeUint32(out8,10,16,true);//length of contents (not including VP8X & length)
 		//out8[20] = 0x00;//testing VP8X without animation
 		out8[20] = 0x02;//packed field, just set animation bit on, alpha bit is hint only and alpha not currently working in canvas.toDataURL('image/webp') as of early 2016 anyways
@@ -399,7 +651,7 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 		this.writeUint24(out8,this.width-1,24,true);//width-1
 		this.writeUint24(out8,this.height-1,27,true);//height-1
 		
-		this.writeChunkSig(out8,'ANIM',30);
+		this.writeFourCC(out8,'ANIM',30);
 		this.writeUint32(out8,6,34,true);//length of contents (not including ANIM & length)
 		this.writeUint32(out8,0,38,true);//BGColor, just setting to 0x00000000
 		out8[42] = 0;//16-bit loop count, leave 0 for infinite.
@@ -410,13 +662,15 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 		//for(i=0;i<1;i++){//testing with a simple WEBP
 		for(i=0;i<this.payloads.length;i++){
 			payload = this.payloads[i];
-			this.writeChunkSig(out8,'ANMF',writePos);
+			this.writeFourCC(out8,'ANMF',writePos);
 			this.writeUint32(out8,16+payload.length,writePos+4,true);//length of ANMF (which INCLUDES a VP8/VP8L chunk at the end of it contained within the ANMF)
 			this.writeUint24(out8,0,writePos+8,true);//x
 			this.writeUint24(out8,0,writePos+11,true);//y
 			this.writeUint24(out8,this.width-1,writePos+14,true);//width-1
 			this.writeUint24(out8,this.height-1,writePos+17,true);//height-1
-			this.writeUint24(out8,this.delay,writePos+20,true);//duration (milliseconds)
+			frameDelay = this.delay;//delay in milliseconds
+			if(this.frames[i].hasCustomDelay){frameDelay=this.frames[i].delay;}//use frame-specific delay if set.
+			this.writeUint24(out8,frameDelay,writePos+20,true);//duration (milliseconds)
 			out8[writePos+23]= 0x00;//1 byte here can be skipped (left all 0)
 				//6 reserved bits and alphablend/dispose which are not usable with the only option of full frame updates (no way of giving frame back references in toDataURL)
 			writePos += 24;
@@ -489,15 +743,63 @@ ID=0x18538067
 	}//============================== END WEBM ==============================
 
 	if(this.format == 'png'){
-		outputLen += 8;//Header&MagicNumber
+		var crc32;
+		outputLen += 8;//Header is& MagicNumber
 		outputLen += 25;//IHDR (whole chunks include length,sig,data,CRC)
-		outputLen += 38;//fcTL 
+		outputLen += 20;//acTL 
 		for(i=0;i<this.payloads.length;i++){
-			outputLen += 24;//ANMF chunk needed for each frame
 			outputLen += this.payloads[i].length;
 			//alert('payload['+i+'] has: '+this.payloads[i].length);
 		}
-		outputLen += 12;//IEND (empty chunk)
+		outputLen += 12;//IEND (empty chunk);
+		//The length has been calculated. Now allocate the space and write it.
+		out8 = new Uint8Array(new ArrayBuffer(outputLen));
+		//for(i=0;i<out8.length;i++){
+		//	out8[i] = 0x50;//fill with 'P' to see if there are errors writing when viewed from text editor.
+		//}
+		//PNG always starts with a series of set codes
+		out8[0] = 0x89;//set high bit, to not be interpreted as text, 10001001
+		out8[1] = 0x50;//P
+		out8[2] = 0x4E;//N
+		out8[3] = 0x47;//G
+		out8[4] = 0x0D;//CR
+		out8[5] = 0x0A;//LF
+		out8[6] = 0x1A;//End of File
+		out8[7] = 0x0A;//Unix LF
+		//IHDR Header Chunk
+		this.writeUint32(out8,13,8,false);//IHDR length (Counts data only, not FourCC or CRC)
+		this.writeFourCC(out8,'IHDR',12);
+		this.writeUint32(out8,this.width,16,false);//width
+		this.writeUint32(out8,this.height,20,false);//height
+		out8[24] = 0x08;//bit depth, 8 bits per color channel.
+		out8[25] = 0x06;//Packed field. Truecolor and alpha bits set, 00000110
+		out8[26] = 0x00;//Compression Mode, 0=DEFLATE, the only defined type
+		out8[27] = 0x00;//Filter Mode, 0=Adaptive, the only defined type
+		out8[28] = 0x00;//Interlace Method, 0=No interlacing.
+		crc32 = this.getCRC32(out8,12,29);
+		this.writeUint32(out8,crc32,29,false);//CRC calculated over Data AND FourCC.
+		//writePos = 33;//would be 33 with no acTL
+		this.writeUint32(out8,8,33,false);
+		this.writeFourCC(out8,'acTL',37);
+		this.writeUint32(out8,this.payloads.length,41,false);//Number of frames.
+		this.writeUint32(out8,0,45,false);//Loops. 0 for infinite.
+		this.writeUint32(out8,this.getCRC32(out8,37,49),49,false);
+		writePos = 53;
+		
+		//Write each payload that was generated
+		for(i=0;i<this.payloads.length;i++){
+			payload = this.payloads[i];
+			for(p=0;p<payload.length;p++){
+				out8[writePos+p] = payload[p];
+			}
+			writePos += payload.length;
+		}
+		
+		//now close the image with the IEND chunk.
+		this.writeUint32(out8,0,writePos,false);//IEND is empty
+		this.writeFourCC(out8,'IEND',writePos+4);
+		crc32 = this.getCRC32(out8,writePos+4,writePos+8);
+		this.writeUint32(out8,crc32,writePos+8,false);
 	}
 	//alert('before outputOctetStream set');
 	this.outputOctetStream = out8;
@@ -515,7 +817,7 @@ AnimatedEncoder.prototype.packChunk = function(){
 		this.outputString += String.fromCharCode.apply(null,this.outputOctetStream.subarray(this.chunkPackI,Math.min(this.outputOctetStream.length,this.chunkPackI+2048)));
 		this.chunkPackI += 2048;
 		var this_this = this;//needed to stop breakage.
-		setTimeout(function(){this_this.packChunk()},100);//must wrap function this way or it will break variables
+		setTimeout(function(){this_this.packChunk()},5);//must wrap function this way or it will break variables
 		if(this.onProgress){
 			//allow devs to create a progress bar to show the image is being built
 			//by setting up this function which accepts a float of 0.0-1.0
@@ -543,7 +845,7 @@ AnimatedEncoder.prototype.string2uint8 = function(str){
 	}
 	return u8;
 };
-AnimatedEncoder.prototype.writeChunkSig = function(out8,chunkSig,pos){
+AnimatedEncoder.prototype.writeFourCC = function(out8,chunkSig,pos){
 	out8[pos+0] = chunkSig.charCodeAt(0);
 	out8[pos+1] = chunkSig.charCodeAt(1);
 	out8[pos+2] = chunkSig.charCodeAt(2);
@@ -571,5 +873,194 @@ AnimatedEncoder.prototype.writeUint24 = function(out8,u24,pos,isLittleEndian){
 		out8[pos+0] = u24>>16&0xFF;
 		out8[pos+1] = u24>>8&0xFF;
 		out8[pos+2] = u24&0xFF;
+	}
+}
+AnimatedEncoder.prototype.writeUint16 = function(out8,u16,pos,isLittleEndian){
+	if(isLittleEndian){
+		out8[pos+0] = u16&0xFF;
+		out8[pos+1] = u16>>8&0xFF;
+	}else{
+		out8[pos+0] = u16>>8&0xFF;
+		out8[pos+1] = u16&0xFF;
+	}
+}
+AnimatedEncoder.prototype.int2uint = function(theNumber){
+	//Javascript converts numbers to signed int 32 when doing bitwise ops.
+	//cut off the last bit that it is using as a sign, and add
+	//it to a number with just that high bit set.
+	//this will turn it into what the uint32 would be.
+	//(although it may still be internally stored by javascript as signed with the bits expanded.)
+	//TODO: check into this. 2's complement negatives are supposed to be based on
+	//inverted bits, so not sure why this seems to work.
+	if(theNumber<0){
+		theNumber &= 0x7FFFFFFF;
+		theNumber += 0x80000000;
+	}
+	return theNumber;
+}
+AnimatedEncoder.prototype.initCRCTable = function(){
+	this.crcTable = new Uint32Array(256);//this broke when using ArrayBuffer(256), not sure why
+	var calc;
+	var i;
+	var i2;
+	//var testStr = '';
+	for(i=0x00000000;i<256;i++){
+		calc = i;
+		for(i2=0;i2<8;i2++){
+			if(calc&1){
+				calc = ((0xEDB88320) ^ (calc >>> 1));
+			}else{
+				calc = (calc >>> 1);
+			}
+		}
+		//calc = this.int2uint(calc);
+		this.crcTable[i] = calc;
+		//testStr += '\r\n'+calc.toString(16);
+	}
+	//alert('table at 127: '+this.crcTable[127]);
+	//alert('crcTable: '+testStr);
+	//alert((0x80000F00 ^ 0x00000E00).toString(16)+', u: '+this.int2uint(0x80000F00 ^ 0x00000E00).toString(16));
+}
+AnimatedEncoder.prototype.getCRC32 = function(u8,startIndex,endIndex){
+	//if the CRC table has not been initialized, set it up.
+	if(!this.crcTable){
+		this.initCRCTable();
+	}
+	var i;
+	var crc = 0xFFFFFFFF;
+	var cIndex;
+	//Note that endIndex is actually 1 greater than the last
+	//index read (like array loop length logic)
+	for(i=startIndex;i<endIndex;i++){
+		cIndex = ((crc^(u8[i]))&(0xFF));
+		crc = this.crcTable[cIndex] ^ (crc>>>8) ;
+	}
+	//Note that Javascript converts numbers to SIGNED 32 bit ints before
+	//doing most bitwise operations.
+	//It is still doing the exact same thing in most cases when it comes to
+	//manipulating bits, it is just the interpretation of the number
+	//that changes (an exception is sign-propogating >> done on a negative)
+	//(two's complement would be padded with 1's to the left after shift)
+	//(whether signed or unsigned it is still a row of 32 bits)
+	return crc ^ 0xFFFFFFFF;
+}
+AnimatedEncoder.prototype.buildDithMasks = function(){
+	var maskSize = this.width*this.height*4;
+	if(this.width==this.ditherWidth&&this.height==this.ditherHeight){return;}//do not need to remake it if it was already done on the same dimensions
+	this.ditherWidth = this.width;//must check these rather than maskSize because 10x20 or 20x10 could be the same maskSize
+	this.ditherHeight = this.height;
+	this.ditherMaskSize = maskSize;
+	this.dithMaskHalf = [];//new Uint8Array(new ArrayBuffer(maskSize));
+	this.dithMaskFourth = [];//new Uint8Array(new ArrayBuffer(maskSize));
+	//just storing them as bools should be better.
+	var dHalf = true;
+	//var dFourth;
+	var d = 0;
+	var evenW = this.width%2==0;
+	//var wFourthAdj = 0;
+	for(var h=0;h<this.height;h++){
+		for(var w=0;w<this.width;w++){
+			//dFourth = h%2==(wFourthAdj+w)%2;
+			
+			//this.dithMaskHalf[d] = dHalf;
+			//for(var c=0;c<4;c++){
+			//stagger the channels. this should make artifacting less noticeable.
+			this.dithMaskHalf[d]   =  dHalf;
+			this.dithMaskHalf[d+1] = !dHalf;
+			this.dithMaskHalf[d+2] =  dHalf;
+			this.dithMaskHalf[d+3] = !dHalf;
+			this.dithMaskFourth[d]   = (((h+3)%4==2&&(w  )%4==0) || ((h+3)%4==0&&(w  )%4==2));//dFourth;
+			this.dithMaskFourth[d+1] = (((h+2)%4==2&&(w+1)%4==0) || ((h+2)%4==0&&(w+1)%4==2));//dFourth;
+			this.dithMaskFourth[d+2] = (((h+1)%4==2&&(w+2)%4==0) || ((h+1)%4==0&&(w+2)%4==2));//dFourth;
+			this.dithMaskFourth[d+3] = (((h  )%4==2&&(w+3)%4==0) || ((h  )%4==0&&(w+3)%4==2));//dFourth;
+			d+=4;
+			dHalf = !dHalf;
+		}
+		//wFourthAdj++;
+		if(evenW){
+			dHalf = !dHalf;//toggle it on each new scanline to make checkers.
+		}
+	}
+}
+AnimatedEncoder.prototype.quant8Octets = function(octets){
+		var quant8 = 0;//full quality. no quantization or dithering.
+		if(this.quality<1){
+			quant8 = 1;//Not usually much savings, but hard to tell the difference from the full quality.
+		}
+		if(this.quality<0.9){
+			quant8 = 2;//Starts saving a good portion usually, and still can be fairly hard to tell from full quality.
+		}
+		if(this.quality<0.8){
+			quant8 = 3;//This level has allot of savings and the artifacting can be noticed but is not too bad.
+			//This is ideal in many cases. It sometimes even cuts the size in half without much noticeable difference.
+		}
+		if(this.quality<0.7){
+			quant8 = 4;//This can save allot of extra file size, the but artifacts really start showing up here.
+		}
+		if(this.quality<0.5){
+			quant8 = 5;//The dither artifacting becomes very noticeable here, but it still looks OK in some cases.
+				//The size savings are quite good.
+		}
+		if(this.quality<0.3){
+			quant8 = 6;//Starts too look quite blocky. It has a color-banding effect even with help from dithering.
+			//The size savings are very strong, but the quality is becoming weak at this point.
+		}
+		if(this.quality<0.1){
+			quant8 = 7;//Even smaller size and less quality. Heavy artifacting and color banding.
+		}
+		if(this.quality<=0){
+			quant8 = 8;//Saves more size, but the artifacting and color banding are extreme.
+		}
+		if(!quant8){return;}//no need to do anything if leaving fully lossless.
+		
+		
+		//quant level 5 and below start getting really ugly fast, so there are bigger ranges there.
+		//There are only 8 bits so only full quality and 8 levels of quantization possible with this,
+		//so 0-8 is guessed based on the 0.0-1.0 quality number.
+		var QUANT_INC = new Uint16Array(9);
+		var QUANT_MASK = new Uint8Array(9);
+		QUANT_INC[0] = 0x01;//00000001 not quantized(ultimately best quality over all with no savings from quantization)
+		QUANT_INC[1] = 0x02;//00000010 best quality quantized
+		QUANT_INC[2] = 0x04;//00000100
+		QUANT_INC[3] = 0x08;//00001000
+		QUANT_INC[4] = 0x10;//00010000
+		QUANT_INC[5] = 0x20;//00100000
+		QUANT_INC[6] = 0x40;//01000000
+		QUANT_INC[7] = 0x80;//10000000
+		QUANT_INC[8] =0x100;//00000001 00000000
+				//remember if the channel hits 256 when adding the increment,
+				//set the channel to 0xFF
+				//if just doing &0xFF mask on 0x100, it will get 0!
+				
+		QUANT_MASK[0] = 0xFF;//11111111
+		QUANT_MASK[1] = 0xFE;//11111110
+		QUANT_MASK[2] = 0xFC;//11111100
+		QUANT_MASK[3] = 0xF8;//11111000
+		QUANT_MASK[4] = 0xF0;//11110000
+		QUANT_MASK[5] = 0xE0;//11100000
+		QUANT_MASK[6] = 0xC0;//11000000
+		QUANT_MASK[7] = 0x80;//10000000
+		QUANT_MASK[8] = 0x00;//00000000
+	var oBits;
+	for(var i=0;i<octets.length;i++){
+		oBits = octets[i];
+		var incrementDif = oBits%QUANT_INC[quant8];
+		var nChange = incrementDif/QUANT_INC[quant8];
+		var roundUp;
+		if(nChange>0.375&&nChange<0.625){//value about in the middle
+			roundUp = this.dithMaskHalf[i];//?Math.floor(nVal):Math.ceil(nVal);//checkered even split
+			//dithOrg[0][dithClr][dithI]? -- old code, maybe expiriment before dropping patterned dith at one point?
+		}else if(nChange>0.125&&nChange<=0.375){//value relatively close to lower number
+			roundUp = this.dithMaskFourth[i];//return dithAltB?Math.ceil(nVal):Math.floor(nVal);//sparse ceiling
+		}else if(nChange>=0.625&&nChange<0.875){//value relatively close to upper number
+			roundUp = !this.dithMaskFourth[i];//return dithAltB?Math.floor(nVal):Math.ceil(nVal);//sparse floor
+		}else{
+			roundUp = Math.round(nChange);
+		}
+
+		oBits &= QUANT_MASK[quant8];
+		if(roundUp){oBits+=QUANT_INC[quant8];}
+		if(oBits>0xFF){oBits=0xFF;} 
+		octets[i] = oBits;
 	}
 }
