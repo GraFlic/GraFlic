@@ -1,28 +1,28 @@
 /*
 AnimatedEncoder by Compukaze LLC
-Check AnimatedWEBPs.com and AnimatedPNGs.com for info on the formats this works with.
+Visit
+
+AnimatedWEBPs.com
+
+AnimatedPNGs.com
+
+for info on the formats this works with.
 
 Inspired by the Animated PNG/GIF encoder of my Deckromancy.com and Punykura.com projects,
 but built in Javascript rather than ActionScript 3 and leverages the native
 (and in some cases hardware-accelerated) image encoders of the browser
 via Canvas.toDataURL()
-
 =============================================================================
-
 The MIT License (MIT)
-
 Copyright (c) 2016 Compukaze LLC
-
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights
 to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 copies of the Software, and to permit persons to whom the Software is
 furnished to do so, subject to the following conditions:
-
 The above copyright notice and this permission notice shall be included in all
 copies or substantial portions of the Software.
-
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -30,43 +30,91 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
 =============================================================================
 
-Note that this version is very early and allot of things will be missing
-or incomplete this early on.
+Version 0.0.3
 
-Version 0.0.2
-Animated WEBP and Animated PNG output are working this version.
 Format support is based on what formats a given browser supports as
-an export type from <canvas>
-
+an export type from <canvas> .toDataURL()
 Takes a list of img/canvas/image URLs
-and makes an Animated WEBP or Animated PNG or Animated GIF or Animated WEBM
+and makes an Animated WEBP or Animated PNG.
 
-To support an animated format the browser must support it as canvas export
-here is what browsers would currently (early 2016) be capable of supporting
-            (once implementation is finished, of course)
+Other Animated Formats could potentially be supported in the future,
+but Animated PNG and Animated WEBP are the focus for now.
+GIF support, for example, would be possible but with Firefox and Safari supporting Animated PNG
+and Chrome tentatively adding Animated PNG support by the end of 2016,
+GIF support could be pointless in the near future and not the best use of effort right now.
+Remember that GIF would need heavy work, like LZW and indexed color selection implementations.
+
+Here is what browsers would currently (late 2016) be capable of supporting
 as output (note that Edge and Chrome CANNOT natively PLAY Animated PNG,
 but they WILL the first frame or APNG default image):
 
-Browser | Could generate (not necessarily view animation)
---------+-------------------------------------------------------
-Chrome, | Animated PNG, Animated WEBP
-Opera   |
---------+-------------------------------------------------------
-Firefox | Animated PNG
---------+-------------------------------------------------------
-Safari  | Animated PNG, Animated GIF
---------+-------------------------------------------------------
-Edge    | Animated PNG
+
+The status of being able to GENERATE (NOT necessarily VIEW) animated images:
+
+        | Animated PNG  | Animated WEBP
+--------+---------------+---------------------------------------------------
+Chrome, | Supported.    | Supported.
+Opera   |               | 
+--------+---------------+---------------------------------------------------
+Firefox | Supported.    | Not supported.
+        |               | * Firefox is reportedly considering/testing with
+        |               |   experimental WEBP support. If it were to support
+        |               |   toDataURL('image/webp'), it could work.
+--------+---------------+---------------------------------------------------
+Safari  | Supported.    | Not supported.
+        |               | * Safari has reportedly been considering/testing,
+        |               |   WEBP support and if it were to support
+        |               |   toDataURL('image/webp'), it could work.
+--------+---------------+---------------------------------------------------
+Edge    | Supported.    | Not supported.
+--------+---------------+---------------------------------------------------
+IE      | Supported.    | Not supported.
+--------+---------------+---------------------------------------------------
+ * IE is being phased out and replaced with Edge.
+
+
+The status of being able to VIEW animated images:
+
+        | Animated PNG           | Animated WEBP                
+--------+------------------------+------------------------------------------
+Chrome, | Will tentatively       | Supported.
+Opera   | be supported Q4 2016.  |
+--------+------------------------+------------------------------------------
+Firefox | Supported.             | Not supported.
+        |      	                 | * Safari has reportedly been considering/
+        |                        |   testing WEBP support. It is unclear if
+        |                        |   this includes Animated WEBP or just
+        |                        |   non-animated WEBP.
+--------+------------------------+------------------------------------------
+Safari  | Supported.             | Not Supported.
+        |                        | * WEBP reportedly being considered/tested,
+        |                        |   but it may only be non-animated for now.
+--------+------------------------+------------------------------------------
+Edge    | Not supported.         | Not supported.
+        | (User only sees first  |
+	| frame or default image)|
+        | * Marked as under      |
+        |   Review on Edge Dev   |
+        |   User Voice, but with |
+        |   no commitment so far.|
+--------+------------------------+------------------------------------------
+IE      | Not Supported.         | Not supported.
+        | (User only sees first  |
+	| frame or default image)|
+--------+------------------------+------------------------------------------
+ * IE is being phased out and replaced with Edge.
+
 
 Note that Animated PNG support is possible in all major browsers without the need for a custom DEFLATE implementation
 because all major browsers consistently produce RGBA non-interlaced output via toDataURL() in all cases.
-Not sure if this behavior is part of the HTML5 spec or not.
+It is unclear if this behavior is part of the HTML5 spec or not.
+HTML5 does mandate that the image should be able to reproduce all original pixels
+exactly, but it is unclear if this means an image with a low number of colors that
+could be encoded with 8 bit indexed color is mandated to stay 32 bit RGBA.
 
 USAGE:
-
 var paramz = {
 	"format":'<png|gif|webp|webm>',
 	"quality":<0-1> 0% - 100% quality. Lower quality saves more space.
@@ -80,6 +128,13 @@ var paramz = {
 					by recycling pixels of previous frames with a transparent pixel,
 					'sprite' can have changing transparent areas in different frames,
 					but loses this extra compression savings.)
+	"ppi":<uint for number of pixels per inch>
+	"ppm":<uint for number of pixels per metre> ('meter' in the US)
+					PNG can use ppi(pixels per inch) or ppm (pixels per metre)
+					to create a pHYs chunk that ensures the image can
+					be interpreted and/or printed at the desired physical size.
+					If you are using ppcm(pixels per centimetre) you can take that
+					times 100 to get the ppm.
 ------------Events----------------------------------------------------
 	"onEncoded":<function to call when done>,
 	"onProgress":<function to call as encoding progresses. receives a 0-1 number representing a percentage>,
@@ -87,7 +142,6 @@ var paramz = {
 }
 var ae = new AnimatedEncoder(paramz);
 	(The parameters can also be changed after initialization by setting ae.width = 500; for example.)
-
 	"fitting" describes how images are fit into the animation bounds.
 		'actual' = Draw image at actual size on the canvas at (0,0).
 			The image may be cropped,
@@ -101,8 +155,6 @@ var ae = new AnimatedEncoder(paramz);
 			or the left and right may be cropped.
 			it will be centered either way.
 		'preserve' = preserves all areas of all images and all aspect ratios of all images.
-
-
 f = {
 	"file":<[Object File]> OR "image":<[Object Image]>
 	<more optional parameters will be added later>
@@ -110,20 +162,16 @@ f = {
 ae.addFrame(f);
 	(repeat this several times)
 ae.saveAnimatedFile();
-
 function onEncodedFunc(ae){
 	//finally set the image src to the base 64 encoded animated image.
 	anImage.src = ae.outputBase64;
 }
-
-
-	**********The following will be set internally and do*******
-	***************NOT need to be set in paramz*****************
+	********** The following will be set internally and do *******
+	*************** NOT need to be set in paramz *****************
 	"frames":<frame setups>
 	"payloads":<will store the bitstreams of extracted frames to build from>
 	"sourceFormat":<png|gif|webp> (The format that the encodings will be extracted from based on the browser's supported Canvas.toDataURL() encodings. Internally set based on format, webm and webp will both use webp as the source since there is no webm toToDataURL and they share the same VPX bitstreams.)
-	************************************************************
-
+	**************************************************************
 
 [Featuroach] NOTE THAT IMAGE CREATION WILL FAIL IF
 the image is NOT either
@@ -131,6 +179,10 @@ the image is NOT either
 (B) Locally located on the same server AND website domain name
 This is because of a Javascript 'security' Featuroach ('Feature'/Bug that hides and creeps around in your code like a filthy roach)
 This featuroach considers accessing the contents of those images a security risk and may scream about 'security' or a 'tainted' canvas in browser console.
+
+UPDATE: You can mostly get around this by disabling CORS restrictions on your browser while testing your code locally.
+	In most cases your website is not going to need the cross-domain images and it will not be a problem once live on your site,
+	but the Cross-Origin Resource Sharing rules can create huge headaches when testing your code locally.
 
 */
 function AnimatedEncoder(paramz,simpleQuality){
@@ -212,22 +264,19 @@ RIFF/WEBP header
 contents{
 	VP8X chunk
 	ANIM chunk (global animation paramz)
-	ANIMF (frame1 paramz and data)
-	ANIMF (frame2 paramz and data)
+	ANMF (frame1 paramz and data)
+	ANMF (frame2 paramz and data)
 	...
-	ANIMF (frameX paramz and data)
+	ANMF (frameX paramz and data)
 }
-
 */
 AnimatedEncoder.prototype.addFrame = function(frameParamz){
 	/*a frame can be added 3 different ways.
 	only ONE of these should be set
-
 	{"image":[Object IMG]}
 		creates frame from active <img> element, which can be access by
 		creating it with document.createElement('img')
 		OR locating it with document.getElementById('img_id')
-
 	{"file":[Object File]}
 		A file selected by a <input type="file" accept="image/*"> element.
 		this.files[0] can access the file for a simple single selector
@@ -430,7 +479,9 @@ AnimatedEncoder.prototype.procFrame = function(){
 			chunkLen = raw8[seekPos]*0x1000000+raw8[seekPos+1]*0x10000+raw8[seekPos+2]*0x100+raw8[seekPos+3];//Big Endian
 			//alert('chunk: '+chunkSig+' len: '+chunkLen);
 			if(chunkSig == 'IDAT'){
-				if(!startIDAT){
+				if(!startIDAT //if startIDAT is 0 due to starting at position 0 (first IDAT in sequence of IDATs)
+					&& this.frames.length > 1 //At least one frame to be an Animated PNG
+					){
 					startIDAT=seekPos;
 					//fcTL chunk needed for each animation frame
 					//only one fcTL, though there maybe multiple contiguous fdAT following.
@@ -608,6 +659,13 @@ AnimatedEncoder.prototype.saveAnimatedFile = function(){
 		}
 	}
 	
+	//Note that webp will process through as a an Animated WEBP would even if it just has one frame
+	//there are additional features that may be added later that will need this extracting and rebuilding process:
+	//Insert EXIF or XMP Metadata,
+	//or if toDataURL ever supports webp lossless,
+	//possibly do quantization and dithering.
+	
+	
 	this.procFrame();//begin the save process.
 }
 
@@ -628,11 +686,15 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 	if(this.format == 'webp'){
 		outputLen += 12;//RIFF,uint32,WEBP
 		outputLen += 18;//VP8X extension chunk needed for animation
-		outputLen += 14;//ANIM global animation parameters needed
+		if(this.frames.length > 1){//If Animated WEBP, not just one frame.
+			outputLen += 14;//ANIM global animation parameters needed
+		}
 		
 		//for(i=0;i<1;i++){
 		for(i=0;i<this.payloads.length;i++){
-			outputLen += 24;//ANMF chunk needed for each frame
+			if(this.frames.length > 1){//If Animated WEBP, not just one frame.
+				outputLen += 24;//ANMF chunk needed for each frame
+			}
 			outputLen += this.payloads[i].length;
 			//alert('payload['+i+'] has: '+this.payloads[i].length);
 		}
@@ -646,34 +708,43 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 		this.writeFourCC(out8,'VP8X',12);
 		this.writeUint32(out8,10,16,true);//length of contents (not including VP8X & length)
 		//out8[20] = 0x00;//testing VP8X without animation
-		out8[20] = 0x02;//packed field, just set animation bit on, alpha bit is hint only and alpha not currently working in canvas.toDataURL('image/webp') as of early 2016 anyways
+		if(this.frames.length > 1){//If Animated WEBP
+			out8[20] = 0x02;//packed field, just set animation bit on, alpha bit is hint only and alpha not currently working in canvas.toDataURL('image/webp') as of early 2016 anyways
+		}else{//if single frame WEBP
+			out8[20] = 0x00;
+		}
 		this.writeUint24(out8,0,21,true);//reserved bits that should be 0
 		this.writeUint24(out8,this.width-1,24,true);//width-1
 		this.writeUint24(out8,this.height-1,27,true);//height-1
+		writePos += 30;
 		
-		this.writeFourCC(out8,'ANIM',30);
-		this.writeUint32(out8,6,34,true);//length of contents (not including ANIM & length)
-		this.writeUint32(out8,0,38,true);//BGColor, just setting to 0x00000000
-		out8[42] = 0;//16-bit loop count, leave 0 for infinite.
-		out8[43] = 0;
-		writePos = 44;
+		if(this.frames.length > 1){//A single frame WEBP with animation chunks could cause breakage and the chunks are not needed in that case
+			this.writeFourCC(out8, 'ANIM', writePos + 0);
+			this.writeUint32(out8, 6, writePos + 4, true);//length of contents (not including ANIM & length)
+			this.writeUint32(out8, 0x00000000, writePos + 8, true);//BGColor RGBA, just setting to 0x00000000, the viewer can and does seem to ignore this.
+			out8[writePos + 12] = 0;//16-bit loop count, leave 0 for infinite.
+			out8[writePos + 13] = 0;
+			writePos += 14;
+		}
 		//writePos = 30;
 		//writePos = 12;
 		//for(i=0;i<1;i++){//testing with a simple WEBP
 		for(i=0;i<this.payloads.length;i++){
 			payload = this.payloads[i];
-			this.writeFourCC(out8,'ANMF',writePos);
-			this.writeUint32(out8,16+payload.length,writePos+4,true);//length of ANMF (which INCLUDES a VP8/VP8L chunk at the end of it contained within the ANMF)
-			this.writeUint24(out8,0,writePos+8,true);//x
-			this.writeUint24(out8,0,writePos+11,true);//y
-			this.writeUint24(out8,this.width-1,writePos+14,true);//width-1
-			this.writeUint24(out8,this.height-1,writePos+17,true);//height-1
-			frameDelay = this.delay;//delay in milliseconds
-			if(this.frames[i].hasCustomDelay){frameDelay=this.frames[i].delay;}//use frame-specific delay if set.
-			this.writeUint24(out8,frameDelay,writePos+20,true);//duration (milliseconds)
-			out8[writePos+23]= 0x00;//1 byte here can be skipped (left all 0)
-				//6 reserved bits and alphablend/dispose which are not usable with the only option of full frame updates (no way of giving frame back references in toDataURL)
-			writePos += 24;
+			if(this.frames.length > 1){//A single frame WEBP with animation chunks could cause breakage and the chunks are not needed in that case
+				this.writeFourCC(out8,'ANMF',writePos);
+				this.writeUint32(out8,16+payload.length,writePos+4,true);//length of ANMF (which INCLUDES a VP8/VP8L chunk at the end of it contained within the ANMF)
+				this.writeUint24(out8,0,writePos+8,true);//x
+				this.writeUint24(out8,0,writePos+11,true);//y
+				this.writeUint24(out8,this.width-1,writePos+14,true);//width-1
+				this.writeUint24(out8,this.height-1,writePos+17,true);//height-1
+				frameDelay = this.delay;//delay in milliseconds
+				if(this.frames[i].hasCustomDelay){frameDelay=this.frames[i].delay;}//use frame-specific delay if set.
+				this.writeUint24(out8,frameDelay,writePos+20,true);//duration (milliseconds)
+				out8[writePos+23]= 0x00;//1 byte here can be skipped (left all 0)
+					//6 reserved bits and alphablend/dispose which are not usable with the only option of full frame updates (no way of giving frame back references in toDataURL)
+				writePos += 24;
+			}//end if has multiple frames(is Animated WEBP)
 			for(p=0;p<payload.length;p++){
 				out8[writePos+p] = payload[p];
 			}
@@ -691,7 +762,6 @@ a length byte of all 1's (11111111) means it is a list of EBML sub elements.
 There is no end marker. it ends based on the ID of a property when
 a property is encountered that is not a defined sub-element of that parent entry
 This must be guessed based on the doctype's definition of IDs
-
 EMBL Header(Lv 0, multi, total: 11 bytes)
 ID = 0x1A45DFA3
 			//Should inherit mandatory properties
@@ -706,8 +776,6 @@ ID = 0x1A45DFA3
   DocType      {7} (0x4282,    0x84,     'webm')
   DocTypeVer.  {4} (0x4287,    0x81,     0x02) (look into this not sure)
   DocT.ReadVer.{4} (0x4285,    0x81,     0x02)
-
-
 Segment(Lv 0, multi) (All top-level fields, the whole rest of the file)
 ID=0x18538067
   Info(Lv 1, multi)
@@ -728,7 +796,6 @@ ID=0x18538067
        CodecID      {4} (0x86,      0x85,     'V_VP8' or 'V_VP9')
        (No CodecPrivate data for VP 8/9)
        CodecName    {4} (0x86,      0x83,     'VP8' or 'VP9')(not sure if needed?)
-
 			{}
 			{7} Doctype, [2] ID = 0x4282,
 					[1] byte length = 0x84 = 10000100, meaning 4
@@ -746,12 +813,22 @@ ID=0x18538067
 		var crc32;
 		outputLen += 8;//Header is& MagicNumber
 		outputLen += 25;//IHDR (whole chunks include length,sig,data,CRC)
-		outputLen += 20;//acTL 
+		if(this.frames.length > 1){//Must have 2+ frames to be Animated PNG (Check frames not payloads, payloads do not get built until after this.)
+			//do not output Animated PNG chunks if not needed.
+			//there are a few websites or software that
+			//might reject these chunks as unknown chunks and exit,
+			//even though custom chunks are allowed and
+			//the spec says just to ignore them not to fail.
+			outputLen += 20;//acTL
+		}
 		for(i=0;i<this.payloads.length;i++){
 			outputLen += this.payloads[i].length;
 			//alert('payload['+i+'] has: '+this.payloads[i].length);
 		}
 		outputLen += 12;//IEND (empty chunk);
+		if(this.ppi || this.ppm){//pHYs is optional
+			outputLen += 21;//pHYs
+		}
 		//The length has been calculated. Now allocate the space and write it.
 		out8 = new Uint8Array(new ArrayBuffer(outputLen));
 		//for(i=0;i<out8.length;i++){
@@ -778,13 +855,40 @@ ID=0x18538067
 		out8[28] = 0x00;//Interlace Method, 0=No interlacing.
 		crc32 = this.getCRC32(out8,12,29);
 		this.writeUint32(out8,crc32,29,false);//CRC calculated over Data AND FourCC.
-		//writePos = 33;//would be 33 with no acTL
-		this.writeUint32(out8,8,33,false);
-		this.writeFourCC(out8,'acTL',37);
-		this.writeUint32(out8,this.payloads.length,41,false);//Number of frames.
-		this.writeUint32(out8,0,45,false);//Loops. 0 for infinite.
-		this.writeUint32(out8,this.getCRC32(out8,37,49),49,false);
-		writePos = 53;
+		
+		writePos += 33;
+		
+		//optional pHYs, if ppi or ppm is specified 
+		//1 inch is 0.0254 metres. The X/Y in pHYs is metre-based. ('meter' in the US)
+		//X and Y could potentially be different for 'non-square' pixels, but that is an odd case, so not currently supporting.
+		if(this.ppi || this.ppm){
+			var ppm;
+			if(this.ppm){
+				ppm = this.ppm;
+			}else{
+				var inch2Meter = 1 / 0.0254
+				ppm = this.ppi * inch2Meter;
+			}
+			this.writeUint32(out8, 9, writePos,false);
+			this.writeFourCC(out8, 'pHYs', writePos + 4);
+			this.writeUint32(out8, ppm, writePos + 8, false);//X pixels per unit
+			this.writeUint32(out8, ppm, writePos + 12, false);//Y pixels per unit
+			out8[writePos + 16] = 0x01;//Unit type 1 for meter, 0 for unknown.
+			this.writeUint32(out8, this.getCRC32(out8, writePos + 4, writePos + 17), writePos + 17,false);
+			writePos += 21;
+		}//end if has pHYs
+		
+		if(this.payloads.length > 1){//At least one frame to be an Animated PNG
+			//do not output Animated PNG chunks if not needed.
+			//writePos = 33;//would be 33 with no acTL
+			this.writeUint32(out8, 8, writePos, false);
+			this.writeFourCC(out8, 'acTL', writePos + 4);
+			this.writeUint32(out8, this.payloads.length, writePos + 8, false);//Number of frames.
+			this.writeUint32(out8, 0, writePos + 12, false);//Loops. 0 for infinite.
+			this.writeUint32(out8, this.getCRC32(out8, writePos + 4, writePos + 16), writePos + 16, false);
+		
+			writePos += 20;
+		}//end is more than one frame
 		
 		//Write each payload that was generated
 		for(i=0;i<this.payloads.length;i++){
@@ -796,10 +900,10 @@ ID=0x18538067
 		}
 		
 		//now close the image with the IEND chunk.
-		this.writeUint32(out8,0,writePos,false);//IEND is empty
-		this.writeFourCC(out8,'IEND',writePos+4);
-		crc32 = this.getCRC32(out8,writePos+4,writePos+8);
-		this.writeUint32(out8,crc32,writePos+8,false);
+		this.writeUint32(out8, 0, writePos, false);//IEND is empty
+		this.writeFourCC(out8, 'IEND', writePos + 4);
+		crc32 = this.getCRC32(out8, writePos + 4, writePos + 8);
+		this.writeUint32(out8, crc32, writePos + 8, false);
 	}
 	//alert('before outputOctetStream set');
 	this.outputOctetStream = out8;
