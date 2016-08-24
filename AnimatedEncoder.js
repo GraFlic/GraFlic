@@ -32,7 +32,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 =============================================================================
 
-Version 0.0.3
+Version 1.0.4
 
 Format support is based on what formats a given browser supports as
 an export type from <canvas> .toDataURL()
@@ -322,6 +322,7 @@ AnimatedEncoder.prototype.addFrameFromImage = function(frameParamz){
 	if(this.onFrameAdded){this.onFrameAdded();}
 }
 AnimatedEncoder.prototype.procFrame = function(){
+	var this_this = this;//works around access bugs with 'this'
 	var curFrame = this.frames[this.frameBeingProcessed];
 	var frameImg = curFrame.image;
 	this.encoderCanvas.width = this.width;
@@ -378,8 +379,9 @@ AnimatedEncoder.prototype.procFrame = function(){
 		//if(!this.encoderCanvas.parentNode){document.getElementsByTagName('body')[0].appendChild(this.encoderCanvas);}
 	//TODO: Put inter-frame pixel recycling and quantization here.
 	if(this.format=='png'||this.format=='gif'){//Inter-frame pixel recycling. Only PNG uses this currently. GIF will.
-		this.buildDithMasks();
 		var fRGBA = ctx.getImageData(0,0,this.encoderCanvas.width,this.encoderCanvas.height);
+		if(this.procFrameStage == 0){//0 for final
+		this.buildDithMasks();
 		this.quant8Octets(fRGBA.data);
 		//Canvas ImageData is in RGBA format(not ARGB).
 		if(this.frameBeingProcessed>0){
@@ -417,6 +419,26 @@ AnimatedEncoder.prototype.procFrame = function(){
 			this.pRGBA = fRGBA;//If the first frame, just save the state of it for the next frame to compare.
 		}
 		ctx.putImageData(fRGBA,0,0);
+		}else if(this.procFrameStage == 100){//end if final stage
+			//====================== if stage 100, color count ======================
+			//This will count all of the colors for all frames before processing the frames,
+			//so that all frames use the same color frequency data.
+			for(i=0;i<fRGBA.data.length;i+=4){
+				this.incrementColorCount(fRGBA.data[i], fRGBA.data[i + 1], fRGBA.data[i + 2], fRGBA.data[i + 3]);
+			}
+			//alert(this.uniqueColors + ' colors');
+			this.frameBeingProcessed++;
+			if(this.frameBeingProcessed == this.frames.length){
+				this.frameBeingProcessed = 0;
+				this.procFrameStage = 0;//set stage to 0, final, so that it can draw and encode the image now that it has the color count.
+			}
+			setTimeout(function(){this_this.procFrame()},50);
+			if(this.onProgress){
+				this.progress += this.progressPerFrame;
+				this.onProgress(this.progress);
+			}
+			return;//Exit here. This is a pre-processing stage that just counts the colors.
+		}
 	}
 	
 	var datB64 = this.encoderCanvas.toDataURL('image/'+this.sourceFormat,parseFloat(this.quality));
@@ -606,13 +628,13 @@ AnimatedEncoder.prototype.procFrame = function(){
 	
 	this.frameBeingProcessed++;
 	//alert(this.sourceFormat+' bitstream packed for frame '+this.frameBeingProcessed+' of '+this.frames.length);
-	var this_this = this;//works around access bugs with 'this'
 	if(this.onProgress){
 		//allow devs to create a progress bar to show the image is being built
 		//by setting up this function which accepts a float of 0.0-1.0
 		//half of the progress will be tracked in writing the octet stream,
 		//the other half here, building payloads.
-		this.onProgress(0.5*Math.min(this.frameBeingProcessed/this.frames.length,1));
+		this.progress += this.progressPerFrame;
+		this.onProgress(this.progress);
 	}
 	if(this.frameBeingProcessed<this.frames.length){
 		//put a delay between each frame because image encoding
@@ -665,7 +687,26 @@ AnimatedEncoder.prototype.saveAnimatedFile = function(){
 	//or if toDataURL ever supports webp lossless,
 	//possibly do quantization and dithering.
 	
+	this.progress = 0;
+	this.procFrameStage = 0;//0 for final(there can be other stages like 100 for color counting.)
+	this.progressPerFrame = 0.5 / this.frames.length;
 	
+	//initialize things that some formats need.
+	if(this.format == 'png'){
+		//The percentage of total pixels in the image this color represents will be tied to the quality level, for example:
+		//quality level 0, the color must represent 1 in 1000 (0.1%) pixels for the quantization to be skipped on it.
+		//quality level 0.90, the color must represent 1 in 10000 (0.01%) pixels
+		//quality level 0.75, the color must represent 1 in 4000 (0.025%) pixels
+		//quality level 0.5, the color must represent 1 in 2000 (0.05%) pixels
+		//quality level 0.25, the color must represent 1 in 1333 (0.075%) pixels
+		//quality level 1, the threshold to quantize would be 0, and never reached, but quantization is skipped for full quality anyways.
+		this.quantThresh = this.width * this.height * this.frames.length * 0.001 * (1 - this.quality);
+		this.initColorCounting();
+		if(this.quality < 1){
+			this.procFrameStage = 100;//100 for color counting
+			this.progressPerFrame /= 2;//it will have twice as many, because it now has two stages of processing.
+		}
+	}
 	this.procFrame();//begin the save process.
 }
 
@@ -1146,25 +1187,58 @@ AnimatedEncoder.prototype.quant8Octets = function(octets){
 		QUANT_MASK[7] = 0x80;//10000000
 		QUANT_MASK[8] = 0x00;//00000000
 	var oBits;
+	var quantizePixel;
 	for(var i=0;i<octets.length;i++){
-		oBits = octets[i];
-		var incrementDif = oBits%QUANT_INC[quant8];
-		var nChange = incrementDif/QUANT_INC[quant8];
-		var roundUp;
-		if(nChange>0.375&&nChange<0.625){//value about in the middle
-			roundUp = this.dithMaskHalf[i];//?Math.floor(nVal):Math.ceil(nVal);//checkered even split
-			//dithOrg[0][dithClr][dithI]? -- old code, maybe expiriment before dropping patterned dith at one point?
-		}else if(nChange>0.125&&nChange<=0.375){//value relatively close to lower number
-			roundUp = this.dithMaskFourth[i];//return dithAltB?Math.ceil(nVal):Math.floor(nVal);//sparse ceiling
-		}else if(nChange>=0.625&&nChange<0.875){//value relatively close to upper number
-			roundUp = !this.dithMaskFourth[i];//return dithAltB?Math.floor(nVal):Math.ceil(nVal);//sparse floor
-		}else{
-			roundUp = Math.round(nChange);
+		if(i%4 == 0){
+			quantizePixel = this.getColorCount(octets[i], octets[i + 1], octets[i + 2], octets[i + 3]) < this.quantThresh;
 		}
+		if(quantizePixel){
+			oBits = octets[i];
+			var incrementDif = oBits%QUANT_INC[quant8];
+			var nChange = incrementDif/QUANT_INC[quant8];
+			var roundUp;
+			if(nChange>0.375&&nChange<0.625){//value about in the middle
+				roundUp = this.dithMaskHalf[i];//?Math.floor(nVal):Math.ceil(nVal);//checkered even split
+				//dithOrg[0][dithClr][dithI]? -- old code, maybe expiriment before dropping patterned dith at one point?
+			}else if(nChange>0.125&&nChange<=0.375){//value relatively close to lower number
+				roundUp = this.dithMaskFourth[i];//return dithAltB?Math.ceil(nVal):Math.floor(nVal);//sparse ceiling
+			}else if(nChange>=0.625&&nChange<0.875){//value relatively close to upper number
+				roundUp = !this.dithMaskFourth[i];//return dithAltB?Math.floor(nVal):Math.ceil(nVal);//sparse floor
+			}else{
+				roundUp = Math.round(nChange);
+			}
+			
+			oBits &= QUANT_MASK[quant8];
+			if(roundUp){oBits+=QUANT_INC[quant8];}
+			if(oBits>0xFF){oBits=0xFF;} 
+			octets[i] = oBits;
+		}//end if quantize this pixel
+	}
+}
 
-		oBits &= QUANT_MASK[quant8];
-		if(roundUp){oBits+=QUANT_INC[quant8];}
-		if(oBits>0xFF){oBits=0xFF;} 
-		octets[i] = oBits;
+
+AnimatedEncoder.prototype.initColorCounting = function(){
+	this.colorRangeByAlpha = [];
+	for(var i = 0;i < 256;i++){//create an array for each potential level of opacity.
+		this.colorRangeByAlpha.push([]);
+	}
+	//having one array indexed by argb or rgba would be a problem since 32 bit numbers in javascript are signed.
+	this.uniqueColors = 0;
+}
+AnimatedEncoder.prototype.incrementColorCount = function(red, green, blue, alpha){
+	var rgb = red << 16 | green << 8 | blue;
+	if(this.colorRangeByAlpha[alpha][rgb]){
+		this.colorRangeByAlpha[alpha][rgb]++;
+	}else{
+		this.colorRangeByAlpha[alpha][rgb] = 1;
+		this.uniqueColors++;
+	}
+}
+AnimatedEncoder.prototype.getColorCount = function(red, green, blue, alpha){
+	var rgb = red << 16 | green << 8 | blue;
+	if(this.colorRangeByAlpha[alpha][rgb]){//Remember, undefined will evaluate as false.
+		return this.colorRangeByAlpha[alpha][rgb];
+	}else{
+		return 0;
 	}
 }
