@@ -32,7 +32,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 =============================================================================
 
-Version 1.0.4
+Version 1.0.5
 
 Format support is based on what formats a given browser supports as
 an export type from <canvas> .toDataURL()
@@ -128,6 +128,14 @@ var paramz = {
 					by recycling pixels of previous frames with a transparent pixel,
 					'sprite' can have changing transparent areas in different frames,
 					but loses this extra compression savings.)
+	"generateBase64":<true|false(default)>,
+				Current versions of all major browsers now support URL.createObjectURL,
+				bypassing the need for expensive / time-consuming creation of a base-64 string,
+				although the spec is technically still working - draft.
+				.outputBase64 is deprecated and this parameter might be removed later.
+				Unless this is set to true,
+				.outputBase64 will not be generated, only .output containing a createObjectURL() blob link
+
 	"ppi":<uint for number of pixels per inch>
 	"ppm":<uint for number of pixels per metre> ('meter' in the US)
 					PNG can use ppi(pixels per inch) or ppm (pixels per metre)
@@ -163,8 +171,13 @@ ae.addFrame(f);
 	(repeat this several times)
 ae.saveAnimatedFile();
 function onEncodedFunc(ae){
-	//finally set the image src to the base 64 encoded animated image.
-	anImage.src = ae.outputBase64;
+	//Finally set the image src and href to the Object URL of the animated image.
+	//.output will contain the viewable/downloadable image link that can be used by src, href, etc.
+	//.output is currently a blob reference created by URL.createObjectURL() and will probably always as stay that.
+	//The createObjectURL blob link can be created instantly once the binary data is all there, cutting encoding time greatly. 
+	anImage.src = ae.output;
+	anImage.href = ae.output;
+	anImage.download = 'filename_that_your_image_should_have.' + ae.format;//This is optional. It gives a meaningful filename when saved.
 }
 	********** The following will be set internally and do *******
 	*************** NOT need to be set in paramz *****************
@@ -217,9 +230,14 @@ function AnimatedEncoder(paramz,simpleQuality){
 		changing it 'sprite' allows frames with differing transparent areas to work.
 		it may not effect other types
 	*/
+	
+	this.generateBase64 = false;//Set to true for legacy support. Deprecated. This may be removed later.
+	
+	
 	//following values should not be overridden:
-	this.output64 = null;
+	this.outputBase64 = null;
 	this.outputOctetStream = null;
+	this.output = null;
 	this.frames = [];
 	this.chunkPackI = 0;
 	
@@ -432,7 +450,7 @@ AnimatedEncoder.prototype.procFrame = function(){
 				this.frameBeingProcessed = 0;
 				this.procFrameStage = 0;//set stage to 0, final, so that it can draw and encode the image now that it has the color count.
 			}
-			setTimeout(function(){this_this.procFrame()},50);
+			setTimeout(function(){this_this.procFrame();},50);
 			if(this.onProgress){
 				this.progress += this.progressPerFrame;
 				this.onProgress(this.progress);
@@ -640,16 +658,20 @@ AnimatedEncoder.prototype.procFrame = function(){
 		//put a delay between each frame because image encoding
 		//can be very resource hungry, even with the browsers
 		//native or even hardware-accelerated encoding.
-		setTimeout(function(){this_this.procFrame()},100);
+		setTimeout(function(){this_this.procFrame();},100);
 	}else{//all frame bitstreams encoded and ready to be packed into file.
-		setTimeout(function(){this_this.packAnimatedFile()},100);
+		setTimeout(function(){this_this.packAnimatedFile();},100);
 	}
 };
 AnimatedEncoder.prototype.saveAnimatedFile = function(){
-	if(this.onProgress){this.onProgress(0);}
-	this.outputString = '';//intermediate state before base64 conversion can be done.
+	if(this.onProgress){this.onProgress(0);}//Make sure any progress displays are starting at 0%.
+	this.outputString = '';//(deprecated)intermediate state before base64 conversion can be done.
 	this.payloads = [];
 	this.frameBeingProcessed = 0;
+	
+	if(this.output){//Clean up the previous data if re-encoding.
+		URL.revokeObjectURL(this.output);
+	}
 
 	this.sourceFormat = this.format;//in most cases these are the same.
 	if(this.format == 'webm'){
@@ -689,7 +711,10 @@ AnimatedEncoder.prototype.saveAnimatedFile = function(){
 	
 	this.progress = 0;
 	this.procFrameStage = 0;//0 for final(there can be other stages like 100 for color counting.)
-	this.progressPerFrame = 0.5 / this.frames.length;
+	this.progressPerFrame = 1 / this.frames.length;
+	if(this.generateBase64){//Deprecated, legacy.
+		this.progressPerFrame /= 2;
+	}
 	
 	//initialize things that some formats need.
 	if(this.format == 'png'){
@@ -707,7 +732,9 @@ AnimatedEncoder.prototype.saveAnimatedFile = function(){
 			this.progressPerFrame /= 2;//it will have twice as many, because it now has two stages of processing.
 		}
 	}
-	this.procFrame();//begin the save process.
+	//Allow timeout for the progress display to visually reset if needed without the visual jerking back.
+	var this_this = this;//works around access bugs with 'this'
+	setTimeout(function(){this_this.procFrame();}, 100);//begin the save process.
 }
 
 AnimatedEncoder.prototype.packAnimatedFile = function(){
@@ -949,20 +976,27 @@ ID=0x18538067
 	//alert('before outputOctetStream set');
 	this.outputOctetStream = out8;
 	
-	//alert('after outputOctetStream set: '+this.outputOctetStream.length);
-	this.chunkPackI = 0;
-	this.packChunk();
+	this.output = URL.createObjectURL(
+			new Blob([out8], {'type':'image/'+this.format})
+			);
 	
-	//alert('outputOctetStream: '+String.fromCharCode.apply(null,out8));
+	//alert('after outputOctetStream set: '+this.outputOctetStream.length);
+	if(this.generateBase64){
+		this.chunkPackI = 0;
+		this.packChunk();
+	}else{
+		if(this.onEncoded){
+			this.onEncoded(this);
+		}
+	}
 	
 }
 AnimatedEncoder.prototype.packChunk = function(){
-	//alert('pack: len: '+this.outputOctetStream.length);
 	if(this.chunkPackI<this.outputOctetStream.length){
 		this.outputString += String.fromCharCode.apply(null,this.outputOctetStream.subarray(this.chunkPackI,Math.min(this.outputOctetStream.length,this.chunkPackI+2048)));
 		this.chunkPackI += 2048;
 		var this_this = this;//needed to stop breakage.
-		setTimeout(function(){this_this.packChunk()},5);//must wrap function this way or it will break variables
+		setTimeout(function(){this_this.packChunk();},5);//must wrap function this way or it will break variables
 		if(this.onProgress){
 			//allow devs to create a progress bar to show the image is being built
 			//by setting up this function which accepts a float of 0.0-1.0
