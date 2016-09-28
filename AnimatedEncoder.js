@@ -9,7 +9,7 @@ AnimatedPNGs.com
 for info on the formats this works with.
 
 Inspired by the Animated PNG/GIF encoder of my Deckromancy.com and Punykura.com projects,
-but built in Javascript rather than ActionScript 3 and leverages the native
+but built in Javascript rather than AS3 and can leverage the native
 (and in some cases hardware-accelerated) image encoders of the browser
 via Canvas.toDataURL()
 =============================================================================
@@ -32,7 +32,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 =============================================================================
 
-Version 1.0.5
+Version 1.0.6
 
 Format support is based on what formats a given browser supports as
 an export type from <canvas> .toDataURL()
@@ -79,8 +79,8 @@ The status of being able to VIEW animated images:
 
         | Animated PNG           | Animated WEBP                
 --------+------------------------+------------------------------------------
-Chrome, | Will tentatively       | Supported.
-Opera   | be supported Q4 2016.  |
+Chrome, | Being worked on        | Supported.
+Opera   | as of Q4 2016.         |
 --------+------------------------+------------------------------------------
 Firefox | Supported.             | Not supported.
         |      	                 | * Safari has reportedly been considering/
@@ -113,6 +113,17 @@ It is unclear if this behavior is part of the HTML5 spec or not.
 HTML5 does mandate that the image should be able to reproduce all original pixels
 exactly, but it is unclear if this means an image with a low number of colors that
 could be encoded with 8 bit indexed color is mandated to stay 32 bit RGBA.
+
+However, AnimatedEncoder can be comboed with pako for enhanced compression.
+
+https://github.com/nodeca/pako/
+  (Also MIT)
+  by    Vitaly Puzrin     https://github.com/puzrin
+  and   Andrei Tupitcyn   https://github.com/andr83
+
+If the pako script has been included in the page, it will be detected and made use of if possible.
+Images that can encode well with indexed PNG8 for additional savings will use pako's deflate()
+function to build custom IDAT/fdAT image data streams.
 
 USAGE:
 var paramz = {
@@ -245,7 +256,7 @@ function AnimatedEncoder(paramz,simpleQuality){
 		this[key] = paramz[key];
 	}
 	this.encoderCanvas = document.createElement('canvas');
-}
+};
 AnimatedEncoder.prototype.supportsFormat = function(desiredFormat){
 	//This means the animated format can be created in the user's current browser.
 	//It does not always mean that browser can display the animation.
@@ -265,7 +276,7 @@ AnimatedEncoder.prototype.supportsFormat = function(desiredFormat){
 		return true;
 	}//===========end of types that are supported if toDataURL is available for them.========
 	return false;
-}
+};
 AnimatedEncoder.prototype.initAnimation = function(){
 	//do stuff needed to initialize
 	//GIF needs to come up with a common palette selection,
@@ -332,13 +343,13 @@ AnimatedEncoder.prototype.addFrame = function(frameParamz){
 	}else if(frameParamz.url){
 		
 	}
-}
+};
 AnimatedEncoder.prototype.addFrameFromImage = function(frameParamz){
 	//frames should be added, then processing will be done afterwards.
 	this.frames.push(frameParamz);
 	//alert('frame added, now there are '+this.frames.length+' f.image: '+frameParamz.image);
 	if(this.onFrameAdded){this.onFrameAdded();}
-}
+};
 AnimatedEncoder.prototype.procFrame = function(){
 	var this_this = this;//works around access bugs with 'this'
 	var curFrame = this.frames[this.frameBeingProcessed];
@@ -396,11 +407,14 @@ AnimatedEncoder.prototype.procFrame = function(){
 	//for testing of inter-frame and such:
 		//if(!this.encoderCanvas.parentNode){document.getElementsByTagName('body')[0].appendChild(this.encoderCanvas);}
 	//TODO: Put inter-frame pixel recycling and quantization here.
+	
 	if(this.format=='png'||this.format=='gif'){//Inter-frame pixel recycling. Only PNG uses this currently. GIF will.
 		var fRGBA = ctx.getImageData(0,0,this.encoderCanvas.width,this.encoderCanvas.height);
 		if(this.procFrameStage == 0){//0 for final
 		this.buildDithMasks();
-		this.quant8Octets(fRGBA.data);
+		if(!this.palette){//Palette has its own quantization via converting to indexed color table.
+			this.quant8Octets(fRGBA.data);
+		}
 		//Canvas ImageData is in RGBA format(not ARGB).
 		if(this.frameBeingProcessed>0){
 			for(i=0;i<fRGBA.data.length;i+=4){
@@ -423,10 +437,6 @@ AnimatedEncoder.prototype.procFrame = function(){
 					this.pRGBA.data[i+2] = fRGBA.data[i+2];
 					this.pRGBA.data[i+3] = fRGBA.data[i+3];
 				}
-					/*fRGBA.data[i]   = 0xFF;
-					fRGBA.data[i+1] = 0x00;
-					fRGBA.data[i+2] = 0xFF;
-					fRGBA.data[i+3] = 0x7F;*/
 			}
 		}else{
 			this.transparencyLocks = [];
@@ -445,11 +455,119 @@ AnimatedEncoder.prototype.procFrame = function(){
 				this.incrementColorCount(fRGBA.data[i], fRGBA.data[i + 1], fRGBA.data[i + 2], fRGBA.data[i + 3]);
 			}
 			//alert(this.uniqueColors + ' colors');
+			//alert(this.sigColors + ' significant colors');
 			this.frameBeingProcessed++;
 			if(this.frameBeingProcessed == this.frames.length){
 				this.frameBeingProcessed = 0;
 				this.procFrameStage = 0;//set stage to 0, final, so that it can draw and encode the image now that it has the color count.
-			}
+				if(window.pako){
+					//If the Pako deflate library exists in the page, it can be used to create PNG8 (toDataURL() currently always PNG32 RGBA)
+					//for low quality settings, always force indexed PNG8
+					if(this.quality <= 0.5){
+						this.paletteLimit = Math.round(512 * this.quality);
+						if(this.paletteLimit < 13){
+							this.paletteLimit = 13;//Enough for 12 colors and transparent pixel.
+						}
+					}else if(this.quality <= 0.75){
+						//for higher-quality settings only switch to palette if
+						//the number of colors is not too high and it can handle
+						//the image without unacceptable quality loss.
+						if(this.sigColors <= 350 * (0.75 / this.quality) ){//Raise the maximum significant count for lower levels of quality
+							//.sigColors count is an estimation not exact.
+							//It needs to determine if it in general has too many colors for a palette to handle.
+							this.paletteLimit = 256;
+						}
+					}
+				}//========================== end if has PNG8 capability ============================
+				//alert('palette: ' + this.paletteLimit);
+				if(this.paletteLimit){//========== if using palette =================================
+				//Now that color counting has been done, build the palette.
+				var includeThresh = 4;
+				var sortThresh = 10;
+				//Threshold to include as a candidate for the palette.
+				if(this.width * this.height < 0x3FFF){
+					//Exception for small images (< 128 x 128)
+					includeThresh = 1;
+					sortThresh = 2;
+				}
+				this.palette = [];
+				var paletteCandidates = [];
+				var paletteColorCounts = [];
+						for(aI in this.colorLookup){
+						for(rI in this.colorLookup[aI]){
+						for(gI in this.colorLookup[aI][rI]){
+						for(bI in this.colorLookup[aI][rI][gI]){
+								if(this.colorLookup[aI][rI][gI][bI] >= includeThresh){//paletteCandidates.length < 256){
+									if(this.colorLookup[aI][rI][gI][bI] > sortThresh){
+										//Do not waste big resources on of looping to find the right ordered spot for
+										//very low occurring things, just throw them on the bottom of the list.
+										for(i = 0;i < paletteCandidates.length;i++){
+											if( this.colorLookup[aI][rI][gI][bI] > paletteColorCounts[i - 1]){
+												break;
+											}
+										}
+									}else{
+										i = paletteCandidates.length;
+									}
+									//Insert it just below anything that outranks it in usage.
+									paletteCandidates.splice(i, 0,
+										aI << 24 | rI << 16 | gI << 8 | bI
+									);
+									paletteColorCounts.splice(i, 0,
+										this.colorLookup[aI][rI][gI][bI]
+									);
+								}
+						}}}}
+				//alert(paletteCandidates.length + ' palette candidates over simple threshold');
+				
+				
+				
+				var zDif = 1;//range to zero out around it
+				while(paletteCandidates.length > this.paletteLimit && zDif <= 8){
+				for(i = 0;i < paletteCandidates.length;i++){
+					var palClr = paletteCandidates[i];
+					var palA = palClr >> 24 & 0xFF,
+					    palR = palClr >> 16 & 0xFF,
+					    palG = palClr >> 8 & 0xFF,
+					    palB = palClr & 0xFF;
+					var zMinA = Math.max(0, palA - zDif),
+					    zMinR = Math.max(0, palR - zDif),
+					    zMinG = Math.max(0, palG - zDif),
+					    zMinB = Math.max(0, palB - zDif),
+					    zMaxA = Math.min(256, palA + zDif),
+					    zMaxR = Math.min(256, palR + zDif),
+					    zMaxG = Math.min(256, palG + zDif),
+					    zMaxB = Math.min(256, palB + zDif);
+					//Seek ahead and elliminate colors that are too close to something already there,
+					//and would be too indistinguishable to the eye to be helpful.
+					for(var ellimI = i + 1;ellimI < paletteCandidates.length;ellimI++){
+						var ellimA = paletteCandidates[ellimI] >> 24 & 0xFF,
+						    ellimR = paletteCandidates[ellimI] >> 16 & 0xFF,
+						    ellimG = paletteCandidates[ellimI] >> 8  & 0xFF,
+						    ellimB = paletteCandidates[ellimI]       & 0xFF;
+						if(   ellimA >= zMinA && ellimA <= zMaxA
+						   && ellimR >= zMinR && ellimR <= zMaxR
+						   && ellimG >= zMinG && ellimG <= zMaxG
+						   && ellimB >= zMinB && ellimB <= zMaxB ){
+							paletteCandidates.splice(ellimI, 1);
+							ellimI--;
+							if(paletteCandidates.length <= this.paletteLimit){
+								break;
+							}
+						}
+					}
+					if(paletteCandidates.length <= this.paletteLimit){break;}
+				}
+					zDif++;
+					if(paletteCandidates.length <= this.paletteLimit){break;}
+				}//end while
+				//alert(paletteCandidates.length + ' palette candidates after eliminating similar');
+				for(i=0;i < this.paletteLimit && i < paletteCandidates.length;i++){
+					this.palette.push(paletteCandidates[i]);
+				}
+				//alert('palette size: ' + this.palette.length);
+				}//==== end if using palette ======================================
+			}//================== end if last frame for color count ===================
 			setTimeout(function(){this_this.procFrame();},50);
 			if(this.onProgress){
 				this.progress += this.progressPerFrame;
@@ -459,24 +577,16 @@ AnimatedEncoder.prototype.procFrame = function(){
 		}
 	}
 	
-	var datB64 = this.encoderCanvas.toDataURL('image/'+this.sourceFormat,parseFloat(this.quality));
-
-	//var datB64 = this.frames[this.frameBeingProcessed];
+	
 	//must strip:
 	//data:image/png;base64, (22)
-	//data:image/gif;base64, (22)
 	//data:image/webp;base64, (23)
-	var stripB64 = 22;
-	if(this.sourceFormat=='webp'){stripB64 = 23;}
-	//alert('datB64: '+datB64);
-	//alert('stripped: '+datB64.substring(stripB64));
-	var raw8 = this.string2uint8(atob(datB64.substring(stripB64)));
+	
+	var datB64;
+	var raw8;
 	var upd8;
 	var frameDelay = this.delay;//delay in milliseconds
 	if(curFrame.hasCustomDelay){frameDelay=curFrame.delay;}//use frame-specific delay if set.
-	if(this.format == 'png'){//Only allocate this for formats that will use it.
-		upd8 = new Uint8Array(new ArrayBuffer(raw8.length*1.05));//add some extra space to hold things like frame sequence count and fcTL chunks. 
-	}
 	//for(i=0;i<upd8.length;i++){
 	//	upd8[i] = 0x50;//fill with 'P' to see if there are errors writing when viewed from text editor.
 	//}
@@ -491,18 +601,105 @@ AnimatedEncoder.prototype.procFrame = function(){
 	var chunkSig;//aka 'FourCC'
 	var chunkLen;
 	var seekPos = 0;
-	var iData32;//canvas ImageData needed for pixel recycling on PNG/GIF
-	if(this.frameBeingProcessed==0){
-		if(this.format=='png'){
-			
-		}
-		if(this.format=='webp'){
-			
-		}
-	}
 	
 	//########################### PNG ########################
 	if(this.sourceFormat=='png'){
+	if(this.palette){
+		//PNG8
+							//(+1 for scanline filter mode)
+		//alert(frameFinalW + ' * ' + frameFinalH + ' + ' + frameFinalH + ' = ' + (frameFinalW * frameFinalH + frameFinalH) );
+		var index8 = new Uint8Array(new ArrayBuffer( frameFinalW * frameFinalH + frameFinalH));//+H to have a filter byte for each scanline.
+		//alert('index8 init length ' + index8.length);
+		var fRGBA = ctx.getImageData(0,0,this.encoderCanvas.width,this.encoderCanvas.height);
+		var indexPos = 0;
+		for(i=0;i<fRGBA.data.length;i+=4){
+			if( (i/4) % frameFinalW == 0){
+				index8[indexPos] = 0;
+				//must insert scanline filter mode byte
+				indexPos++;
+				//document.write('<br/>(0)');
+			}
+			index8[indexPos] = this.getPaletteIndex(fRGBA.data[i], fRGBA.data[i + 1], fRGBA.data[i + 2], fRGBA.data[i + 3], fRGBA.data, i);
+			//index8[indexPos] = fRGBA.data[i] + fRGBA.data[i + 1] + fRGBA.data[i + 2] < 127 ? 0 : 1; 
+			//document.write(index8[indexPos]?',':'.');
+			indexPos++;
+		}
+		var deflateOptions = {
+			windowBits:15,
+			memLevel:9,
+			level:9
+			//strategy:pako.Z_HUFFMAN_ONLY
+		};
+		index8 = window.pako.deflate(index8, deflateOptions);//use .deflate(), NOT .deflateRaw()
+		//alert('index8 ' + index8.length + ' indexPos: ' + indexPos);
+		//create the frame that will contain the chunk data and the deflated PNG8 stream
+		var frame8 = new Uint8Array(new ArrayBuffer(12 + index8.length
+					 + (this.frames.length > 1 ? 38 : 0)
+					 + (this.frameBeingProcessed == 0 ? 0 : 4) //(fdAT will have 4 extra bytes over IDAT (the frameSequenceCount))
+				));
+		var pos = 0;
+		if(this.frames.length > 1){//APNG chunks not needed when only one frame and no animation.
+		//fcTL chunk needed for each animation frame
+		//only one fcTL, though there maybe multiple contiguous fdAT following.
+			//(will just make one fdAT/IDAT for PNG8)
+		this.writeUint32(frame8, 26, pos, false);//length
+		this.writeFourCC(frame8, 'fcTL', pos + 4);
+		this.writeUint32(frame8, this.frameSequenceCount, pos + 8, false);//Number of frames.
+		this.writeUint32(frame8, frameFinalW, pos + 12, false);//width
+		this.writeUint32(frame8, frameFinalH, pos + 16, false);//height
+		this.writeUint32(frame8, frameFinalX, pos + 20, false);//x
+		this.writeUint32(frame8, frameFinalY, pos + 24, false);//y
+		this.writeUint16(frame8, frameDelay,  pos + 28, false);//Numerator (16-bit uint)
+		this.writeUint16(frame8, 1000,        pos + 30, false);//Denominator (16-bit uint)
+		if(this.animationStyle=='movie'){
+			frame8[pos+32] = 0x00;//Disposal. 0=none, 1=background, 2=previous
+			frame8[pos+33] = 0x01;//Blending. 0=source, 1 = over
+		}else{
+			frame8[pos+32] = 0x01;//Disposal. 0=none, 1=background, 2=previous
+			frame8[pos+33] = 0x00;//Blending. 0=source, 1 = over
+		}
+		this.writeUint32(frame8, this.getCRC32(frame8, pos + 4, pos + 34), pos + 34, false);
+		pos += 38;
+		this.frameSequenceCount++;
+		}//end if more than one frame
+		if(this.frameBeingProcessed == 0){//The first frame will be IDAT, after that it will be fdAT
+			this.writeUint32(frame8, index8.length, pos, false);//Does not have frameSeqCount
+			this.writeFourCC(frame8, 'IDAT', pos + 4);
+			for(i = 0;i < index8.length;i++){
+				frame8[pos + 8 + i] = index8[i];
+				//document.write( index8[i] + ',');
+			}
+			//0         1         2
+			//012345678901234567890
+			//####ASCI01234567CRRC
+			
+			this.writeUint32(frame8,this.getCRC32(frame8, pos + 4, pos + 8 + index8.length), pos + 8 + index8.length, false);//4 less with no FrameSequenceCount.
+			pos += index8.length + 12;//IDAT does not have frameSequenceCount, that was introduced in AnimatedPNG
+		}else{//fdAT
+			this.writeUint32(frame8, index8.length + 4, pos, false);//extra 4 to store frameSeqCount
+			this.writeFourCC(frame8, 'fdAT', pos + 4);
+			this.writeUint32(frame8, this.frameSequenceCount, pos + 8, false);//fdAT needs a uint32 to store frameSequenceCount
+			for(i = 0;i < index8.length;i++){
+				frame8[pos + 12 + i] = index8[i];
+			}
+			//0         1         2         3
+			//0123456789012345678901234567890
+			//####ASCIFFSQ01234567CRRC
+			this.writeUint32(frame8,this.getCRC32(frame8, pos + 4, pos + 12 + index8.length), pos + 12 + index8.length, false);//Must expand range to get the CRC over the FourCC and the extra 4 for the added FrameSequenceCount.
+			this.frameSequenceCount++;
+			pos += index8.length + 16;//must be 4 longer here to hold the FrameSequenceCount
+			//for(i = 0;i < frame8.length;i++){
+			//	document.write('[' + i + '] ' + frame8[i] + ' ' + String.fromCharCode(frame8[i]) + '<br/>');
+			//}
+		}
+		//alert('frame8 ' + frame8.length);
+		this.payloads.push(frame8);
+	}else{//==================== End if Palette =========================
+		
+		datB64 = this.encoderCanvas.toDataURL('image/'+this.sourceFormat,parseFloat(this.quality));
+		raw8 = this.string2uint8(atob(datB64.substring(22)));
+		upd8 = new Uint8Array(new ArrayBuffer(raw8.length*1.05));//add some extra space to hold things like frame sequence count and fcTL chunks.
+		
 		//Skip:
 		//(1) 0x89
 		//(3) PNG
@@ -541,7 +738,7 @@ AnimatedEncoder.prototype.procFrame = function(){
 						upd8[upd8_pos+32] = 0x01;//Disposal. 0=none, 1=background, 2=previous
 						upd8[upd8_pos+33] = 0x00;//Blending. 0=source, 1 = over
 					}
-					this.writeUint32(upd8,this.getCRC32(upd8,upd8_pos+4,upd8_pos+34),34,false);
+					this.writeUint32(upd8,this.getCRC32(upd8,upd8_pos+4,upd8_pos+34),upd8_pos+34,false);
 					upd8_pos += 38;
 					this.frameSequenceCount++;
 				}
@@ -608,9 +805,12 @@ AnimatedEncoder.prototype.procFrame = function(){
 		//}
 		//alert('adding payload from '+startIDAT+' to '+endIDAT);
 		//alert('end of png chunks');
+		}//===================== End if Non-Palette ======================
 	}//====================END PNG============================
 	//########################### WEBP #######################
 	if(this.sourceFormat=='webp'){
+		datB64 = this.encoderCanvas.toDataURL('image/'+this.sourceFormat,parseFloat(this.quality));
+		raw8 = this.string2uint8(atob(datB64.substring(23)));
 		//alert('...wat');
 		seekPos = 12;
 		//raw8 = fDat8.subarray(12);//skip RIFF<uint32>WEBP
@@ -693,6 +893,8 @@ AnimatedEncoder.prototype.saveAnimatedFile = function(){
 	
 	//TODO: maybe a reverse mode where it uses MINIMUM sizes?
 	if(this.autoDimensionsInternal){//autoDim will need to expand to fit all images.
+		this.width = 1;
+		this.height = 1;
 		//alert('autoDim updated from '+this.width+'x'+this.height+' ...');
 		for(var f=0;f<this.frames.length;f++){
 		//.naturalWidth/Height must be used to get the actual image size, NOT an html or styling that may be undefined.
@@ -702,6 +904,9 @@ AnimatedEncoder.prototype.saveAnimatedFile = function(){
 			//alert('...to '+this.width+'x'+this.height);
 		}
 	}
+	//string values from textfields can cause these to not function right as numbers.
+	this.width = parseInt(this.width);
+	this.height = parseInt(this.height);
 	
 	//Note that webp will process through as a an Animated WEBP would even if it just has one frame
 	//there are additional features that may be added later that will need this extracting and rebuilding process:
@@ -712,9 +917,11 @@ AnimatedEncoder.prototype.saveAnimatedFile = function(){
 	this.progress = 0;
 	this.procFrameStage = 0;//0 for final(there can be other stages like 100 for color counting.)
 	this.progressPerFrame = 1 / this.frames.length;
-	if(this.generateBase64){//Deprecated, legacy.
+	if(this.generateBase64){//Deprecated, legacy.(Although some things like bitmap embeds in SVG use base64, so it might stay)
 		this.progressPerFrame /= 2;
 	}
+	if(this.paletteLimit){delete this.paletteLimit;}
+	if(this.palette){delete this.palette;}
 	
 	//initialize things that some formats need.
 	if(this.format == 'png'){
@@ -735,7 +942,7 @@ AnimatedEncoder.prototype.saveAnimatedFile = function(){
 	//Allow timeout for the progress display to visually reset if needed without the visual jerking back.
 	var this_this = this;//works around access bugs with 'this'
 	setTimeout(function(){this_this.procFrame();}, 100);//begin the save process.
-}
+};
 
 AnimatedEncoder.prototype.packAnimatedFile = function(){
 	var outputLen = 0;
@@ -744,6 +951,7 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 	var chunkSig;
 	var numVal;
 	var writePos = 0;
+	var savePos = 0;
 	var payload;
 	var p;
 	var frameDelay;//if frame delay logic is being done here rather than elsewhere
@@ -879,7 +1087,7 @@ ID=0x18538067
 
 	if(this.format == 'png'){
 		var crc32;
-		outputLen += 8;//Header is& MagicNumber
+		outputLen += 8;//Header & MagicNumber
 		outputLen += 25;//IHDR (whole chunks include length,sig,data,CRC)
 		if(this.frames.length > 1){//Must have 2+ frames to be Animated PNG (Check frames not payloads, payloads do not get built until after this.)
 			//do not output Animated PNG chunks if not needed.
@@ -896,6 +1104,10 @@ ID=0x18538067
 		outputLen += 12;//IEND (empty chunk);
 		if(this.ppi || this.ppm){//pHYs is optional
 			outputLen += 21;//pHYs
+		}
+		if(this.palette){
+			outputLen += 12 + this.palette.length * 3;//PLTE chunk, 3 bytes per color 
+			outputLen += 12 + this.palette.length;//tRNS chunk, 1 byte per color
 		}
 		//The length has been calculated. Now allocate the space and write it.
 		out8 = new Uint8Array(new ArrayBuffer(outputLen));
@@ -917,7 +1129,11 @@ ID=0x18538067
 		this.writeUint32(out8,this.width,16,false);//width
 		this.writeUint32(out8,this.height,20,false);//height
 		out8[24] = 0x08;//bit depth, 8 bits per color channel.
-		out8[25] = 0x06;//Packed field. Truecolor and alpha bits set, 00000110
+		if(this.palette){
+			out8[25] = 0x03;//Packed field. color(0x2) and palette(0x1) bits set, 00000011
+		}else{
+			out8[25] = 0x06;//Packed field. color(0x2) and alpha(0x4) bits set, 00000110
+		}
 		out8[26] = 0x00;//Compression Mode, 0=DEFLATE, the only defined type
 		out8[27] = 0x00;//Filter Mode, 0=Adaptive, the only defined type
 		out8[28] = 0x00;//Interlace Method, 0=No interlacing.
@@ -945,6 +1161,33 @@ ID=0x18538067
 			this.writeUint32(out8, this.getCRC32(out8, writePos + 4, writePos + 17), writePos + 17,false);
 			writePos += 21;
 		}//end if has pHYs
+
+		if(this.palette){
+			this.writeUint32(out8, this.palette.length * 3, writePos,false);
+			this.writeFourCC(out8, 'PLTE', writePos + 4);
+			savePos = writePos + 4;
+			writePos += 8;
+			for(i = 0;i < this.palette.length;i++){
+				out8[writePos    ] = this.palette[i] >> 16 & 0xFF;
+				out8[writePos + 1] = this.palette[i] >> 8 & 0xFF;
+				out8[writePos + 2] = this.palette[i] & 0xFF;
+				writePos += 3;
+			}
+			this.writeUint32(out8, this.getCRC32(out8, savePos, writePos), writePos,false);
+			writePos += 4;
+			
+			//Now write tRNS, which must be after PLTE and come before IDAT.
+			this.writeUint32(out8, this.palette.length, writePos,false);
+			this.writeFourCC(out8, 'tRNS', writePos + 4);
+			savePos = writePos + 4;
+			writePos += 8;
+			for(i = 0;i < this.palette.length;i++){
+				out8[writePos] = this.palette[i] >> 24 & 0xFF;
+				writePos ++;
+			}
+			this.writeUint32(out8, this.getCRC32(out8, savePos, writePos), writePos,false);
+			writePos += 4;
+		}
 		
 		if(this.payloads.length > 1){//At least one frame to be an Animated PNG
 			//do not output Animated PNG chunks if not needed.
@@ -990,7 +1233,7 @@ ID=0x18538067
 		}
 	}
 	
-}
+};
 AnimatedEncoder.prototype.packChunk = function(){
 	if(this.chunkPackI<this.outputOctetStream.length){
 		this.outputString += String.fromCharCode.apply(null,this.outputOctetStream.subarray(this.chunkPackI,Math.min(this.outputOctetStream.length,this.chunkPackI+2048)));
@@ -1016,7 +1259,7 @@ AnimatedEncoder.prototype.packChunk = function(){
 			this.onEncoded(this);
 		}
 	}
-}
+};
 AnimatedEncoder.prototype.string2uint8 = function(str){
 	var u8 = new Uint8Array(new ArrayBuffer(str.length));
 	for(var i=0;i<str.length;i++){
@@ -1029,7 +1272,7 @@ AnimatedEncoder.prototype.writeFourCC = function(out8,chunkSig,pos){
 	out8[pos+1] = chunkSig.charCodeAt(1);
 	out8[pos+2] = chunkSig.charCodeAt(2);
 	out8[pos+3] = chunkSig.charCodeAt(3);
-}
+};
 AnimatedEncoder.prototype.writeUint32 = function(out8,u32,pos,isLittleEndian){
 	if(isLittleEndian){
 		out8[pos+0] = u32&0xFF;
@@ -1042,7 +1285,7 @@ AnimatedEncoder.prototype.writeUint32 = function(out8,u32,pos,isLittleEndian){
 		out8[pos+2] = u32>>8&0xFF;
 		out8[pos+3] = u32&0xFF;
 	}
-}
+};
 AnimatedEncoder.prototype.writeUint24 = function(out8,u24,pos,isLittleEndian){
 	if(isLittleEndian){
 		out8[pos+0] = u24&0xFF;
@@ -1053,7 +1296,7 @@ AnimatedEncoder.prototype.writeUint24 = function(out8,u24,pos,isLittleEndian){
 		out8[pos+1] = u24>>8&0xFF;
 		out8[pos+2] = u24&0xFF;
 	}
-}
+};
 AnimatedEncoder.prototype.writeUint16 = function(out8,u16,pos,isLittleEndian){
 	if(isLittleEndian){
 		out8[pos+0] = u16&0xFF;
@@ -1062,7 +1305,7 @@ AnimatedEncoder.prototype.writeUint16 = function(out8,u16,pos,isLittleEndian){
 		out8[pos+0] = u16>>8&0xFF;
 		out8[pos+1] = u16&0xFF;
 	}
-}
+};
 AnimatedEncoder.prototype.int2uint = function(theNumber){
 	//Javascript converts numbers to signed int 32 when doing bitwise ops.
 	//cut off the last bit that it is using as a sign, and add
@@ -1076,7 +1319,7 @@ AnimatedEncoder.prototype.int2uint = function(theNumber){
 		theNumber += 0x80000000;
 	}
 	return theNumber;
-}
+};
 AnimatedEncoder.prototype.initCRCTable = function(){
 	this.crcTable = new Uint32Array(256);//this broke when using ArrayBuffer(256), not sure why
 	var calc;
@@ -1099,7 +1342,7 @@ AnimatedEncoder.prototype.initCRCTable = function(){
 	//alert('table at 127: '+this.crcTable[127]);
 	//alert('crcTable: '+testStr);
 	//alert((0x80000F00 ^ 0x00000E00).toString(16)+', u: '+this.int2uint(0x80000F00 ^ 0x00000E00).toString(16));
-}
+};
 AnimatedEncoder.prototype.getCRC32 = function(u8,startIndex,endIndex){
 	//if the CRC table has not been initialized, set it up.
 	if(!this.crcTable){
@@ -1122,7 +1365,7 @@ AnimatedEncoder.prototype.getCRC32 = function(u8,startIndex,endIndex){
 	//(two's complement would be padded with 1's to the left after shift)
 	//(whether signed or unsigned it is still a row of 32 bits)
 	return crc ^ 0xFFFFFFFF;
-}
+};
 AnimatedEncoder.prototype.buildDithMasks = function(){
 	var maskSize = this.width*this.height*4;
 	if(this.width==this.ditherWidth&&this.height==this.ditherHeight){return;}//do not need to remake it if it was already done on the same dimensions
@@ -1160,34 +1403,34 @@ AnimatedEncoder.prototype.buildDithMasks = function(){
 			dHalf = !dHalf;//toggle it on each new scanline to make checkers.
 		}
 	}
-}
+};
 AnimatedEncoder.prototype.quant8Octets = function(octets){
 		var quant8 = 0;//full quality. no quantization or dithering.
-		if(this.quality<1){
+		if(this.quality < 1){
 			quant8 = 1;//Not usually much savings, but hard to tell the difference from the full quality.
 		}
-		if(this.quality<0.9){
+		if(this.quality <= 0.9){
 			quant8 = 2;//Starts saving a good portion usually, and still can be fairly hard to tell from full quality.
 		}
-		if(this.quality<0.8){
+		if(this.quality <= 0.8){
 			quant8 = 3;//This level has allot of savings and the artifacting can be noticed but is not too bad.
 			//This is ideal in many cases. It sometimes even cuts the size in half without much noticeable difference.
 		}
-		if(this.quality<0.7){
+		if(this.quality <= 0.7){
 			quant8 = 4;//This can save allot of extra file size, the but artifacts really start showing up here.
 		}
-		if(this.quality<0.5){
+		if(this.quality <= 0.5){
 			quant8 = 5;//The dither artifacting becomes very noticeable here, but it still looks OK in some cases.
 				//The size savings are quite good.
 		}
-		if(this.quality<0.3){
+		if(this.quality <= 0.3){
 			quant8 = 6;//Starts too look quite blocky. It has a color-banding effect even with help from dithering.
 			//The size savings are very strong, but the quality is becoming weak at this point.
 		}
-		if(this.quality<0.1){
+		if(this.quality <= 0.1){
 			quant8 = 7;//Even smaller size and less quality. Heavy artifacting and color banding.
 		}
-		if(this.quality<=0){
+		if(this.quality <= 0){
 			quant8 = 8;//Saves more size, but the artifacting and color banding are extreme.
 		}
 		if(!quant8){return;}//no need to do anything if leaving fully lossless.
@@ -1244,35 +1487,158 @@ AnimatedEncoder.prototype.quant8Octets = function(octets){
 			
 			oBits &= QUANT_MASK[quant8];
 			if(roundUp){oBits+=QUANT_INC[quant8];}
-			if(oBits>0xFF){oBits=0xFF;} 
+			if(oBits>0xFF){oBits=0xFF;}
 			octets[i] = oBits;
+			
+
+			/*
+			oBits = octets[i];
+			var incrementDif = oBits%QUANT_INC[quant8];
+			var nChange = incrementDif/QUANT_INC[quant8];
+			var roundUp = nChange > 0.5;
+			
+			oBits &= QUANT_MASK[quant8];
+			if(roundUp){oBits+=QUANT_INC[quant8];}
+			if(oBits>0xFF){oBits=0xFF;}
+			this.distQuant(octets[i] - oBits, octets, i, i % 4);
+			octets[i] = oBits;*/
 		}//end if quantize this pixel
 	}
-}
-
+};
 
 AnimatedEncoder.prototype.initColorCounting = function(){
-	this.colorRangeByAlpha = [];
-	for(var i = 0;i < 256;i++){//create an array for each potential level of opacity.
-		this.colorRangeByAlpha.push([]);
-	}
+	this.colorLookup = [];
+	//for(var i = 0;i < 256;i++){//create an array for each potential level of opacity.
+	//	this.colorLookup.push([]);
+	//}
 	//having one array indexed by argb or rgba would be a problem since 32 bit numbers in javascript are signed.
+	this.sigColorLookup = [];//Sig color lookup does not have an issue with signed numbers because it will count quantized sectors
+				//and will never reach the top values of the uint that could flow into a negative index.
 	this.uniqueColors = 0;
-}
+	this.sigColors = 0;//Significant colors.
+		//Use significant colors count to determine if it needs to go indexed color.
+		//Things like gradients can cause it to go into RGBA mode when not optimal
+		//if going off of uniqueColors.
+	this.significantThresh = Math.max(8,Math.round(this.width * this.height * this.frames.length * 0.0004));
+};
+
 AnimatedEncoder.prototype.incrementColorCount = function(red, green, blue, alpha){
-	var rgb = red << 16 | green << 8 | blue;
-	if(this.colorRangeByAlpha[alpha][rgb]){
-		this.colorRangeByAlpha[alpha][rgb]++;
+	//var rgb = red << 16 | green << 8 | blue;
+	if(this.colorLookup[alpha]){
+		if(this.colorLookup[alpha][red]){
+			if(!this.colorLookup[alpha][red][green]){
+				this.colorLookup[alpha][red][green] = [];
+			}
+		}else{
+			this.colorLookup[alpha][red] = [];
+			this.colorLookup[alpha][red][green] = [];
+		}
 	}else{
-		this.colorRangeByAlpha[alpha][rgb] = 1;
+		this.colorLookup[alpha] = [];
+		this.colorLookup[alpha][red] = [];
+		this.colorLookup[alpha][red][green] = [];
+	}
+	//Now that it has ensured any needed arrays exist, increment it if it exists, otherwise create it.
+	if(this.colorLookup[alpha][red][green][blue]){
+		this.colorLookup[alpha][red][green][blue]++;
+		//if(this.colorLookup[alpha][red][green][blue] == this.significantThresh){
+		//	this.sigColors++;//Increment this when given color reaches the significant count level.
+		//}
+	}else{
+		this.colorLookup[alpha][red][green][blue] = 1;
 		this.uniqueColors++;
 	}
-}
-AnimatedEncoder.prototype.getColorCount = function(red, green, blue, alpha){
-	var rgb = red << 16 | green << 8 | blue;
-	if(this.colorRangeByAlpha[alpha][rgb]){//Remember, undefined will evaluate as false.
-		return this.colorRangeByAlpha[alpha][rgb];
+	//Needs to floor, not round (255 / 8 will be 31.875 going on highest index of the 5-bit channel: 11111)
+	var sigIndex = alpha / 4 << 15 | red / 4 << 10 | green / 4 << 5 | blue / 4;
+	if(this.sigColorLookup[sigIndex]){
+		this.sigColorLookup[sigIndex]++;//Note: A simple true false might be enough for this, may want to switch it to that.
+		if(this.colorLookup[alpha][red][green][blue] == this.significantThresh){
+			this.sigColors++;
+		}
 	}else{
-		return 0;
+		this.sigColorLookup[sigIndex] = 1;
 	}
-}
+};
+AnimatedEncoder.prototype.getColorCount = function(red, green, blue, alpha){
+	//var rgb = red << 16 | green << 8 | blue;
+	//Remember, undefined will evaluate as false.
+	if(   this.colorLookup[alpha]
+	   && this.colorLookup[alpha][red]
+	   && this.colorLookup[alpha][red][green]
+	   && this.colorLookup[alpha][red][green][blue]
+		){//return count if it exists
+		return this.colorLookup[alpha][red][green][blue];
+	}
+	return 0;//otherwise, return 0.
+};
+AnimatedEncoder.prototype.getPaletteIndex = function(red, green, blue, alpha, fData, dith){
+	var colorDif;
+	var closestColorDif = 0x7FFFFFFF;//Don't go full value, remember JS numbers are 2's complement signed.
+	var closestColor = 0;
+	
+	var plteR, plteG, plteB, plteA;
+	var curColor;
+	for(var i = 0; i < this.palette.length; i++){
+		curColor = this.palette[i];
+		plteA = curColor >> 24 & 0xFF;
+		plteR = curColor >> 16 & 0xFF;
+		plteG = curColor >> 8 & 0xFF;
+		plteB = curColor & 0xFF;
+		colorDif =   Math.abs(red - plteR)
+			   + Math.abs(green - plteG)
+			   + Math.abs(blue - plteB)
+			   + Math.abs(alpha - plteA);
+		if(colorDif < closestColorDif){
+			closestColorDif = colorDif;
+			closestColor = i;
+		}
+	}
+	
+	this.distQuant(red   - (this.palette[closestColor] >> 16 & 0xFF), fData, dith, 0);
+	this.distQuant(green - (this.palette[closestColor] >> 8  & 0xFF), fData, dith, 1);
+	this.distQuant(blue  - (this.palette[closestColor]       & 0xFF), fData, dith, 2);
+	this.distQuant(alpha - (this.palette[closestColor] >> 24 & 0xFF), fData, dith, 3);
+	
+	return closestColor;
+};
+AnimatedEncoder.prototype.distQuant = function(qError, fData, i, cOffset){
+	var errorFract = 0;
+	var errorSeek = 0;
+	
+	var dithW = Math.floor(i / 4) % this.width;
+	var dithH = Math.floor( (i / 4) / this.width);
+	
+	//Distribute quantization errors like this:
+	//
+	//          [pixel] [7/16]
+	//   [3/16] [5/16 ] [1/16]
+	if(dithW + 1 < this.width){
+		errorFract = 7/16;
+		errorSeek = 4;
+		if(fData[i + errorSeek + 3]){
+			fData[i + errorSeek + cOffset] += qError * errorFract;
+		}
+	}
+	if(dithH + 1 < this.height){
+		if(dithW > 1){
+			errorFract = 3/16;
+			errorSeek = this.width * 4 - 4;//scroll down to the next line and one to the left
+			if(fData[i + errorSeek + 3]){//do not push errors onto fully transparent pixels, it can cause recycled
+						//transparent areas to get spare dots drawn over them
+				fData[i + errorSeek + cOffset] += qError * errorFract;
+			}
+		}
+		errorFract = 5/16;
+		errorSeek = this.width * 4;//scroll down to the next line and one to the left
+		if(fData[i + errorSeek + 3]){
+			fData[i + errorSeek + cOffset] += qError * errorFract;
+		}
+		if(dithW + 1 < this.width){
+			errorFract = 1/16;
+			errorSeek = this.width * 4 + 4;//scroll down to the next line and one to the left
+			if(fData[i + errorSeek + 3]){
+				fData[i + errorSeek + cOffset] += qError * errorFract;
+			}
+		}
+	}
+};
