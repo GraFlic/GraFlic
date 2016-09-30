@@ -32,7 +32,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 =============================================================================
 
-Version 1.0.6
+Version 1.0.7
 
 Format support is based on what formats a given browser supports as
 an export type from <canvas> .toDataURL()
@@ -410,16 +410,19 @@ AnimatedEncoder.prototype.procFrame = function(){
 	
 	if(this.format=='png'||this.format=='gif'){//Inter-frame pixel recycling. Only PNG uses this currently. GIF will.
 		var fRGBA = ctx.getImageData(0,0,this.encoderCanvas.width,this.encoderCanvas.height);
-		if(this.procFrameStage == 0){//0 for final
-		this.buildDithMasks();
-		if(!this.palette){//Palette has its own quantization via converting to indexed color table.
-			this.quant8Octets(fRGBA.data);
-		}
+		if(this.procFrameStage == 0){//================ 0 for final ============================
 		//Canvas ImageData is in RGBA format(not ARGB).
+		if(this.frameBeingProcessed == 0){
+			this.transparencyLocks = [];
+		}
+		if(!this.palette){//======= can cause trouble if this logic is run on the non-indexed pixels when going indexed.
+		//Palette has its own quantization via converting to indexed color table. And uses a different style of dithering.
+		this.buildDithMasks();//must have masks before quantizing
+		this.quant8Octets(fRGBA.data);
 		if(this.frameBeingProcessed>0){
 			for(i=0;i<fRGBA.data.length;i+=4){
 				//If the pixel is the same as previous frame, recycle it by drawing nothing over it.
-				if(this.animationStyle=='movie'&& 
+				if(this.isMovie && 
 				   (this.transparencyLocks[i/4]
 				    ||
 				    (fRGBA.data[i]   == this.pRGBA.data[i]
@@ -439,14 +442,15 @@ AnimatedEncoder.prototype.procFrame = function(){
 				}
 			}
 		}else{
-			this.transparencyLocks = [];
 			for(i=0;i<fRGBA.data.length;i+=4){
 				//only lock the pixels in type 'movie' sprite disposes frames and can change transparency
-				this.transparencyLocks.push(this.animationStyle=='movie'&&fRGBA.data[i+3]<0xFF);//If any transparency, lock the pixel by setting true.
+				this.transparencyLocks.push(this.isMovie && fRGBA.data[i+3]<0xFF);//If any transparency, lock the pixel by setting true.
 			}
 			this.pRGBA = fRGBA;//If the first frame, just save the state of it for the next frame to compare.
+			//TODO: make it a plain array so that pre multiplying cannot mess with it?
 		}
 		ctx.putImageData(fRGBA,0,0);
+		}//=================== end not palette ===================
 		}else if(this.procFrameStage == 100){//end if final stage
 			//====================== if stage 100, color count ======================
 			//This will count all of the colors for all frames before processing the frames,
@@ -479,7 +483,7 @@ AnimatedEncoder.prototype.procFrame = function(){
 						}
 					}
 				}//========================== end if has PNG8 capability ============================
-				//alert('palette: ' + this.paletteLimit);
+				//alert('palette limit: ' + this.paletteLimit);
 				if(this.paletteLimit){//========== if using palette =================================
 				//Now that color counting has been done, build the palette.
 				var includeThresh = 4;
@@ -491,8 +495,17 @@ AnimatedEncoder.prototype.procFrame = function(){
 					sortThresh = 2;
 				}
 				this.palette = [];
-				var paletteCandidates = [];
-				var paletteColorCounts = [];
+				this.paletteExactMatch = [];//Used to quickly detect an exact match in the palette and reject quantization overflow
+				//Insert 0 with a maxed out count, some movie type animations are omitting the transparent
+				//value from the palette. Since the transparent pixel is so essential,
+				//it can be forced if there is animation.
+				var paletteCandidates  = [0x00000000];
+				var paletteColorCounts = [0x7FFFFFFF];
+				if(this.frames.length < 2){//If no animation, do not force the transparent pixel.
+					paletteCandidates.pop();
+					paletteColorCounts.pop();
+				}
+				var palA, palR, palG, palB;
 						for(aI in this.colorLookup){
 						for(rI in this.colorLookup[aI]){
 						for(gI in this.colorLookup[aI][rI]){
@@ -524,9 +537,10 @@ AnimatedEncoder.prototype.procFrame = function(){
 				
 				var zDif = 1;//range to zero out around it
 				while(paletteCandidates.length > this.paletteLimit && zDif <= 8){
+				
 				for(i = 0;i < paletteCandidates.length;i++){
 					var palClr = paletteCandidates[i];
-					var palA = palClr >> 24 & 0xFF,
+					    palA = palClr >> 24 & 0xFF,
 					    palR = palClr >> 16 & 0xFF,
 					    palG = palClr >> 8 & 0xFF,
 					    palB = palClr & 0xFF;
@@ -563,7 +577,23 @@ AnimatedEncoder.prototype.procFrame = function(){
 				}//end while
 				//alert(paletteCandidates.length + ' palette candidates after eliminating similar');
 				for(i=0;i < this.paletteLimit && i < paletteCandidates.length;i++){
+					palA = paletteCandidates[i] >> 24 & 0xFF;
+					palR = paletteCandidates[i] >> 16 & 0xFF;
+					palG = paletteCandidates[i] >> 8 & 0xFF;
+					palB = paletteCandidates[i] & 0xFF;
 					this.palette.push(paletteCandidates[i]);
+					//track exact matches
+					if(this.paletteExactMatch[palA] === undefined){//(0 would be valid)
+						this.paletteExactMatch[palA] = [];
+					}
+					if(this.paletteExactMatch[palA][palR] === undefined){
+						this.paletteExactMatch[palA][palR] = [];
+					}
+					if(this.paletteExactMatch[palA][palR][palG] === undefined){
+						this.paletteExactMatch[palA][palR][palG] = [];
+					}
+					this.paletteExactMatch[palA][palR][palG][palB] = true;
+					if(palA == 0){this.paletteTransI = i;}//Track the index to the fully transparent pixel.
 				}
 				//alert('palette size: ' + this.palette.length);
 				}//==== end if using palette ======================================
@@ -611,18 +641,27 @@ AnimatedEncoder.prototype.procFrame = function(){
 		var index8 = new Uint8Array(new ArrayBuffer( frameFinalW * frameFinalH + frameFinalH));//+H to have a filter byte for each scanline.
 		//alert('index8 init length ' + index8.length);
 		var fRGBA = ctx.getImageData(0,0,this.encoderCanvas.width,this.encoderCanvas.height);
+		var qData = null;//was experimental//var qData = new Int16Array(new ArrayBuffer(fRGBA.data.length * 2));//Will hold quantization errors distributed from nearby pixels.
+			//The are stored in this separate array so that exact match pixels can reject them.
+			//Quant overflow can be negative, and must hold at least a byte AND a sign (Array buffer length is bytes, so * 2 length if 16-bit)
 		var indexPos = 0;
 		for(i=0;i<fRGBA.data.length;i+=4){
-			if( (i/4) % frameFinalW == 0){
+			//W and H position needed for dithering.
+			var dithW = Math.floor(i / 4) % frameFinalW;
+			var dithH = Math.floor( (i / 4) / frameFinalH);
+			if( dithW == 0){
 				index8[indexPos] = 0;
 				//must insert scanline filter mode byte
 				indexPos++;
-				//document.write('<br/>(0)');
 			}
-			index8[indexPos] = this.getPaletteIndex(fRGBA.data[i], fRGBA.data[i + 1], fRGBA.data[i + 2], fRGBA.data[i + 3], fRGBA.data, i);
+			index8[indexPos] = this.getPaletteIndex(fRGBA.data, qData, i, dithW, dithH);
 			//index8[indexPos] = fRGBA.data[i] + fRGBA.data[i + 1] + fRGBA.data[i + 2] < 127 ? 0 : 1; 
 			//document.write(index8[indexPos]?',':'.');
 			indexPos++;
+		}
+		//alert('should have ' + ((frameFinalW * frameFinalH) + frameFinalH) + ', stopped at ' + indexPos);
+		if(this.frameBeingProcessed == 0){
+			this.pRGBA = fRGBA;
 		}
 		var deflateOptions = {
 			windowBits:15,
@@ -651,7 +690,7 @@ AnimatedEncoder.prototype.procFrame = function(){
 		this.writeUint32(frame8, frameFinalY, pos + 24, false);//y
 		this.writeUint16(frame8, frameDelay,  pos + 28, false);//Numerator (16-bit uint)
 		this.writeUint16(frame8, 1000,        pos + 30, false);//Denominator (16-bit uint)
-		if(this.animationStyle=='movie'){
+		if(this.isMovie){
 			frame8[pos+32] = 0x00;//Disposal. 0=none, 1=background, 2=previous
 			frame8[pos+33] = 0x01;//Blending. 0=source, 1 = over
 		}else{
@@ -731,7 +770,7 @@ AnimatedEncoder.prototype.procFrame = function(){
 					this.writeUint32(upd8,frameFinalY,upd8_pos+24,false);//y
 					this.writeUint16(upd8,frameDelay,upd8_pos+28,false);//Numerator (16-bit uint)
 					this.writeUint16(upd8,1000,upd8_pos+30,false);//Denominator (16-bit uint)
-					if(this.animationStyle=='movie'){
+					if(this.isMovie){
 						upd8[upd8_pos+32] = 0x00;//Disposal. 0=none, 1=background, 2=previous
 						upd8[upd8_pos+33] = 0x01;//Blending. 0=source, 1 = over
 					}else{
@@ -920,8 +959,15 @@ AnimatedEncoder.prototype.saveAnimatedFile = function(){
 	if(this.generateBase64){//Deprecated, legacy.(Although some things like bitmap embeds in SVG use base64, so it might stay)
 		this.progressPerFrame /= 2;
 	}
+	
+	//wipe palette if left over
 	if(this.paletteLimit){delete this.paletteLimit;}
 	if(this.palette){delete this.palette;}
+	if(this.paletteExactMatch){delete this.paletteExactMatch;}
+	if(this.paletteTransI){delete this.paletteTransI;}
+	
+	this.isMovie = this.animationStyle == 'movie';//some bools for faster logic than string compare
+	this.isSprite = !this.isMovie;
 	
 	//initialize things that some formats need.
 	if(this.format == 'png'){
@@ -1524,6 +1570,13 @@ AnimatedEncoder.prototype.initColorCounting = function(){
 
 AnimatedEncoder.prototype.incrementColorCount = function(red, green, blue, alpha){
 	//var rgb = red << 16 | green << 8 | blue;
+	if(!alpha){
+		//Force all fully transparent entries to be exactly the same, causing duplicates to be eliminated.
+		//(Although most or all canvas implementations force this anyways via pre-multiplied alpha)
+		//(do it here so that all fully transparent counts are combined)
+		red = 0; green = 0; blue = 0;
+		//TODO: Should this be done on all colors with transparency? To truncate them at pre-multipled alpha value and prevent duplicates?
+	}
 	if(this.colorLookup[alpha]){
 		if(this.colorLookup[alpha][red]){
 			if(!this.colorLookup[alpha][red][green]){
@@ -1571,15 +1624,98 @@ AnimatedEncoder.prototype.getColorCount = function(red, green, blue, alpha){
 	}
 	return 0;//otherwise, return 0.
 };
-AnimatedEncoder.prototype.getPaletteIndex = function(red, green, blue, alpha, fData, dith){
+AnimatedEncoder.prototype.getPaletteIndex = function(fData, qData, i, dithW, dithH){
+	var red   = fData[i], 
+	    green = fData[i + 1],
+	    blue  = fData[i + 2],
+	    alpha = fData[i + 3];
+	var lockIndex = i / 4;
+	if(   this.frameBeingProcessed > 0
+	   && this.isMovie
+	   && this.transparencyLocks[lockIndex]){//no locks will be set yet on the first frame(locks will only have been set true on movie mode)
+		fData[i]   = 0x00;
+		fData[i+1] = 0x00;
+		fData[i+2] = 0x00;
+		fData[i+3] = 0x00;
+		return this.paletteTransI;
+	}
+	//[A],[R],[G] are arrays, [B] is a value(true) or undefined.
+	//var dithRGBA = false;
+	if( this.paletteExactMatch[alpha]
+	 && this.paletteExactMatch[alpha][red]
+	 && this.paletteExactMatch[alpha][red][green]
+	 && this.paletteExactMatch[alpha][red][green][blue] ){
+		/*for(var qOff = 0; qOff < 4; qOff++){
+			qData[i + qOff] = 0;//if(qData[i + qOff] !== undefined){delete qData[i + qOff];}//delete unneeded value.
+		}*/
+	}else{
+		var dithRGBA = [];
+		
+		var dithHalf = (dithW + dithH) % 2 == 0;
+		var dithFourth = (((dithH)%4==2&&(dithW  )%4==0) || ((dithH)%4==0&&(dithW  )%4==2));
+		
+		for(var c = 0; c < 4; c++){
+			var qIncr = 0x20;
+			var qMask = 0xE0;
+			var incrementDif = fData[i + c] % qIncr;
+			var nChange = incrementDif / qIncr;
+			var roundUp;
+			if(nChange > 0.375 && nChange < 0.625){//value about in the middle
+				roundUp = dithHalf;//this.dithMaskHalf[i];//?Math.floor(nVal):Math.ceil(nVal);//checkered even split
+			}else if(nChange > 0.125 && nChange <= 0.375){//value relatively close to lower number
+				roundUp = dithFourth;//this.dithMaskFourth[i];//return dithAltB?Math.ceil(nVal):Math.floor(nVal);//sparse ceiling
+			}else if(nChange >= 0.625 && nChange < 0.875){//value relatively close to upper number
+				roundUp = !dithFourth;//!this.dithMaskFourth[i];//return dithAltB?Math.floor(nVal):Math.ceil(nVal);//sparse floor
+			}else{
+				roundUp = Math.round(nChange);
+			}
+			//(((h+3)%4==2&&(w  )%4==0) || ((h+3)%4==0&&(w  )%4==2));//dFourth;
+			
+			dithRGBA.push(fData[i + c] & qMask);
+			if(roundUp){dithRGBA[c] += qIncr;}// * (nChange > 0.5)? 1 : -1;}
+			if(dithRGBA[c] > 0xFF){dithRGBA[c] = 0xFF;}
+			//octets[i] = oBits;
+		}
+		if(Math.abs(red   - dithRGBA[0])
+		 + Math.abs(green - dithRGBA[1])
+		 + Math.abs(blue  - dithRGBA[2])
+		 + Math.abs(alpha - dithRGBA[3])
+				> 48
+			){
+			red   = dithRGBA[0];
+			green = dithRGBA[1];
+			blue  = dithRGBA[2];
+	    		alpha = dithRGBA[3];
+		}
+		/*
+		//fData values are updated if the error overflow is accepted so that when recycling pixels,
+		//it compares the pixel being written to the one actually drawn previously.
+		//qData[i] not needed after pixel used
+		red   += qData[i];
+		green += qData[i + 1];
+		blue  += qData[i + 2];
+		alpha += qData[i + 3];
+		qData[i]     = 0;
+		qData[i + 1] = 0;
+		qData[i + 2] = 0;
+		qData[i + 3] = 0;
+		//if(qData[i]     !== undefined){red   += qData[i];    delete qData[i];    }
+		//if(qData[i + 1] !== undefined){green += qData[i + 1];delete qData[i + 1];}
+		//if(qData[i + 2] !== undefined){blue  += qData[i + 2];delete qData[i + 2];}
+		//if(qData[i + 3] !== undefined){alpha += qData[i + 3];delete qData[i + 3];}
+		*/
+	}
+	//previous RGBA must be updated so that it can compare with actual pixel drawn
+	
+	
 	var colorDif;
 	var closestColorDif = 0x7FFFFFFF;//Don't go full value, remember JS numbers are 2's complement signed.
 	var closestColor = 0;
 	
 	var plteR, plteG, plteB, plteA;
 	var curColor;
-	for(var i = 0; i < this.palette.length; i++){
-		curColor = this.palette[i];
+	for(var p = 0; p < this.palette.length; p++){
+		curColor = this.palette[p];
 		plteA = curColor >> 24 & 0xFF;
 		plteR = curColor >> 16 & 0xFF;
 		plteG = curColor >> 8 & 0xFF;
@@ -1590,55 +1726,105 @@ AnimatedEncoder.prototype.getPaletteIndex = function(red, green, blue, alpha, fD
 			   + Math.abs(alpha - plteA);
 		if(colorDif < closestColorDif){
 			closestColorDif = colorDif;
-			closestColor = i;
+			closestColor = p;
+			closeR = plteR; closeG = plteG; closeB = plteB; closeA = plteA;
 		}
 	}
+	var closeR = this.palette[closestColor] >> 16 & 0xFF,
+	    closeG = this.palette[closestColor] >> 8  & 0xFF,
+            closeB = this.palette[closestColor]       & 0xFF,
+	    closeA = this.palette[closestColor] >> 24 & 0xFF;
 	
-	this.distQuant(red   - (this.palette[closestColor] >> 16 & 0xFF), fData, dith, 0);
-	this.distQuant(green - (this.palette[closestColor] >> 8  & 0xFF), fData, dith, 1);
-	this.distQuant(blue  - (this.palette[closestColor]       & 0xFF), fData, dith, 2);
-	this.distQuant(alpha - (this.palette[closestColor] >> 24 & 0xFF), fData, dith, 3);
+	//do not push errors onto fully transparent pixels, it can cause recycled
+	//transparent areas to get spare dots drawn over them
+	//(Use closeR/G/B/A, compare actual color being drawn not original value)
+	if(this.isMovie){
+		//Only movie type needs the previous frame saved for comparison/recycling.
+		if(this.frameBeingProcessed > 0){
+			if( closeR == this.pRGBA.data[i]
+			 && closeG == this.pRGBA.data[i+1]
+			 && closeB == this.pRGBA.data[i+2]
+			 && closeA == this.pRGBA.data[i+3] ){
+				//after grabbing the indexed color, if it is the same as was written before, return the transparent pixel,
+				//and do not distribute quantization errors.
+				//fData[i]   = 0x00;
+				//fData[i+1] = 0x00;
+				//fData[i+2] = 0x00;
+				//fData[i+3] = 0x00;
+				return this.paletteTransI;
+			}else{//update previous frame data so it will know what was there next frame
+				this.pRGBA.data[i]     = closeR;
+				this.pRGBA.data[i + 1] = closeG;
+				this.pRGBA.data[i + 2] = closeB;
+				this.pRGBA.data[i + 3] = closeA;
+			}
+		}else{//if first frame
+			this.transparencyLocks[lockIndex] = this.isMovie && closeA < 0xFF;
+			fData[i]     = closeR;
+			fData[i + 1] = closeG;
+			fData[i + 2] = closeB;
+			fData[i + 3] = closeA;
+		}
+	}//end isMovie
+	
+	/*//This style of dithering was shifting noise around too much when switching frames, hurting compression and appearence.
+	this.distQuant(red   - closeR, qData, i, dithW, dithH, 0);
+	this.distQuant(green - closeG, qData, i, dithW, dithH, 1);
+	this.distQuant(blue  - closeB, qData, i, dithW, dithH, 2);
+	this.distQuant(alpha - closeA, qData, i, dithW, dithH, 3);
+	*/
 	
 	return closestColor;
 };
-AnimatedEncoder.prototype.distQuant = function(qError, fData, i, cOffset){
+AnimatedEncoder.prototype.distQuant = function(qError, qData, i, dithW, dithH, cOffset){
+	//qData is used to track the errors.
+	//This is used because some pixels (like exact match with palette)
+	//should not accept the quantization error that may have been generated
+	//by a close by anti-aliased pixel or something...
+	//cOffset is channel offset to slide it over x slots for green, blue, alpha
+	if(!qError){return;}//Exit if there is no error to distribute.
+	
 	var errorFract = 0;
 	var errorSeek = 0;
-	
-	var dithW = Math.floor(i / 4) % this.width;
-	var dithH = Math.floor( (i / 4) / this.width);
 	
 	//Distribute quantization errors like this:
 	//
 	//          [pixel] [7/16]
 	//   [3/16] [5/16 ] [1/16]
 	if(dithW + 1 < this.width){
-		errorFract = 7/16;
+		errorFract = (7/16) * qError;
 		errorSeek = 4;
-		if(fData[i + errorSeek + 3]){
-			fData[i + errorSeek + cOffset] += qError * errorFract;
-		}
+		//if(qData[i + errorSeek + cOffset]){
+			qData[i + errorSeek + cOffset] += errorFract;//If undefined and already holds error overflow
+		//}else{
+		//	qData[i + errorSeek + cOffset] = errorFract;//If undefined
+		//}
 	}
 	if(dithH + 1 < this.height){
 		if(dithW > 1){
-			errorFract = 3/16;
+			errorFract = (3/16) * qError;
 			errorSeek = this.width * 4 - 4;//scroll down to the next line and one to the left
-			if(fData[i + errorSeek + 3]){//do not push errors onto fully transparent pixels, it can cause recycled
-						//transparent areas to get spare dots drawn over them
-				fData[i + errorSeek + cOffset] += qError * errorFract;
-			}
+			//if(qData[i + errorSeek + cOffset]){
+				qData[i + errorSeek + cOffset] += errorFract;
+			//}else{
+			//	qData[i + errorSeek + cOffset] = errorFract;
+			//}
 		}
-		errorFract = 5/16;
+		errorFract = (5/16) * qError;
 		errorSeek = this.width * 4;//scroll down to the next line and one to the left
-		if(fData[i + errorSeek + 3]){
-			fData[i + errorSeek + cOffset] += qError * errorFract;
-		}
+		//if(qData[i + errorSeek + cOffset]){
+			qData[i + errorSeek + cOffset] += errorFract;
+		//}else{
+		//	qData[i + errorSeek + cOffset] = errorFract;
+		//}
 		if(dithW + 1 < this.width){
-			errorFract = 1/16;
+			errorFract = (1/16) * qError;
 			errorSeek = this.width * 4 + 4;//scroll down to the next line and one to the left
-			if(fData[i + errorSeek + 3]){
-				fData[i + errorSeek + cOffset] += qError * errorFract;
-			}
+			//if(qData[i + errorSeek + cOffset]){
+				qData[i + errorSeek + cOffset] += errorFract;
+			//}else{
+			//	qData[i + errorSeek + cOffset] = errorFract;
+			//}
 		}
 	}
 };
