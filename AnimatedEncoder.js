@@ -209,6 +209,7 @@ UPDATE: You can mostly get around this by disabling CORS restrictions on your br
 	but the Cross-Origin Resource Sharing rules can create huge headaches when testing your code locally.
 
 */
+'use strict';
 function AnimatedEncoder(paramz,simpleQuality){
 	if(paramz == 'webp'//only webp is implemented so far
 	 ||paramz == 'png'
@@ -315,7 +316,7 @@ AnimatedEncoder.prototype.addFrame = function(frameParamz){
 	
 	{"url":[String to be used as 'src']} (this one may still need to be finished...)
 	*/
-	this_this = this;
+	var this_this = this;
 	//since a zero-length frame might be something some format supports at some point,
 	//auto detect and set custom delay to true if any delay parameter is set.
 	//depending on ===undefined is confusing and might be unreliable
@@ -356,7 +357,7 @@ AnimatedEncoder.prototype.procFrame = function(){
 	var frameImg = curFrame.image;
 	this.encoderCanvas.width = this.width;
 	this.encoderCanvas.height = this.height;
-	ctx = this.encoderCanvas.getContext('2d');
+	var ctx = this.encoderCanvas.getContext('2d');
 	ctx.save();//save context state before potentially transforming
 	var scX = 1;//scaling
 	var scY = 1;
@@ -486,19 +487,30 @@ AnimatedEncoder.prototype.procFrame = function(){
 				//alert('palette limit: ' + this.paletteLimit);
 				if(this.paletteLimit){//========== if using palette =================================
 				//Now that color counting has been done, build the palette.
-				var includeThresh = 4;
-				var sortThresh = 10;
-				//Threshold to include as a candidate for the palette.
-				if(this.width * this.height < 0x3FFF){
+				
+				var includeThresh = this.significantThresh * 0.025;//Threshold to include as a candidate for the palette.
+				var sortThresh = this.significantThresh * 0.25;//Threshold to sort a color that looks to be common
+				//Limit these based on the number of significant colors calculated to keep it from having extreme lag
+				//from doing checks on colors that are very unlikely to meet the requirements to be included in the palette.
+				
+				//Force it to be kept if it represents a large portion of the image.
+				//This will stop colors that are close, but still represent large parts of the image from being eliminated.
+				var keepThresh = this.width * this.height * this.frames.length * (1/this.paletteLimit);
+				//The keep threshold should not bee too high or things like gradients can hog all the palette with shades of colors
+				//that are semi-common but not the ones that should be selected.
+				
+				
+				/*if(this.width * this.height < 0x3FFF){
 					//Exception for small images (< 128 x 128)
 					includeThresh = 1;
 					sortThresh = 2;
-				}
+				}*/
 				this.palette = [];
 				this.paletteExactMatch = [];//Used to quickly detect an exact match in the palette and reject quantization overflow
 				//Insert 0 with a maxed out count, some movie type animations are omitting the transparent
 				//value from the palette. Since the transparent pixel is so essential,
 				//it can be forced if there is animation.
+				//(Remember the color count is done before transparent pixels are inserted to eliminate duplicates between frames.)
 				var paletteCandidates  = [0x00000000];
 				var paletteColorCounts = [0x7FFFFFFF];
 				if(this.frames.length < 2){//If no animation, do not force the transparent pixel.
@@ -506,10 +518,10 @@ AnimatedEncoder.prototype.procFrame = function(){
 					paletteColorCounts.pop();
 				}
 				var palA, palR, palG, palB;
-						for(aI in this.colorLookup){
-						for(rI in this.colorLookup[aI]){
-						for(gI in this.colorLookup[aI][rI]){
-						for(bI in this.colorLookup[aI][rI][gI]){
+						for(var aI in this.colorLookup){
+						for(var rI in this.colorLookup[aI]){
+						for(var gI in this.colorLookup[aI][rI]){
+						for(var bI in this.colorLookup[aI][rI][gI]){
 								if(this.colorLookup[aI][rI][gI][bI] >= includeThresh){//paletteCandidates.length < 256){
 									if(this.colorLookup[aI][rI][gI][bI] > sortThresh){
 										//Do not waste big resources on of looping to find the right ordered spot for
@@ -536,7 +548,7 @@ AnimatedEncoder.prototype.procFrame = function(){
 				
 				
 				var zDif = 1;//range to zero out around it
-				while(paletteCandidates.length > this.paletteLimit && zDif <= 8){
+				while(paletteCandidates.length > this.paletteLimit && zDif <= 128){
 				
 				for(i = 0;i < paletteCandidates.length;i++){
 					var palClr = paletteCandidates[i];
@@ -559,12 +571,16 @@ AnimatedEncoder.prototype.procFrame = function(){
 						    ellimR = paletteCandidates[ellimI] >> 16 & 0xFF,
 						    ellimG = paletteCandidates[ellimI] >> 8  & 0xFF,
 						    ellimB = paletteCandidates[ellimI]       & 0xFF;
+						
 						if(   ellimA >= zMinA && ellimA <= zMaxA
 						   && ellimR >= zMinR && ellimR <= zMaxR
 						   && ellimG >= zMinG && ellimG <= zMaxG
 						   && ellimB >= zMinB && ellimB <= zMaxB ){
-							paletteCandidates.splice(ellimI, 1);
-							ellimI--;
+							if(paletteColorCounts[ellimI] < keepThresh){
+								paletteCandidates.splice(ellimI, 1);
+								paletteColorCounts.splice(ellimI, 1);
+								ellimI--;
+							}
 							if(paletteCandidates.length <= this.paletteLimit){
 								break;
 							}
@@ -572,7 +588,11 @@ AnimatedEncoder.prototype.procFrame = function(){
 					}
 					if(paletteCandidates.length <= this.paletteLimit){break;}
 				}
-					zDif++;
+					//if(zDif < 8){
+						zDif++;
+					//}else{
+					//	zDif *= 2;
+					//}
 					if(paletteCandidates.length <= this.paletteLimit){break;}
 				}//end while
 				//alert(paletteCandidates.length + ' palette candidates after eliminating similar');
@@ -645,10 +665,11 @@ AnimatedEncoder.prototype.procFrame = function(){
 			//The are stored in this separate array so that exact match pixels can reject them.
 			//Quant overflow can be negative, and must hold at least a byte AND a sign (Array buffer length is bytes, so * 2 length if 16-bit)
 		var indexPos = 0;
+		var pixelI = 0;
 		for(i=0;i<fRGBA.data.length;i+=4){
 			//W and H position needed for dithering.
-			var dithW = Math.floor(i / 4) % frameFinalW;
-			var dithH = Math.floor( (i / 4) / frameFinalH);
+			var dithW = pixelI % frameFinalW;
+			var dithH = Math.floor(pixelI / frameFinalW);
 			if( dithW == 0){
 				index8[indexPos] = 0;
 				//must insert scanline filter mode byte
@@ -658,6 +679,7 @@ AnimatedEncoder.prototype.procFrame = function(){
 			//index8[indexPos] = fRGBA.data[i] + fRGBA.data[i + 1] + fRGBA.data[i + 2] < 127 ? 0 : 1; 
 			//document.write(index8[indexPos]?',':'.');
 			indexPos++;
+			pixelI++;
 		}
 		//alert('should have ' + ((frameFinalW * frameFinalH) + frameFinalH) + ', stopped at ' + indexPos);
 		if(this.frameBeingProcessed == 0){
@@ -968,6 +990,8 @@ AnimatedEncoder.prototype.saveAnimatedFile = function(){
 	
 	this.isMovie = this.animationStyle == 'movie';//some bools for faster logic than string compare
 	this.isSprite = !this.isMovie;
+
+	this.buildDithMasksV2();
 	
 	//initialize things that some formats need.
 	if(this.format == 'png'){
@@ -1450,6 +1474,25 @@ AnimatedEncoder.prototype.buildDithMasks = function(){
 		}
 	}
 };
+AnimatedEncoder.prototype.buildDithMasksV2 = function(){
+	if(this.dithMask){return;}
+	//Each greater number represents a value of true for the next level of
+	//more sparse dithering. Patterns should always line up with eachother
+	//and remove pixels as it gets more sparse so that recycling pixels
+	//across frames is effective.
+	//0 is always false, 1 is true every other pixel, 2 every 4th, and so on...
+	
+	this.dithMask = [
+		[6, 0, 2, 0, 4, 0, 2, 0],
+		[0, 1, 0, 1, 0, 1, 0, 1],
+		[2, 0, 3, 0, 2, 0, 3, 0],
+		[0, 1, 0, 1, 0, 1, 0, 1],
+		[4, 0, 2, 0, 5, 0, 2, 0],
+		[0, 1, 0, 1, 0, 1, 0, 1],
+		[2, 0, 3, 0, 2, 0, 3, 0],
+		[0, 1, 0, 1, 0, 1, 0, 1]
+	];
+};
 AnimatedEncoder.prototype.quant8Octets = function(octets){
 		var quant8 = 0;//full quality. no quantization or dithering.
 		if(this.quality < 1){
@@ -1639,20 +1682,28 @@ AnimatedEncoder.prototype.getPaletteIndex = function(fData, qData, i, dithW, dit
 		fData[i+3] = 0x00;
 		return this.paletteTransI;
 	}
+	var closestVals = this.getClosestColor(red, green, blue, alpha);
+	var closestColor = closestVals[0];
 	//[A],[R],[G] are arrays, [B] is a value(true) or undefined.
-	//var dithRGBA = false;
 	if( this.paletteExactMatch[alpha]
 	 && this.paletteExactMatch[alpha][red]
 	 && this.paletteExactMatch[alpha][red][green]
 	 && this.paletteExactMatch[alpha][red][green][blue] ){
-		/*for(var qOff = 0; qOff < 4; qOff++){
-			qData[i + qOff] = 0;//if(qData[i + qOff] !== undefined){delete qData[i + qOff];}//delete unneeded value.
-		}*/
+		//leave it as it is, there was an exact color match.
 	}else{
+		
+		if(Math.abs(red   - closestVals[1])
+		 + Math.abs(green - closestVals[2])
+		 + Math.abs(blue  - closestVals[3])
+		 + Math.abs(alpha - closestVals[4])
+				> 4
+			){//================= Only check if there is enough difference in color ====================
 		var dithRGBA = [];
 		
-		var dithHalf = (dithW + dithH) % 2 == 0;
-		var dithFourth = (((dithH)%4==2&&(dithW  )%4==0) || ((dithH)%4==0&&(dithW  )%4==2));
+		var dithValue  = this.dithMask[dithH % this.dithMask.length][dithW % this.dithMask[0].length];
+		var dithHalf   = dithValue > 0;
+		var dithFourth = dithValue > 1;
+		var dithEighth = dithValue > 2;
 		
 		for(var c = 0; c < 4; c++){
 			var qIncr = 0x20;
@@ -1661,79 +1712,50 @@ AnimatedEncoder.prototype.getPaletteIndex = function(fData, qData, i, dithW, dit
 			var nChange = incrementDif / qIncr;
 			var roundUp;
 			if(nChange > 0.375 && nChange < 0.625){//value about in the middle
-				roundUp = dithHalf;//this.dithMaskHalf[i];//?Math.floor(nVal):Math.ceil(nVal);//checkered even split
-			}else if(nChange > 0.125 && nChange <= 0.375){//value relatively close to lower number
-				roundUp = dithFourth;//this.dithMaskFourth[i];//return dithAltB?Math.ceil(nVal):Math.floor(nVal);//sparse ceiling
-			}else if(nChange >= 0.625 && nChange < 0.875){//value relatively close to upper number
-				roundUp = !dithFourth;//!this.dithMaskFourth[i];//return dithAltB?Math.floor(nVal):Math.ceil(nVal);//sparse floor
+				roundUp = dithHalf;//checkered even split
+			}else if(nChange > 0.2 && nChange <= 0.375){//value relatively close to lower number
+				roundUp = dithFourth;//sparse ceiling
+			}else if(nChange >= 0.625 && nChange < 0.8){//value relatively close to upper number
+				roundUp = !dithFourth;//sparse floor
+			}else if(nChange > 0.75 && nChange <= 0.2){
+				roundUp = dithEighth;//very sparse ceiling
+			}else if(nChange >= 0.8 && nChange < 0.925){
+				roundUp = !dithEighth;//very sparse floor
 			}else{
 				roundUp = Math.round(nChange);
 			}
-			//(((h+3)%4==2&&(w  )%4==0) || ((h+3)%4==0&&(w  )%4==2));//dFourth;
 			
 			dithRGBA.push(fData[i + c] & qMask);
-			if(roundUp){dithRGBA[c] += qIncr;}// * (nChange > 0.5)? 1 : -1;}
+			if(roundUp){dithRGBA[c] += qIncr;}
 			if(dithRGBA[c] > 0xFF){dithRGBA[c] = 0xFF;}
-			//octets[i] = oBits;
 		}
-		if(Math.abs(red   - dithRGBA[0])
-		 + Math.abs(green - dithRGBA[1])
-		 + Math.abs(blue  - dithRGBA[2])
-		 + Math.abs(alpha - dithRGBA[3])
-				> 48
-			){
-			red   = dithRGBA[0];
-			green = dithRGBA[1];
-			blue  = dithRGBA[2];
-	    		alpha = dithRGBA[3];
-		}
-		/*
-		//fData values are updated if the error overflow is accepted so that when recycling pixels,
-		//it compares the pixel being written to the one actually drawn previously.
-		//qData[i] not needed after pixel used
-		red   += qData[i];
-		green += qData[i + 1];
-		blue  += qData[i + 2];
-		alpha += qData[i + 3];
-		qData[i]     = 0;
-		qData[i + 1] = 0;
-		qData[i + 2] = 0;
-		qData[i + 3] = 0;
-		//if(qData[i]     !== undefined){red   += qData[i];    delete qData[i];    }
-		//if(qData[i + 1] !== undefined){green += qData[i + 1];delete qData[i + 1];}
-		//if(qData[i + 2] !== undefined){blue  += qData[i + 2];delete qData[i + 2];}
-		//if(qData[i + 3] !== undefined){alpha += qData[i + 3];delete qData[i + 3];}
-		*/
+		var secondClosestVals = this.getClosestColor(dithRGBA[0], dithRGBA[1], dithRGBA[2], dithRGBA[3]);
+			//Don't dither with the next closest color unless it is relatively close,
+			//otherwise it hurts both compression and quality.
+			if(
+			  (Math.abs(closestVals[1] - secondClosestVals[1])
+			 + Math.abs(closestVals[2] - secondClosestVals[2])
+			 + Math.abs(closestVals[3] - secondClosestVals[3])
+			 + Math.abs(closestVals[4] - secondClosestVals[4])
+				< 16384 / this.palette.length)
+			&&
+			  (Math.abs(red   - secondClosestVals[1])
+			 + Math.abs(green - secondClosestVals[2])
+			 + Math.abs(blue  - secondClosestVals[3])
+			 + Math.abs(alpha - secondClosestVals[4])
+				< 16384 / this.palette.length )
+				 ){
+				closestColor = secondClosestVals[0];
+			}
+		}//=========== End if enough difference in color ==========
+		
 	}
 	//previous RGBA must be updated so that it can compare with actual pixel drawn
 	
-	
-	var colorDif;
-	var closestColorDif = 0x7FFFFFFF;//Don't go full value, remember JS numbers are 2's complement signed.
-	var closestColor = 0;
-	
-	var plteR, plteG, plteB, plteA;
-	var curColor;
-	for(var p = 0; p < this.palette.length; p++){
-		curColor = this.palette[p];
-		plteA = curColor >> 24 & 0xFF;
-		plteR = curColor >> 16 & 0xFF;
-		plteG = curColor >> 8 & 0xFF;
-		plteB = curColor & 0xFF;
-		colorDif =   Math.abs(red - plteR)
-			   + Math.abs(green - plteG)
-			   + Math.abs(blue - plteB)
-			   + Math.abs(alpha - plteA);
-		if(colorDif < closestColorDif){
-			closestColorDif = colorDif;
-			closestColor = p;
-			closeR = plteR; closeG = plteG; closeB = plteB; closeA = plteA;
-		}
-	}
-	var closeR = this.palette[closestColor] >> 16 & 0xFF,
-	    closeG = this.palette[closestColor] >> 8  & 0xFF,
-            closeB = this.palette[closestColor]       & 0xFF,
-	    closeA = this.palette[closestColor] >> 24 & 0xFF;
+	var closeR = closestVals[1],
+	    closeG = closestVals[2],
+	    closeB = closestVals[3],
+	    closeA = closestVals[4];
 	
 	//do not push errors onto fully transparent pixels, it can cause recycled
 	//transparent areas to get spare dots drawn over them
@@ -1775,6 +1797,33 @@ AnimatedEncoder.prototype.getPaletteIndex = function(fData, qData, i, dithW, dit
 	*/
 	
 	return closestColor;
+};
+AnimatedEncoder.prototype.getClosestColor = function(red, green, blue, alpha){
+	var colorDif;
+	var closestColorDif = 0x7FFFFFFF;//Don't go full value, remember JS numbers are 2's complement signed.
+	var closestColor = 0;
+	
+	var closeR, closeG, closeB, closeA;
+	var plteR, plteG, plteB, plteA;
+	var curColor;
+	for(var p = 0; p < this.palette.length; p++){
+		curColor = this.palette[p];
+		plteA = curColor >> 24 & 0xFF;
+		plteR = curColor >> 16 & 0xFF;
+		plteG = curColor >> 8 & 0xFF;
+		plteB = curColor & 0xFF;
+		colorDif =   Math.abs(red - plteR)
+			   + Math.abs(green - plteG)
+			   + Math.abs(blue - plteB)
+			   + Math.abs(alpha - plteA);
+		if(colorDif < closestColorDif){
+			closestColorDif = colorDif;
+			closestColor = p;
+			closeR = plteR; closeG = plteG; closeB = plteB; closeA = plteA;
+		}
+	}
+	//Returns an array with the closest color and additional values for the color channels to save from having to recalculate them.
+	return [closestColor, closeR, closeG, closeB, closeA];
 };
 AnimatedEncoder.prototype.distQuant = function(qError, qData, i, dithW, dithH, cOffset){
 	//qData is used to track the errors.
