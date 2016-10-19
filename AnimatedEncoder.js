@@ -398,6 +398,7 @@ AnimatedEncoder.prototype.procFrame = function(){
 	ctx.restore();//return context to default state with no transforms
 	//alert('quality: '+this.quality);
 	var i;//used in various loops.
+	var chanI;//Cycle thru channels for multi-byte modes.
 	var w, h;
 	
 	//these dimensions may be updated if only  a smaller section of the image has updates on it.
@@ -472,26 +473,36 @@ AnimatedEncoder.prototype.procFrame = function(){
 				//32-bit RGBA, 8-bit indexed, or 24-bit RGB with one RGB value reserved as the simple transparency code.
 				this.customByteStream = false;//whether to build the byte stream or use the toDataURL byte stream from the browser.
 				this.byteStreamMode = 4;
-				//byteStreamMode (for PNG) values are:
-				//	1 = 1-byte indexed color
-				//	3 = 3-byte RGB color with only simple transparency(reserved color)
-				//	4 = 4-byte RGBA color
-				this.hasTransparency = false;
+					//byteStreamMode (for PNG) values are:
+					//	1 = 1-byte indexed color
+					//	3 = 3-byte RGB color with only simple transparency(reserved color)
+					//	4 = 4-byte RGBA color
+				this.hasTransparency = 0;
+					//0 = no transparency
+					//1 = has only simple transparency(fully transparent pixels)
+					//2 = has transparency including semi-transparent pixels.
+				//Let it go into 24-bit mode if it has transparency but only completely transparent transparency.
 				for(var opacityLevel in this.colorLookup){//[alpha] is first in [a][r][g][b]
 					if(opacityLevel < 255){
 						//If there are any non-opaque pixels in the animation, the 32-bit or 8-bit PNG must be used.
 						//Otherwise, use 24-bit or 8-bit since no alpha channel is needed.
 						//(note that color count is done before transparent pixels are inserted to recycle previous values)
-						this.hasTransparency = true;
+						if(opacityLevel == 0){
+							this.hasTransparency = Math.max(1, this.hasTransparency);
+						}else{
+							this.hasTransparency = 2;
+						}
 					}
 				}
+					
 				//customByteStream cannot be used without a DEFLATE compressor
 				//if the pako deflate library is not present, 32-bit RGBA is the only option.
 				if(window.pako){
 					this.customByteStream = true;
-					if(!this.hasTransparency){
+					if(this.hasTransparency < 2){
 						//If no transparency, and not using a palette, use(will be switched to mode 1 indexed if a palette is used.)
 						this.byteStreamMode = 3;
+						//alert('24 bit');//24 bit will be overridden by palette if that is optimal
 					}
 					//If the Pako deflate library exists in the page, it can be used to create PNG8 (toDataURL() currently always PNG32 RGBA)
 					//for low quality settings, always force indexed PNG8
@@ -513,8 +524,8 @@ AnimatedEncoder.prototype.procFrame = function(){
 						//For quality over 75%, only go indexed if there are literally only 256 colors or less
 						//(the transparent pixel for recycling will take up an extra slot
 						//if transparent pixel did not appear in the original image)
-						if(this.uniqueColors <= 255
-						 || (   this.uniqueColors <= 256
+						if(this.uniqueColors <= 255 //Only 255 colors, an extra slot available for fully transparent pixel.
+						 || (   this.uniqueColors <= 256 //Only 256 colors, and fully transparent is one of them.
 						     && this.getColorCount(0, 0, 0, 0) ) ){
 							this.paletteLimit = 256;
 						}
@@ -653,7 +664,16 @@ AnimatedEncoder.prototype.procFrame = function(){
 					if(palA == 0){this.paletteTransI = i;}//Track the index to the fully transparent pixel.
 				}
 				//alert('palette size: ' + this.palette.length);
-				}//==== end if using palette ======================================
+				}else{//==== end if using palette ======================================
+					if(this.byteStreamMode == 3){
+						this.reservedTransColor = [-1, -1, -1];
+							//All negatives so that it will never evaluate as matching transparent if 24-bit with no tRNS.
+						if(this.hasTransparency || this.frames > 1){//Will need transparent for recycling if multi-frame.
+							this.reservedTransColor = [127,127,127];
+							//TODO: Find color that is not used, and that pixels will not be quantized to.
+						}
+					}
+				}//======== End if not using palette ===================================
 				
 				var byteBufLength = this.width * this.height * this.byteStreamMode;
 				this.bufNO = new Uint8Array(new ArrayBuffer(byteBufLength));//None-Over...
@@ -662,10 +682,6 @@ AnimatedEncoder.prototype.procFrame = function(){
 				this.bufNS = new Uint8Array(new ArrayBuffer(byteBufLength));
 				this.bufPS = new Uint8Array(new ArrayBuffer(byteBufLength));
 				this.bufTS = new Uint8Array(new ArrayBuffer(byteBufLength));//...Tran-Source
-				this.bufNO.fill(0);this.bufPO.fill(0);this.bufTO.fill(0);this.bufNS.fill(0);this.bufPS.fill(0);this.bufTS.fill(0);
-				//SOME BROWSERS DO NOT INITIALIZE Uint8Array TO ZERO! MAKE SURE THIS IS DONE!
-				//NOTE: 0 should be the index value for fully transparent since it is inserted into the candidate array with maxed out count.
-					//for 24-bit, it will need to initialize them to whatever the reserve transparent RGB is.
 				//These buffers will track how the output buffer would be updated based on different disposal/blend modes
 				//They do not need the extra bytes for the filter mode. That will be added after the optimal buffer is selected.
 				//These only contain the updated regions as the would be drawn, the positions outside of the current region can be ignored.
@@ -675,8 +691,40 @@ AnimatedEncoder.prototype.procFrame = function(){
 				this.bufNone = new Uint8Array(new ArrayBuffer(byteBufLength));
 				this.bufPrev = new Uint8Array(new ArrayBuffer(byteBufLength));
 				this.bufTran = new Uint8Array(new ArrayBuffer(byteBufLength));
-				this.bufNone.fill(0);this.bufPrev.fill(0);this.bufTran.fill(0);
 				
+				//SOME BROWSERS DO NOT INITIALIZE Uint8Array TO ZERO! MAKE SURE THIS IS DONE!
+				//NOTE: 0 should be the index value for fully transparent in most cases since it is inserted into the candidate array with maxed out count if multi-frame.
+				if(this.byteStreamMode == 1){//8-bit
+					var filler = this.paletteTransI ? this.paletteTransI : 0;
+					this.bufNO.fill(filler);this.bufPO.fill(filler);
+					this.bufTO.fill(filler);this.bufNS.fill(filler);
+					this.bufPS.fill(filler);this.bufTS.fill(filler);
+					this.bufNone.fill(filler);this.bufPrev.fill(filler);this.bufTran.fill(filler);
+				}else if(this.byteStreamMode == 4){//32-bit
+					this.bufNO.fill(0);this.bufPO.fill(0);this.bufTO.fill(0);this.bufNS.fill(0);this.bufPS.fill(0);this.bufTS.fill(0);
+					this.bufNone.fill(0);this.bufPrev.fill(0);this.bufTran.fill(0);
+				}else{//24-bit
+					//24-bit and 8-bit with no tRNS cannot initialize buffer data to transparent black.
+					//However, since the first frame always is forced to use Source blending and the Tran buffer, this is not a problem.
+					//tRNS will always be added for pixel recycling if multi-frame.
+					//24-bit initialization is a bit more complicated, it must initialize pixels to the R,G,B values of the reserved transparent color.
+					if(this.reservedTransColor[0] > -1){
+						for(i = 0;i < byteBufLength;i += 3){
+							for(chanI = 0;chanI < 3;chanI++){
+								this.bufNO[i + chanI] = this.reservedTransColor[chanI];
+								this.bufPO[i + chanI] = this.reservedTransColor[chanI];
+								this.bufTO[i + chanI] = this.reservedTransColor[chanI];
+								this.bufNS[i + chanI] = this.reservedTransColor[chanI];
+								this.bufPS[i + chanI] = this.reservedTransColor[chanI];
+								this.bufTS[i + chanI] = this.reservedTransColor[chanI];
+								this.bufNone[i + chanI] = this.reservedTransColor[chanI];
+								this.bufPrev[i + chanI] = this.reservedTransColor[chanI];
+								this.bufTran[i + chanI] = this.reservedTransColor[chanI];
+							}
+						}
+					}
+				}
+				//alert('bystSMode ' + this.byteStreamMode);
 			}//================== end if last frame for color count ===================
 			setTimeout(function(){this_this.procFrame();},50);
 			if(this.onProgress){
@@ -753,24 +801,31 @@ AnimatedEncoder.prototype.procFrame = function(){
 		if(this.frameBeingProcessed == 1){
 			canPO = false;canPS = false;//The second frame before cannot dispose to previous with no frame before it.
 		}
+		if(this.byteStreamMode >= 3){
+			this.buildDithMasks();//must have masks before quantizing
+			this.quant8Octets(fRGBA.data);
+		}
 		var bufI;
 		for(h = 0;h < this.height;h++){
 		for(w = 0;w < this.width;w++){
 			bufI = (w + h * this.width);
 			i = bufI * 4;//Aligns with the canvas getImageData.
 			bufI *= this.byteStreamMode;//Aligns with the byte stream for the active mode.
+			var pixHasAlpha;
 			//==================================== 8-bit indexed =====================================
 			if(this.byteStreamMode == 1){
 				var palIndex = this.getPaletteIndex(fRGBA.data, qData, i, w, h);
 					//The alpha must be extracted. 0xFF000000 cannot be used because JS numbers are signed and will flow into negative.
-				var palHasAlpha = this.palette[palIndex] >> 24 & 0xFF < 0xFF;
+				pixHasAlpha = (this.palette[palIndex] >> 24 & 0xFF) < 0xFF;
+					//The boolean < will eat part of the boolean extraction operation if not put in ( )
 				if( (canPS || canPO) ){
 					if(this.bufPrev[bufI] != palIndex){
-						if(this.palette[this.bufPrev[bufI]] >> 24 & 0xFF > 0 && palHasAlpha){
-							//If overwriting a pixel that has opacity with one that has transparency.
-							canPO = false;//Cannot draw transparent pixels over ones with opacity using Over blending.
-						}
 						if(canPO){
+							//The boolean if will eat part of the boolean operation if not put in ( )
+							if(pixHasAlpha && (this.palette[this.bufPrev[bufI]] >> 24 & 0xFF) > 0){
+								//If overwriting a pixel that has opacity with one that has transparency.
+								canPO = false;//Cannot draw transparent pixels over ones with opacity using Over blending.
+							}
 							minPOX = Math.min(w, minPOX);
 							minPOY = Math.min(h, minPOY);
 							maxPOX = Math.max(w, maxPOX);
@@ -784,19 +839,24 @@ AnimatedEncoder.prototype.procFrame = function(){
 							maxPSY = Math.max(h, maxPSY);
 							this.bufPS[bufI] = palIndex;
 						}
-					}else if(canPO){
-						//The buffer in over mode can recycle it using a transparent pixel if it matches.
-						this.bufPO[bufI] = this.paletteTransI;
-						//The source buffer will leave it as is. (Source will write all pixels in the region and transparency will overwrite things in source mode.)
+					}else{
+						if(canPO){
+							//The buffer in over mode can recycle it using a transparent pixel if it matches.
+							this.bufPO[bufI] = this.paletteTransI;
+							//The source buffer will leave it as is. (Source will write all pixels in the region and transparency will overwrite things in source mode.)
+						}
+						if(canPS){//This must be filled. A pixel lower down and to the left could expand it where this is in the region after being passed over.
+							this.bufPS[bufI] = palIndex;
+						}
 					}
 				}
 				if( (canNS || canNO) ){
 					if(this.bufNone[bufI] != palIndex){
-						if(this.palette[this.bufNone[bufI]] >> 24 & 0xFF > 0 && palHasAlpha){
-							//If overwriting a pixel that has opacity with one that has transparency.
-							canNO = false;//Cannot draw transparent pixels over ones with opacity using Over blending.
-						}
 						if(canNO){
+							if(pixHasAlpha && (this.palette[this.bufNone[bufI]] >> 24 & 0xFF) > 0){
+								//If overwriting a pixel that has opacity with one that has transparency.
+								canNO = false;//Cannot draw transparent pixels over ones with opacity using Over blending.
+							}
 							minNOX = Math.min(w, minNOX);
 							minNOY = Math.min(h, minNOY);
 							maxNOX = Math.max(w, maxNOX);
@@ -810,17 +870,23 @@ AnimatedEncoder.prototype.procFrame = function(){
 							maxNSY = Math.max(h, maxNSY);
 							this.bufNS[bufI] = palIndex;
 						}
-					}else if(canNO){
-						this.bufNO[bufI] = this.paletteTransI;
+						//if(this.frameBeingProcessed > 0){alert('none pixel draw at '+w+','+h);}
+					}else{
+						if(canNO){
+							this.bufNO[bufI] = this.paletteTransI;
+						}
+						if(canNS){
+							this.bufNS[bufI] = palIndex;
+						}
 					}
 				}
 				if( (canTS || canTO) ){
 					if(this.bufTran[bufI] != palIndex){
-						if(this.palette[this.bufTran[bufI]] >> 24 & 0xFF > 0 && palHasAlpha){
-							//If overwriting a pixel that has opacity with one that has transparency.
-							canTO = false;//Cannot draw transparent pixels over ones with opacity using Over blending.
-						}
 						if(canTO){
+							if(pixHasAlpha && (this.palette[this.bufTran[bufI]] >> 24 & 0xFF) > 0){
+								//If overwriting a pixel that has opacity with one that has transparency.
+								canTO = false;//Cannot draw transparent pixels over ones with opacity using Over blending.
+							}
 							minTOX = Math.min(w, minTOX);
 							minTOY = Math.min(h, minTOY);
 							maxTOX = Math.max(w, maxTOX);
@@ -834,16 +900,304 @@ AnimatedEncoder.prototype.procFrame = function(){
 							maxTSY = Math.max(h, maxTSY);
 							this.bufTS[bufI] = palIndex;
 						}
-					}else if(canTO){
-						this.bufTO[bufI] = this.paletteTransI;
+					}else{
+						if(canTO){
+							this.bufTO[bufI] = this.paletteTransI;
+						}
+						if(canTS){
+							this.bufTS[bufI] = palIndex;
+						}
 					}
 				}
 			//==================================== 32-bit RGBA =====================================
 			}else if(this.byteStreamMode == 4){
-				
+				pixHasAlpha = fRGBA.data[bufI + 3] < 0xFF;
+				if( (canPS || canPO) ){
+					if(!(
+						   this.bufPrev[bufI]     == fRGBA.data[i]
+						&& this.bufPrev[bufI + 1] == fRGBA.data[i + 1]
+						&& this.bufPrev[bufI + 2] == fRGBA.data[i + 2]
+						&& this.bufPrev[bufI + 3] == fRGBA.data[i + 3]
+						)){
+						if(canPO){
+							//The boolean if will eat part of the boolean operation if not put in ( )
+							if(pixHasAlpha && this.bufPrev[bufI + 3] > 0){
+								//If overwriting a pixel that has opacity with one that has transparency.
+								canPO = false;//Cannot draw transparent pixels over ones with opacity using Over blending.
+							}
+							minPOX = Math.min(w, minPOX);
+							minPOY = Math.min(h, minPOY);
+							maxPOX = Math.max(w, maxPOX);
+							maxPOY = Math.max(h, maxPOY);
+							this.bufPO[bufI]     = fRGBA.data[i];
+							this.bufPO[bufI + 1] = fRGBA.data[i + 1];
+							this.bufPO[bufI + 2] = fRGBA.data[i + 2];
+							this.bufPO[bufI + 3] = fRGBA.data[i + 3];
+						}
+						if(canPS){
+							minPSX = Math.min(w, minPSX);
+							minPSY = Math.min(h, minPSY);
+							maxPSX = Math.max(w, maxPSX);
+							maxPSY = Math.max(h, maxPSY);
+							this.bufPS[bufI]     = fRGBA.data[i];
+							this.bufPS[bufI + 1] = fRGBA.data[i + 1];
+							this.bufPS[bufI + 2] = fRGBA.data[i + 2];
+							this.bufPS[bufI + 3] = fRGBA.data[i + 3];
+						}
+					}else{
+						if(canPO){
+							//The buffer in over mode can recycle it using a transparent pixel if it matches.
+							this.bufPO[bufI]     = 0;
+							this.bufPO[bufI + 1] = 0;
+							this.bufPO[bufI + 2] = 0;
+							this.bufPO[bufI + 3] = 0;
+							//The source buffer will leave it as is. (Source will write all pixels in the region and transparency will overwrite things in source mode.)
+						}
+						if(canPS){//This must be filled. A pixel lower down and to the left could expand it where this is in the region after being passed over.
+							this.bufPS[bufI]     = fRGBA.data[i];
+							this.bufPS[bufI + 1] = fRGBA.data[i + 1];
+							this.bufPS[bufI + 2] = fRGBA.data[i + 2];
+							this.bufPS[bufI + 3] = fRGBA.data[i + 3];
+						}
+					}
+				}
+				if( (canNS || canNO) ){
+					if(!(
+						   this.bufNone[bufI]     == fRGBA.data[i]
+						&& this.bufNone[bufI + 1] == fRGBA.data[i + 1]
+						&& this.bufNone[bufI + 2] == fRGBA.data[i + 2]
+						&& this.bufNone[bufI + 3] == fRGBA.data[i + 3]
+						)){
+						if(canNO){
+							if(pixHasAlpha && this.bufNone[bufI + 3] > 0){
+								//If overwriting a pixel that has opacity with one that has transparency.
+								canNO = false;//Cannot draw transparent pixels over ones with opacity using Over blending.
+							}
+							minNOX = Math.min(w, minNOX);
+							minNOY = Math.min(h, minNOY);
+							maxNOX = Math.max(w, maxNOX);
+							maxNOY = Math.max(h, maxNOY);
+							this.bufNO[bufI]     = fRGBA.data[i];
+							this.bufNO[bufI + 1] = fRGBA.data[i + 1];
+							this.bufNO[bufI + 2] = fRGBA.data[i + 2];
+							this.bufNO[bufI + 3] = fRGBA.data[i + 3];
+						}
+						if(canNS){
+							minNSX = Math.min(w, minNSX);
+							minNSY = Math.min(h, minNSY);
+							maxNSX = Math.max(w, maxNSX);
+							maxNSY = Math.max(h, maxNSY);
+							this.bufNS[bufI]     = fRGBA.data[i];
+							this.bufNS[bufI + 1] = fRGBA.data[i + 1];
+							this.bufNS[bufI + 2] = fRGBA.data[i + 2];
+							this.bufNS[bufI + 3] = fRGBA.data[i + 3];
+						}
+						//if(this.frameBeingProcessed > 0){alert('none pixel draw at '+w+','+h);}
+					}else{
+						if(canNO){//Recycle matching pixel by drawing nothing over it(works on Over only)
+							this.bufNO[bufI]     = 0;
+							this.bufNO[bufI + 1] = 0;
+							this.bufNO[bufI + 2] = 0;
+							this.bufNO[bufI + 3] = 0;
+						}
+						if(canNS){
+							this.bufNS[bufI]     = fRGBA.data[i];
+							this.bufNS[bufI + 1] = fRGBA.data[i + 1];
+							this.bufNS[bufI + 2] = fRGBA.data[i + 2];
+							this.bufNS[bufI + 3] = fRGBA.data[i + 3];
+						}
+					}
+				}
+				if( (canTS || canTO) ){
+					if(!(
+						   this.bufTran[bufI]     == fRGBA.data[i]
+						&& this.bufTran[bufI + 1] == fRGBA.data[i + 1]
+						&& this.bufTran[bufI + 2] == fRGBA.data[i + 2]
+						&& this.bufTran[bufI + 3] == fRGBA.data[i + 3]
+						)){
+						if(canTO){
+							if(pixHasAlpha && this.bufTran[bufI + 3] > 0){
+								//If overwriting a pixel that has opacity with one that has transparency.
+								canTO = false;//Cannot draw transparent pixels over ones with opacity using Over blending.
+							}
+							minTOX = Math.min(w, minTOX);
+							minTOY = Math.min(h, minTOY);
+							maxTOX = Math.max(w, maxTOX);
+							maxTOY = Math.max(h, maxTOY);
+							this.bufTO[bufI]     = fRGBA.data[i];
+							this.bufTO[bufI + 1] = fRGBA.data[i + 1];
+							this.bufTO[bufI + 2] = fRGBA.data[i + 2];
+							this.bufTO[bufI + 3] = fRGBA.data[i + 3];
+						}
+						if(canTS){
+							minTSX = Math.min(w, minTSX);
+							minTSY = Math.min(h, minTSY);
+							maxTSX = Math.max(w, maxTSX);
+							maxTSY = Math.max(h, maxTSY);
+							this.bufTS[bufI]     = fRGBA.data[i];
+							this.bufTS[bufI + 1] = fRGBA.data[i + 1];
+							this.bufTS[bufI + 2] = fRGBA.data[i + 2];
+							this.bufTS[bufI + 3] = fRGBA.data[i + 3];
+						}
+					}else{
+						if(canTO){
+							this.bufTO[bufI]     = 0;
+							this.bufTO[bufI + 1] = 0;
+							this.bufTO[bufI + 2] = 0;
+							this.bufTO[bufI + 3] = 0;
+						}
+						if(canTS){
+							this.bufTS[bufI]     = fRGBA.data[i];
+							this.bufTS[bufI + 1] = fRGBA.data[i + 1];
+							this.bufTS[bufI + 2] = fRGBA.data[i + 2];
+							this.bufTS[bufI + 3] = fRGBA.data[i + 3];
+						}
+					}
+				}
 			//==================================== 24-bit RGB =====================================
 			}else{
-				
+				pixHasAlpha =	   fRGBA.data[bufI]     == this.reservedTransColor[0]
+						&& fRGBA.data[bufI + 1] == this.reservedTransColor[1]
+						&& fRGBA.data[bufI + 2] == this.reservedTransColor[2];
+				if( (canPS || canPO) ){
+					if(!(
+						   this.bufPrev[bufI]     == fRGBA.data[i]
+						&& this.bufPrev[bufI + 1] == fRGBA.data[i + 1]
+						&& this.bufPrev[bufI + 2] == fRGBA.data[i + 2]
+						)){
+						if(canPO){
+							//The boolean if will eat part of the boolean operation if not put in ( )
+							if(pixHasAlpha &&
+							     (this.bufPrev[bufI]     == this.reservedTransColor[0]
+							   && this.bufPrev[bufI + 1] == this.reservedTransColor[1]
+							   && this.bufPrev[bufI + 2] == this.reservedTransColor[2]
+								)){
+								//If overwriting a pixel that has opacity with one that has transparency.
+								canPO = false;//Cannot draw transparent pixels over ones with opacity using Over blending.
+							}
+							minPOX = Math.min(w, minPOX);
+							minPOY = Math.min(h, minPOY);
+							maxPOX = Math.max(w, maxPOX);
+							maxPOY = Math.max(h, maxPOY);
+							this.bufPO[bufI]     = fRGBA.data[i];
+							this.bufPO[bufI + 1] = fRGBA.data[i + 1];
+							this.bufPO[bufI + 2] = fRGBA.data[i + 2];
+						}
+						if(canPS){
+							minPSX = Math.min(w, minPSX);
+							minPSY = Math.min(h, minPSY);
+							maxPSX = Math.max(w, maxPSX);
+							maxPSY = Math.max(h, maxPSY);
+							this.bufPS[bufI]     = fRGBA.data[i];
+							this.bufPS[bufI + 1] = fRGBA.data[i + 1];
+							this.bufPS[bufI + 2] = fRGBA.data[i + 2];
+						}
+					}else{
+						if(canPO){
+							//The buffer in over mode can recycle it using a transparent pixel if it matches.
+							this.bufPO[bufI]     = this.reservedTransColor[0];
+							this.bufPO[bufI + 1] = this.reservedTransColor[1];
+							this.bufPO[bufI + 2] = this.reservedTransColor[2];
+							//The source buffer will leave it as is. (Source will write all pixels in the region and transparency will overwrite things in source mode.)
+						}
+						if(canPS){//This must be filled. A pixel lower down and to the left could expand it where this is in the region after being passed over.
+							this.bufPS[bufI]     = fRGBA.data[i];
+							this.bufPS[bufI + 1] = fRGBA.data[i + 1];
+							this.bufPS[bufI + 2] = fRGBA.data[i + 2];
+						}
+					}
+				}
+				if( (canNS || canNO) ){
+					if(!(
+						   this.bufNone[bufI]     == fRGBA.data[i]
+						&& this.bufNone[bufI + 1] == fRGBA.data[i + 1]
+						&& this.bufNone[bufI + 2] == fRGBA.data[i + 2]
+						)){
+						if(canNO){
+							if(pixHasAlpha &&
+							     (this.bufNone[bufI]     == this.reservedTransColor[0]
+							   && this.bufNone[bufI + 1] == this.reservedTransColor[1]
+							   && this.bufNone[bufI + 2] == this.reservedTransColor[2]
+								)){
+								//If overwriting a pixel that has opacity with one that has transparency.
+								canNO = false;//Cannot draw transparent pixels over ones with opacity using Over blending.
+							}
+							minNOX = Math.min(w, minNOX);
+							minNOY = Math.min(h, minNOY);
+							maxNOX = Math.max(w, maxNOX);
+							maxNOY = Math.max(h, maxNOY);
+							this.bufNO[bufI]     = fRGBA.data[i];
+							this.bufNO[bufI + 1] = fRGBA.data[i + 1];
+							this.bufNO[bufI + 2] = fRGBA.data[i + 2];
+						}
+						if(canNS){
+							minNSX = Math.min(w, minNSX);
+							minNSY = Math.min(h, minNSY);
+							maxNSX = Math.max(w, maxNSX);
+							maxNSY = Math.max(h, maxNSY);
+							this.bufNS[bufI]     = fRGBA.data[i];
+							this.bufNS[bufI + 1] = fRGBA.data[i + 1];
+							this.bufNS[bufI + 2] = fRGBA.data[i + 2];
+						}
+						//if(this.frameBeingProcessed > 0){alert('none pixel draw at '+w+','+h);}
+					}else{
+						if(canNO){//Recycle matching pixel by drawing nothing over it(works on Over only)
+							this.bufNO[bufI]     = this.reservedTransColor[0];
+							this.bufNO[bufI + 1] = this.reservedTransColor[1];
+							this.bufNO[bufI + 2] = this.reservedTransColor[2];
+						}
+						if(canNS){
+							this.bufNS[bufI]     = fRGBA.data[i];
+							this.bufNS[bufI + 1] = fRGBA.data[i + 1];
+							this.bufNS[bufI + 2] = fRGBA.data[i + 2];
+						}
+					}
+				}
+				if( (canTS || canTO) ){
+					if(!(
+						   this.bufTran[bufI]     == fRGBA.data[i]
+						&& this.bufTran[bufI + 1] == fRGBA.data[i + 1]
+						&& this.bufTran[bufI + 2] == fRGBA.data[i + 2]
+						)){
+						if(canTO){
+							if(pixHasAlpha &&
+							     (this.bufTran[bufI]     == this.reservedTransColor[0]
+							   && this.bufTran[bufI + 1] == this.reservedTransColor[1]
+							   && this.bufTran[bufI + 2] == this.reservedTransColor[2]
+								)){
+								//If overwriting a pixel that has opacity with one that has transparency.
+								canTO = false;//Cannot draw transparent pixels over ones with opacity using Over blending.
+							}
+							minTOX = Math.min(w, minTOX);
+							minTOY = Math.min(h, minTOY);
+							maxTOX = Math.max(w, maxTOX);
+							maxTOY = Math.max(h, maxTOY);
+							this.bufTO[bufI]     = fRGBA.data[i];
+							this.bufTO[bufI + 1] = fRGBA.data[i + 1];
+							this.bufTO[bufI + 2] = fRGBA.data[i + 2];
+						}
+						if(canTS){
+							minTSX = Math.min(w, minTSX);
+							minTSY = Math.min(h, minTSY);
+							maxTSX = Math.max(w, maxTSX);
+							maxTSY = Math.max(h, maxTSY);
+							this.bufTS[bufI]     = fRGBA.data[i];
+							this.bufTS[bufI + 1] = fRGBA.data[i + 1];
+							this.bufTS[bufI + 2] = fRGBA.data[i + 2];
+						}
+					}else{
+						if(canTO){
+							this.bufTO[bufI]     = this.reservedTransColor[0];
+							this.bufTO[bufI + 1] = this.reservedTransColor[1];
+							this.bufTO[bufI + 2] = this.reservedTransColor[2];
+						}
+						if(canTS){
+							this.bufTS[bufI]     = fRGBA.data[i];
+							this.bufTS[bufI + 1] = fRGBA.data[i + 1];
+							this.bufTS[bufI + 2] = fRGBA.data[i + 2];
+						}
+					}
+				}
 			}
 		}}//end w,h
 		if(this.frameBeingProcessed == 0){
@@ -1024,6 +1378,13 @@ Transparent can be copied from none, but with the region covered by this frame c
 		if(minTSX>maxTSX||minTSY>maxTSY){
 			minTSX = 0;maxTSX = 1;minTSY = 0;maxTSY = 1;
 		}
+		//TODO: remove frame and increment duration of previous frame if no changes
+		//select the disposal mode where it was able to get it with no changed region required.
+		//that of course means the buffers stay as is and it gets delayed.
+		//If a frame after the first one recycled in this way can also be recycled, but would require a different disposal on the 
+		//previous frame that is a problem because changing the disposal would disregard the segments that were achieved with the original
+		//disposal used to recycle. In that case that frame needs to be drawn it would seem...
+		//Also note that the frame count in acTL would need to be altered to reflect this.
 		
 		//force full frame update for debugging
 		/*minNOX = 0;maxNOX = this.width - 1;minNOY = 0;maxNOY = this.height - 1;
@@ -1069,7 +1430,6 @@ Transparent can be copied from none, but with the region covered by this frame c
 		
 		var nonePos = 0, prevPos = 0, tranPos = 0, chosenDrawBuffer, chosenDisposeBuffer;
 		bufI = 0;
-		var chanI;//Cycle thru channels for multi-byte modes.
 		for(h = 0;h < this.height;h++){
 			//write the filter mode at the start of each scanline.
 			var noneScan = false, prevScan = false, tranScan = false;
@@ -1228,16 +1588,11 @@ Transparent can be copied from none, but with the region covered by this frame c
 		//Then apply disposal methods over it.
 		
 		var chosenBufferHold = new Uint8Array(new ArrayBuffer(chosenDisposeBuffer.length));//hold onto it until it is done(So it is not overwritten while still needed)
-		//Copy what was on None to Prev. That will be the new previous buffer now that it has advanced.
-		if(this.frameBeingProcessed > 0){//(On the first frame, None will always be initialized to all zeroes.)
-			for(i = 0;i < chosenDisposeBuffer.length;i += this.byteStreamMode){
-				for(chanI = 0;chanI < this.byteStreamMode;chanI++){
-					var iChanI = i + chanI;
-					chosenBufferHold[iChanI] = chosenDisposeBuffer[iChanI];
-					this.bufPrev[iChanI] = this.bufNone[iChanI];
-				}
-			}
+		//(On the first frame, None will always be initialized to all zeroes. But copy it anyways because the newly initialized chosenBufferHold does not initialize to zeroes on all browsers.)
+		for(i = 0;i < chosenDisposeBuffer.length;i++){
+			chosenBufferHold[i] = chosenDisposeBuffer[i];
 		}
+		
 		//TODO: Over COULD actually write over transparent pixels and have it work if what it is writing is fully opaque.
 			//What it cannot do is write transparency over something that is not fully transparent.
 		//Draw onto None and Transparent using the selected buffer that the update was drawn based on.
@@ -1245,19 +1600,40 @@ Transparent can be copied from none, but with the region covered by this frame c
 		bufI = 0;
 		for(h = 0;h < this.height;h++){
 			for(w = 0;w < this.width;w++){
-				for(chanI = 0;chanI < this.byteStreamMode;chanI++){//Draw contents of chosen dispose buffer that was drawn on.
-					this.bufNone[i + chanI] = chosenBufferHold[i + chanI];
-					this.bufTran[i + chanI] = chosenBufferHold[i + chanI];
+				//if(w >= minPX && w <= maxPX && h >= minPY && h <= maxPY){//If in the updated region for Prev.
+				if(w >= minCX && w <= maxCX && h >= minCY && h <= maxCY){
+				//Dispose the actual drawn on region with the different dispose methods.
+					//Copy what was on None to Prev. That will be the new previous buffer now that it has advanced.
+					//Do this before others so it is set to what None previously was with the image as is after it was rendered previously.
+					//(Only the region of the disposed frame disposes to what was there previously)
+					for(chanI = 0;chanI < this.byteStreamMode;chanI++){
+						this.bufPrev[bufI + chanI] = this.bufNone[bufI + chanI];
+					}
+				}else{
+					for(chanI = 0;chanI < this.byteStreamMode;chanI++){
+						this.bufPrev[bufI + chanI] = chosenBufferHold[bufI + chanI];
+					}
 				}
-				if(w >= minCX && w <= maxCX && h >= minCY && h <= maxCY){//If in the updated region.
+				for(chanI = 0;chanI < this.byteStreamMode;chanI++){//Draw contents of chosen dispose buffer that was drawn on.
+					this.bufNone[bufI + chanI] = chosenBufferHold[bufI + chanI];
+					this.bufTran[bufI + chanI] = chosenBufferHold[bufI + chanI];
+				}
+				//if(w >= minNX && w <= maxNX && h >= minNY && h <= maxNY){//If in the updated region for None.
+				//(The region that is actually selected and DRAWN needs to be disposed.)
+				if(w >= minCX && w <= maxCX && h >= minCY && h <= maxCY){
 					var noneRecycle = false;
-					if(chosenBlending && this.byteStreamMode == 1 && chosenDrawBuffer[i] == this.paletteTransI){noneRecycle = true;}
+					if(chosenBlending && this.byteStreamMode == 1 && chosenDrawBuffer[bufI] == this.paletteTransI){noneRecycle = true;}
 						//Only Over blending does not overwrite what is under it when transparent pixel written.
 					for(chanI = 0;chanI < this.byteStreamMode;chanI++){
 						if(!noneRecycle){//If noneRecycle, Transparent pixel was drawn to recycle this pixel, so leave it there.
-							this.bufNone[i + chanI] = chosenDrawBuffer[i + chanI];//Keep drawn changes as is in None buffer.
+							this.bufNone[bufI + chanI] = chosenDrawBuffer[bufI + chanI];//Keep drawn changes as is in None buffer.
 						}
-						this.bufTran[i + chanI] = 0;//Dispose to transparent black background for Tran buffer.
+//	}
+//}
+//if(w >= minTX && w <= maxTX && h >= minTY && h <= maxTY){//If in the updated region for Tran.
+//	for(chanI = 0;chanI < this.byteStreamMode;chanI++){
+						this.bufTran[bufI + chanI] = 0;//Dispose to transparent black background for Tran buffer.
+						//TODO: 24-bit will used reserved RGB transparent color
 					}
 				}
 				bufI += this.byteStreamMode;
@@ -1521,6 +1897,12 @@ AnimatedEncoder.prototype.saveAnimatedFile = function(){
 		if(this.quality < 1){
 			this.procFrameStage = 100;//100 for color counting
 			this.progressPerFrame /= 2;//it will have twice as many, because it now has two stages of processing.
+		}else{
+			//Force full quality to do the last frame only on counting so that it hits the logic for byte stream mode selection.
+			//TODO: Might want to break mode selection into a separate stage code for this purpose.
+			this.procFrameStage = 100;//100 for color counting
+			this.frameBeingProcessed = this.frames.length - 1;
+			this.progressPerFrame /= 2;
 		}
 	}
 	//Allow timeout for the progress display to visually reset if needed without the visual jerking back.
@@ -1693,6 +2075,9 @@ ID=0x18538067
 			outputLen += 12 + this.palette.length * 3;//PLTE chunk, 3 bytes per color 
 			outputLen += 12 + this.palette.length;//tRNS chunk, 1 byte per color
 		}
+		if((this.hasTransparency || this.frames > 1) && this.byteStreamMode == 3){//Will need transparent for recycling if multi-frame.
+			outputLen += 18 ;//tRNS chunk, + 6 bytes for deep color 2-byte-per-channel RGBA
+		}
 		//The length has been calculated. Now allocate the space and write it.
 		out8 = new Uint8Array(new ArrayBuffer(outputLen));
 		//for(i=0;i<out8.length;i++){
@@ -1716,7 +2101,11 @@ ID=0x18538067
 		if(this.palette){
 			out8[25] = 0x03;//Packed field. color(0x2) and palette(0x1) bits set, 00000011
 		}else{
-			out8[25] = 0x06;//Packed field. color(0x2) and alpha(0x4) bits set, 00000110
+			if(this.byteStreamMode == 4){
+				out8[25] = 0x06;//Packed field. color(0x2) and alpha(0x4) bits set, 00000110
+			}else{
+				out8[25] = 0x02;//Packed field. Only color(0x2) bit set, 00000010
+			}
 		}
 		out8[26] = 0x00;//Compression Mode, 0=DEFLATE, the only defined type
 		out8[27] = 0x00;//Filter Mode, 0=Adaptive, the only defined type
@@ -1769,6 +2158,23 @@ ID=0x18538067
 				out8[writePos] = this.palette[i] >> 24 & 0xFF;
 				writePos ++;
 			}
+			this.writeUint32(out8, this.getCRC32(out8, savePos, writePos), writePos,false);
+			writePos += 4;
+		}
+		if((this.hasTransparency || this.frames > 1) && this.byteStreamMode == 3){//Will need transparent for recycling if multi-frame.
+			//Now write tRNS, which must come before IDAT.
+			//For 24-bit RGB, it is a different format. Write the R,G,B values reserved as the transparent color as 16-bit unsigned integers.
+			this.writeUint32(out8, 6, writePos,false);
+			this.writeFourCC(out8, 'tRNS', writePos + 4);
+			savePos = writePos + 4;
+			writePos += 8;
+			out8[writePos]     = 0;//Big-Endian, 2 bytes per channel RGB to be able to hold deep color (Though only 1-byte channel RGB is used).
+			out8[writePos + 1] = this.reservedTransColor[0];
+			out8[writePos + 2] = 0;
+			out8[writePos + 3] = this.reservedTransColor[1];
+			out8[writePos + 4] = 0;
+			out8[writePos + 5] = this.reservedTransColor[2];
+			writePos += 6;
 			this.writeUint32(out8, this.getCRC32(out8, savePos, writePos), writePos,false);
 			writePos += 4;
 		}
@@ -2069,8 +2475,8 @@ AnimatedEncoder.prototype.quant8Octets = function(octets){
 	var oBits;
 	var quantizePixel;
 	for(var i=0;i<octets.length;i++){
-		if(i%4 == 0){
-			quantizePixel = this.getColorCount(octets[i], octets[i + 1], octets[i + 2], octets[i + 3]) < this.quantThresh;
+		if(i%this.byteStreamMode == 0){
+			quantizePixel = this.getColorCount(octets[i], octets[i + 1], octets[i + 2], this.byteStreamMode == 4 ? octets[i + 3] : 0xFF) < this.quantThresh;
 		}
 		if(quantizePixel){
 			oBits = octets[i];
