@@ -1,5 +1,6 @@
 /*
 AnimatedEncoder by Compukaze LLC
+
 Visit
 
 AnimatedWEBPs.com
@@ -32,7 +33,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 =============================================================================
 
-Version 1.0.8
+Version 1.0.9
 
 Format support is based on what formats a given browser supports as
 an export type from <canvas> .toDataURL()
@@ -150,6 +151,13 @@ var paramz = {
 					be interpreted and/or printed at the desired physical size.
 					If you are using ppcm(pixels per centimetre) you can take that
 					times 100 to get the ppm.
+	"png":<object that can contain PNG-specific parameters for tweaking the features or modes used to encode>
+		"png.disposePrevious":<true|false>
+			Can be set to false to disable dispose to previous mode. Some platforms such as Pebble smartwatch might not support this disposal mode.
+			(Probably to save resources by not keeping the previous frame in memory since running on compact hardware.)
+		"png.disposeBackground":<true|false>
+		"png.disposeNone":<true|false>
+			(Be careful disabling multiple disposal modes, if there are no modes to work with the image cannot be built.)
 ------------Events----------------------------------------------------
 	"onEncoded":<function to call when done>,
 	"onProgress":<function to call as encoding progresses. receives a 0-1 number representing a percentage>,
@@ -809,6 +817,20 @@ AnimatedEncoder.prototype.procFrame = function(){
 		}
 		if(this.frameBeingProcessed == 1){
 			canPO = false;canPS = false;//The second frame before cannot dispose to previous with no frame before it.
+		}
+		if(this.png){
+			//If tweaked to disable certain dispose modes.
+			//(Be careful disabling multiple modes, if there are no modes to work with the image cannot be built.)
+			if(!this.png.disposeNone){
+				canNO = false;canNS = false;
+			}
+			if(!this.png.disposePrevious){
+				canPO = false;canPS = false;
+			}
+			if(!this.png.disposeBackground && this.frameBeingProcessed > 0){
+				//Image will ALWAYS initialize to transparent black before the first frame.
+				canTO = false;canTS = false;
+			}
 		}
 		if(this.byteStreamMode >= 3){
 			this.buildDithMasks();//must have masks before quantizing
@@ -1957,7 +1979,17 @@ AnimatedEncoder.prototype.saveAnimatedFile = function(){
 	
 	if(this.customByteStream){delete this.customByteStream;}
 	if(this.hasTransparency){delete this.hasTransparency;}
-
+	
+	if(this.png){//If PNG-specific tweaks were set.
+		//copy into a new object with every variable set to something in proper type.
+		var pngOpts = {};
+		pngOpts.disposeNone       = this.png.disposeNone       === undefined ? true : this.png.disposeNone == true;
+		pngOpts.disposeBackground = this.png.disposeBackground === undefined ? true : this.png.disposeBackground == true;
+		pngOpts.disposePrevious   = this.png.disposePrevious   === undefined ? true : this.png.disposePrevious == true;
+		//Leave whatever object was sent as a parameter as it is, then have the optimized version live.
+		this.png = pngOpts;
+	}
+	
 	this.buildDithMasksV2();
 	
 	//initialize things that some formats need.
