@@ -158,6 +158,16 @@ var paramz = {
 		"png.disposeBackground":<true|false>
 		"png.disposeNone":<true|false>
 			(Be careful disabling multiple disposal modes, if there are no modes to work with the image cannot be built.)
+		"png.palette":<Array>
+			Up to 256 ARGB numbers representing a preset palette.
+			Setting this will force it into indexed mode and skip the color counting step.
+			Some hardware like smartwatches might only support certain colors and this can optimize for that.
+			Palette is format-specific, for example GIF can only represent RGB colors and one reserved transparent pixel,
+			while PNG palette can represent RGBA colors on all entries.
+	"dithering":<pattern|none|integer>
+		Use patterned dithering or turn dithering off. More modes may be added later. "pattern" is default.
+		Dithering is not format-specific, but a technique that can be applied to various formats.
+		Integer codes are: 0 = none, 1 = pattern
 ------------Events----------------------------------------------------
 	"onEncoded":<function to call when done>,
 	"onProgress":<function to call as encoding progresses. receives a 0-1 number representing a percentage>,
@@ -240,6 +250,7 @@ function AnimatedEncoder(paramz,simpleQuality){
 	this.delay = 75;//The in milliseconds delay for all frames, unless frame-specific delay set.
 	this.onEncoded = null;
 	this.fitting = 'actual';
+	this.dithering = 'pattern';
 	
 	this.generateBase64 = false;//Set to true for legacy support. Deprecated. This may be removed later.
 	
@@ -254,6 +265,7 @@ function AnimatedEncoder(paramz,simpleQuality){
 	for(var key in paramz){
 		this[key] = paramz[key];
 	}
+	
 	this.encoderCanvas = document.createElement('canvas');
 };
 AnimatedEncoder.prototype.supportsFormat = function(desiredFormat){
@@ -474,6 +486,7 @@ AnimatedEncoder.prototype.procFrame = function(){
 				this.procFrameStage = 0;//set stage to 0, final, so that it can draw and encode the image now that it has the color count.
 				//Once the colors have been analyzed, determine what type of byte stream it will use,
 				//32-bit RGBA, 8-bit indexed, or 24-bit RGB with one RGB value reserved as the simple transparency code.
+				//48-bit and 64-bit modes are not currently supported. Canvas has no support for deep color and screens that can even display it are extremely rare.
 				this.customByteStream = false;//whether to build the byte stream or use the toDataURL byte stream from the browser.
 				this.byteStreamMode = 4;
 					//byteStreamMode (for PNG) values are:
@@ -691,55 +704,7 @@ AnimatedEncoder.prototype.procFrame = function(){
 					}
 				}//======== End if not using palette ===================================
 				
-				var byteBufLength = this.width * this.height * this.byteStreamMode;
-				this.bufNO = new Uint8Array(new ArrayBuffer(byteBufLength));//None-Over...
-				this.bufPO = new Uint8Array(new ArrayBuffer(byteBufLength));
-				this.bufTO = new Uint8Array(new ArrayBuffer(byteBufLength));
-				this.bufNS = new Uint8Array(new ArrayBuffer(byteBufLength));
-				this.bufPS = new Uint8Array(new ArrayBuffer(byteBufLength));
-				this.bufTS = new Uint8Array(new ArrayBuffer(byteBufLength));//...Tran-Source
-				//These buffers will track how the output buffer would be updated based on different disposal/blend modes
-				//They do not need the extra bytes for the filter mode. That will be added after the optimal buffer is selected.
-				//These only contain the updated regions as the would be drawn, the positions outside of the current region can be ignored.
-				
-				//------------------------------------------------------------
-				//These buffers will be filled with the actual results of disposal methods and used to see how to draw.
-				this.bufNone = new Uint8Array(new ArrayBuffer(byteBufLength));
-				this.bufPrev = new Uint8Array(new ArrayBuffer(byteBufLength));
-				this.bufTran = new Uint8Array(new ArrayBuffer(byteBufLength));
-				
-				//SOME BROWSERS DO NOT INITIALIZE Uint8Array TO ZERO! MAKE SURE THIS IS DONE!
-				//NOTE: 0 should be the index value for fully transparent in most cases since it is inserted into the candidate array with maxed out count if multi-frame.
-				if(this.byteStreamMode == 1){//8-bit
-					var filler = this.paletteTransI ? this.paletteTransI : 0;
-					this.bufNO.fill(filler);this.bufPO.fill(filler);
-					this.bufTO.fill(filler);this.bufNS.fill(filler);
-					this.bufPS.fill(filler);this.bufTS.fill(filler);
-					this.bufNone.fill(filler);this.bufPrev.fill(filler);this.bufTran.fill(filler);
-				}else if(this.byteStreamMode == 4){//32-bit
-					this.bufNO.fill(0);this.bufPO.fill(0);this.bufTO.fill(0);this.bufNS.fill(0);this.bufPS.fill(0);this.bufTS.fill(0);
-					this.bufNone.fill(0);this.bufPrev.fill(0);this.bufTran.fill(0);
-				}else{//24-bit
-					//24-bit and 8-bit with no tRNS cannot initialize buffer data to transparent black.
-					//However, since the first frame always is forced to use Source blending and the Tran buffer, this is not a problem.
-					//tRNS will always be added for pixel recycling if multi-frame.
-					//24-bit initialization is a bit more complicated, it must initialize pixels to the R,G,B values of the reserved transparent color.
-					if(this.reservedTransColor[0] > -1){
-						for(i = 0;i < byteBufLength;i += 3){
-							for(chanI = 0;chanI < 3;chanI++){
-								this.bufNO[i + chanI] = this.reservedTransColor[chanI];
-								this.bufPO[i + chanI] = this.reservedTransColor[chanI];
-								this.bufTO[i + chanI] = this.reservedTransColor[chanI];
-								this.bufNS[i + chanI] = this.reservedTransColor[chanI];
-								this.bufPS[i + chanI] = this.reservedTransColor[chanI];
-								this.bufTS[i + chanI] = this.reservedTransColor[chanI];
-								this.bufNone[i + chanI] = this.reservedTransColor[chanI];
-								this.bufPrev[i + chanI] = this.reservedTransColor[chanI];
-								this.bufTran[i + chanI] = this.reservedTransColor[chanI];
-							}
-						}
-					}
-				}
+				this.initBuffersPNG();
 				//alert('bystSMode ' + this.byteStreamMode);
 			}//================== end if last frame for color count ===================
 			setTimeout(function(){this_this.procFrame();},50);
@@ -1958,6 +1923,14 @@ AnimatedEncoder.prototype.saveAnimatedFile = function(){
 	this.width = parseInt(this.width);
 	this.height = parseInt(this.height);
 	
+	//set up number code to avoid string compares in heavily cycled code.
+	if(typeof this.dithering === 'number'){
+		this.ditheringCode = this.dithering;
+	}else{
+		this.ditheringCode = 1;//1 for pattern
+		if(this.dithering == 'none'){this.ditheringCode = 0;}
+	}
+	
 	//Note that webp will process through as a an Animated WEBP would even if it just has one frame
 	//there are additional features that may be added later that will need this extracting and rebuilding process:
 	//Insert EXIF or XMP Metadata,
@@ -1980,16 +1953,6 @@ AnimatedEncoder.prototype.saveAnimatedFile = function(){
 	if(this.customByteStream){delete this.customByteStream;}
 	if(this.hasTransparency){delete this.hasTransparency;}
 	
-	if(this.png){//If PNG-specific tweaks were set.
-		//copy into a new object with every variable set to something in proper type.
-		var pngOpts = {};
-		pngOpts.disposeNone       = this.png.disposeNone       === undefined ? true : this.png.disposeNone == true;
-		pngOpts.disposeBackground = this.png.disposeBackground === undefined ? true : this.png.disposeBackground == true;
-		pngOpts.disposePrevious   = this.png.disposePrevious   === undefined ? true : this.png.disposePrevious == true;
-		//Leave whatever object was sent as a parameter as it is, then have the optimized version live.
-		this.png = pngOpts;
-	}
-	
 	this.buildDithMasksV2();
 	
 	//initialize things that some formats need.
@@ -2007,10 +1970,55 @@ AnimatedEncoder.prototype.saveAnimatedFile = function(){
 			this.procFrameStage = 100;//100 for color counting
 			this.progressPerFrame /= 2;//it will have twice as many, because it now has two stages of processing.
 		}else{
-			//Force full quality to do the last frame only on counting so that it hits the logic for byte stream mode selection.
-			//TODO: Might want to break mode selection into a separate stage code for this purpose.
 			this.procFrameStage = 100;//100 for color counting
-			this.frameBeingProcessed = this.frames.length - 1;
+			if(this.quality >= 1){
+				//Force full quality to do the last frame only on counting so that it hits the logic for byte stream mode selection.
+				//TODO: Might want to break mode selection into a separate stage code for this purpose.
+				this.frameBeingProcessed = this.frames.length - 1;
+			}else{
+				this.progressPerFrame /= 2;//2 stages of processing.
+			}
+		}
+		if(this.png){//If PNG-specific tweaks were set.
+			//copy into a new object with every variable set to something in proper type.
+			var pngOpts = {};
+			pngOpts.disposeNone       = this.png.disposeNone       === undefined ? true : this.png.disposeNone == true;
+			pngOpts.disposeBackground = this.png.disposeBackground === undefined ? true : this.png.disposeBackground == true;
+			pngOpts.disposePrevious   = this.png.disposePrevious   === undefined ? true : this.png.disposePrevious == true;
+			if(this.png.palette && window.pako){
+				this.palette = this.png.palette;
+			}
+			//Leave whatever object was sent as a parameter as it is, then have the optimized version live.
+			this.png = pngOpts;
+		}
+		//TODO: Option to force 24-bit or 32-bit mode?
+		if(this.palette){
+			this.procFrameStage = 0;//Preset colors already selected, skip color counting.
+			this.frameBeingProcessed = 0;
+			this.progressPerFrame = 1 / this.frames.length;
+			this.paletteTransI = 0;
+			this.paletteExactMatch = [];
+			this.hasTransparency = 0;
+			var pA, pR, pG, pB;
+			for(var p = 0;p < this.palette.length;p++){
+				pA = this.palette[p] >> 24 & 0xFF;
+				pR = this.palette[p] >> 16 & 0xFF;
+				pG = this.palette[p] >> 8 & 0xFF;
+				pB = this.palette[p] & 0xFF;
+				if(!pA){//Find the transparent color
+					this.paletteTransI = p;
+					this.hasTransparency = Math.max(this.hasTransparency, 1);
+				}else if(pA < 0xFF){
+					this.hasTransparency = 2;
+				}
+				if(this.paletteExactMatch[pA] === undefined){this.paletteExactMatch[pA] = [];}
+				if(this.paletteExactMatch[pA][pR] === undefined){this.paletteExactMatch[pA][pR] = [];}
+				if(this.paletteExactMatch[pA][pR][pG] === undefined){this.paletteExactMatch[pA][pR][pG] = [];}
+				this.paletteExactMatch[pA][pR][pG][pB] = true;
+			}
+			this.customByteStream = true;
+			this.byteStreamMode = 1;
+			this.initBuffersPNG();
 		}
 	}
 	//Allow timeout for the progress display to visually reset if needed without the visual jerking back.
@@ -2591,14 +2599,18 @@ AnimatedEncoder.prototype.quant8Octets = function(octets){
 			var incrementDif = oBits%QUANT_INC[quant8];
 			var nChange = incrementDif/QUANT_INC[quant8];
 			var roundUp;
-			if(nChange>0.375&&nChange<0.625){//value about in the middle
-				roundUp = this.dithMaskHalf[i];//?Math.floor(nVal):Math.ceil(nVal);//checkered even split
-				//dithOrg[0][dithClr][dithI]? -- old code, maybe expiriment before dropping patterned dith at one point?
-			}else if(nChange>0.125&&nChange<=0.375){//value relatively close to lower number
-				roundUp = this.dithMaskFourth[i];//return dithAltB?Math.ceil(nVal):Math.floor(nVal);//sparse ceiling
-			}else if(nChange>=0.625&&nChange<0.875){//value relatively close to upper number
-				roundUp = !this.dithMaskFourth[i];//return dithAltB?Math.floor(nVal):Math.ceil(nVal);//sparse floor
-			}else{
+			if(this.ditheringCode == 1){//Pattern dithering
+				if(nChange>0.375&&nChange<0.625){//value about in the middle
+					roundUp = this.dithMaskHalf[i];//?Math.floor(nVal):Math.ceil(nVal);//checkered even split
+					//dithOrg[0][dithClr][dithI]? -- old code, maybe expiriment before dropping patterned dith at one point?
+				}else if(nChange>0.125&&nChange<=0.375){//value relatively close to lower number
+					roundUp = this.dithMaskFourth[i];//return dithAltB?Math.ceil(nVal):Math.floor(nVal);//sparse ceiling
+				}else if(nChange>=0.625&&nChange<0.875){//value relatively close to upper number
+					roundUp = !this.dithMaskFourth[i];//return dithAltB?Math.floor(nVal):Math.ceil(nVal);//sparse floor
+				}else{
+					roundUp = Math.round(nChange);
+				}
+			}else{//No dithering.
 				roundUp = Math.round(nChange);
 			}
 			
@@ -2700,7 +2712,6 @@ AnimatedEncoder.prototype.getPaletteIndex = function(fData, qData, i, dithW, dit
 	    green = fData[i + 1],
 	    blue  = fData[i + 2],
 	    alpha = fData[i + 3];
-	var lockIndex = i / 4;
 	var closestVals = this.getClosestColor(red, green, blue, alpha);
 	var closestColor = closestVals[0];
 	//[A],[R],[G] are arrays, [B] is a value(true) or undefined.
@@ -2723,6 +2734,11 @@ AnimatedEncoder.prototype.getPaletteIndex = function(fData, qData, i, dithW, dit
 		var dithHalf   = dithValue > 0;
 		var dithFourth = dithValue > 1;
 		var dithEighth = dithValue > 2;
+		
+		if(!this.ditheringCode){
+			//If no dithering, further logic to dither is not needed.
+			return closestColor;
+		}
 		
 		for(var c = 0; c < 4; c++){
 			var qIncr = 0x20;
@@ -2751,18 +2767,19 @@ AnimatedEncoder.prototype.getPaletteIndex = function(fData, qData, i, dithW, dit
 		var secondClosestVals = this.getClosestColor(dithRGBA[0], dithRGBA[1], dithRGBA[2], dithRGBA[3]);
 			//Don't dither with the next closest color unless it is relatively close,
 			//otherwise it hurts both compression and quality.
+			//TODO: go over the logic on this, it is a bit wonky.
 			if(
 			  (Math.abs(closestVals[1] - secondClosestVals[1])
 			 + Math.abs(closestVals[2] - secondClosestVals[2])
 			 + Math.abs(closestVals[3] - secondClosestVals[3])
 			 + Math.abs(closestVals[4] - secondClosestVals[4])
-				< 16384 / this.palette.length)
+				< 0xFF)//< 65536 / this.palette.length)//32678 16384 8192 4096
 			&&
 			  (Math.abs(red   - secondClosestVals[1])
 			 + Math.abs(green - secondClosestVals[2])
 			 + Math.abs(blue  - secondClosestVals[3])
 			 + Math.abs(alpha - secondClosestVals[4])
-				< 16384 / this.palette.length )
+				< 0xFF)//< 65536 / this.palette.length )
 				 ){
 				closestColor = secondClosestVals[0];
 			}
@@ -2771,6 +2788,7 @@ AnimatedEncoder.prototype.getPaletteIndex = function(fData, qData, i, dithW, dit
 	}
 	//previous RGBA must be updated so that it can compare with actual pixel drawn
 	
+	/*
 	var closeR = closestVals[1],
 	    closeG = closestVals[2],
 	    closeB = closestVals[3],
@@ -2781,7 +2799,7 @@ AnimatedEncoder.prototype.getPaletteIndex = function(fData, qData, i, dithW, dit
 	//transparent areas to get spare dots drawn over them
 	//(Use closeR/G/B/A, compare actual color being drawn not original value)
 	
-	/*//This style of dithering was shifting noise around too much when switching frames, hurting compression and appearence.
+	//This style of dithering was shifting noise around too much when switching frames, hurting compression and appearence.
 	this.distQuant(red   - closeR, qData, i, dithW, dithH, 0);
 	this.distQuant(green - closeG, qData, i, dithW, dithH, 1);
 	this.distQuant(blue  - closeB, qData, i, dithW, dithH, 2);
@@ -2893,4 +2911,55 @@ AnimatedEncoder.prototype.filterBytePNG = function(buf, i, fMode, x, y, minX, mi
 		return curByte;
 	}
 	//TODO: May want to add Average(3) and Paeth(4) mode.
+};
+AnimatedEncoder.prototype.initBuffersPNG = function(){
+				var byteBufLength = this.width * this.height * this.byteStreamMode;
+				this.bufNO = new Uint8Array(new ArrayBuffer(byteBufLength));//None-Over...
+				this.bufPO = new Uint8Array(new ArrayBuffer(byteBufLength));
+				this.bufTO = new Uint8Array(new ArrayBuffer(byteBufLength));
+				this.bufNS = new Uint8Array(new ArrayBuffer(byteBufLength));
+				this.bufPS = new Uint8Array(new ArrayBuffer(byteBufLength));
+				this.bufTS = new Uint8Array(new ArrayBuffer(byteBufLength));//...Tran-Source
+				//These buffers will track how the output buffer would be updated based on different disposal/blend modes
+				//They do not need the extra bytes for the filter mode. That will be added after the optimal buffer is selected.
+				//These only contain the updated regions as the would be drawn, the positions outside of the current region can be ignored.
+				
+				//------------------------------------------------------------
+	//These buffers will be filled with the actual results of disposal methods and used to see how to draw.
+				this.bufNone = new Uint8Array(new ArrayBuffer(byteBufLength));
+				this.bufPrev = new Uint8Array(new ArrayBuffer(byteBufLength));
+				this.bufTran = new Uint8Array(new ArrayBuffer(byteBufLength));
+				
+				//SOME BROWSERS DO NOT INITIALIZE Uint8Array TO ZERO! MAKE SURE THIS IS DONE!
+				//NOTE: 0 should be the index value for fully transparent in most cases since it is inserted into the candidate array with maxed out count if multi-frame.
+				if(this.byteStreamMode == 1){//8-bit
+					var filler = this.paletteTransI ? this.paletteTransI : 0;
+					this.bufNO.fill(filler);this.bufPO.fill(filler);
+					this.bufTO.fill(filler);this.bufNS.fill(filler);
+					this.bufPS.fill(filler);this.bufTS.fill(filler);
+					this.bufNone.fill(filler);this.bufPrev.fill(filler);this.bufTran.fill(filler);
+				}else if(this.byteStreamMode == 4){//32-bit
+					this.bufNO.fill(0);this.bufPO.fill(0);this.bufTO.fill(0);this.bufNS.fill(0);this.bufPS.fill(0);this.bufTS.fill(0);
+					this.bufNone.fill(0);this.bufPrev.fill(0);this.bufTran.fill(0);
+				}else{//24-bit
+					//24-bit and 8-bit with no tRNS cannot initialize buffer data to transparent black.
+					//However, since the first frame always is forced to use Source blending and the Tran buffer, this is not a problem.
+					//tRNS will always be added for pixel recycling if multi-frame.
+					//24-bit initialization is a bit more complicated, it must initialize pixels to the R,G,B values of the reserved transparent color.
+					if(this.reservedTransColor[0] > -1){
+						for(var i = 0;i < byteBufLength;i += 3){
+							for(var chanI = 0;chanI < 3;chanI++){
+								this.bufNO[i + chanI] = this.reservedTransColor[chanI];
+								this.bufPO[i + chanI] = this.reservedTransColor[chanI];
+								this.bufTO[i + chanI] = this.reservedTransColor[chanI];
+								this.bufNS[i + chanI] = this.reservedTransColor[chanI];
+								this.bufPS[i + chanI] = this.reservedTransColor[chanI];
+								this.bufTS[i + chanI] = this.reservedTransColor[chanI];
+								this.bufNone[i + chanI] = this.reservedTransColor[chanI];
+								this.bufPrev[i + chanI] = this.reservedTransColor[chanI];
+								this.bufTran[i + chanI] = this.reservedTransColor[chanI];
+							}
+						}
+					}
+				}
 };
