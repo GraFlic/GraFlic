@@ -204,6 +204,16 @@ function onEncodedFunc(ae){
 	anImage.href = ae.output;
 	anImage.download = 'filename_that_your_image_should_have.' + ae.format;//This is optional. It gives a meaningful filename when saved.
 }
+----------ADVANCED--------------------------------
+	"retainPastOutput":<true|false>, (default is not set, evaluates false)
+		//By default, output is only retained until saveAnimatedFile is run again.
+		//If retainPastOutput is set to true, it will be up to the software using the AnimatedEncoder class
+		//to do memory management and decide when to revoke ObjectURLs that are no longer needed.
+		//AE by default assumes that if you are re-encoding the image, you are redoing the same image
+		//with different parameters and discards the previous blob file to prevent huge memory leaks.
+		//If making multiple images and wanting the output to stay downloadable/saveable for all images,
+		//set retainPastOutput = true or make multiple AnimatedEncoder() instances.
+
 	********** The following will be set internally and do *******
 	*************** NOT need to be set in paramz *****************
 	"frames":<frame setups>
@@ -245,8 +255,8 @@ function AnimatedEncoder(paramz,simpleQuality){
 	this.format = 'png';//Canvas.toDataURL('image/png'); supported in all browsers, so this is default.
 	this.comment = 'Saved with AnimatedEncoder ( AnimatedWEBPs.com )';
 	this.quality = '0.75';
-	this.width = 1;
-	this.height = 1;
+	this.outputWidth = 1;
+	this.outputHeight = 1;
 	this.delay = 75;//The in milliseconds delay for all frames, unless frame-specific delay set.
 	this.onEncoded = null;
 	this.fitting = 'actual';
@@ -324,7 +334,7 @@ AnimatedEncoder.prototype.addFrame = function(frameParamz){
 		This is a MODERN HTML input technique that works locally and
 		DOES NOT REQUIRE SERVER-SIDE INTERACTION
 	
-	{"url":[String to be used as 'src']} (this one may still need to be finished...)
+	{"url":[String to be used as 'src']}
 	*/
 	var this_this = this;
 	//since a zero-length frame might be something some format supports at some point,
@@ -341,20 +351,38 @@ AnimatedEncoder.prototype.addFrame = function(frameParamz){
 	}else if(frameParamz.file){
 		//if input is not from <img>, an image must be generated first.
 		
-		var fImg = document.createElement('img');
-		fImg.file = frameParamz.file;
-		var fRead = new FileReader();
-		fRead.onload = (function(imagin){return function(e){imagin.src=e.target.result;};})(fImg);
-		fRead.readAsDataURL(fImg.file);
-		frameParamz.image = fImg;
-		fImg.onload = function(imgLoadInput){
-			//once src is set, this will load and image will have data
-			this_this.addFrameFromImage(frameParamz);
-		};
-	}else if(frameParamz.url){
+		this.imageLoading = document.createElement('img');
+		frameParamz.image = this.imageLoading;
+		this.frameLoadingParamz = frameParamz;
+		this.imageLoadingFunc = AnimatedEncoder_frameImageLoading.bind(this);
+		this.imageLoading.addEventListener('load', this.imageLoadingFunc);
 		
+		this.fileReading = new FileReader();
+		this.fileReadingFunc = AnimatedEncoder_frameFileReading.bind(this);
+		this.fileReading.addEventListener('load', this.fileReadingFunc);
+		this.fileReading.readAsDataURL(frameParamz.file);
+	}else if(frameParamz.url){
+		this.imageLoading = document.createElement('img');
+		frameParamz.image = this.imageLoading;
+		this.frameLoadingParamz = frameParamz;
+		this.imageLoadingFunc = AnimatedEncoder_frameImageLoading.bind(this);
+		this.imageLoading.addEventListener('load', this.imageLoadingFunc);
+		this.imageLoading.src = frameParamz.url;
 	}
 };
+function AnimatedEncoder_frameFileReading(aeEvent){
+	this.fileReading.removeEventListener('load', this.fileReadingFunc);
+	this.imageLoading.src = this.fileReading.result;
+	delete this.fileReading;
+	delete this.fileReadingFunc;
+}
+function AnimatedEncoder_frameImageLoading(aeEvent){
+	this.imageLoading.removeEventListener('load', this.imageLoadingFunc);
+	this.addFrameFromImage(this.frameLoadingParamz);
+	delete this.frameLoadingParamz;
+	delete this.imageLoading;
+	delete this.imageLoadingFunc;
+}
 AnimatedEncoder.prototype.addFrameFromImage = function(frameParamz){
 	//frames should be added, then processing will be done afterwards.
 	this.frames.push(frameParamz);
@@ -365,8 +393,8 @@ AnimatedEncoder.prototype.procFrame = function(){
 	var this_this = this;//works around access bugs with 'this'
 	var curFrame = this.frames[this.frameBeingProcessed];
 	var frameImg = curFrame.image;
-	this.encoderCanvas.width = this.width;
-	this.encoderCanvas.height = this.height;
+	this.encoderCanvas.width = this.outputWidth;
+	this.encoderCanvas.height = this.outputHeight;
 	var ctx = this.encoderCanvas.getContext('2d');
 	ctx.save();//save context state before potentially transforming
 	var scX = 1;//scaling
@@ -374,32 +402,32 @@ AnimatedEncoder.prototype.procFrame = function(){
 	var trX = 0;//translation vars
 	var trY = 0;
 	if(this.fitting == 'stretch'){
-		scX = this.width/frameImg.naturalWidth;
-		scY = this.height/frameImg.naturalHeight;
+		scX = this.outputWidth/frameImg.naturalWidth;
+		scY = this.outputHeight/frameImg.naturalHeight;
 		ctx.scale(scX,scY);
 	}
 	if(this.fitting == 'crop'){
-		scX = this.width/frameImg.naturalWidth;
-		scY = this.height/frameImg.naturalHeight;
+		scX = this.outputWidth/frameImg.naturalWidth;
+		scY = this.outputHeight/frameImg.naturalHeight;
 		if(scX<scY){
 			scX = scY;
-			trX = -(frameImg.naturalWidth*scY-this.width)/2;
+			trX = -(frameImg.naturalWidth*scY-this.outputWidth)/2;
 		}else{
 			scY = scX;
-			trY = -(frameImg.naturalHeight*scX-this.height)/2;
+			trY = -(frameImg.naturalHeight*scX-this.outputHeight)/2;
 		}
 		ctx.translate(trX,trY);
 		ctx.scale(scX,scY);
 	}
 	if(this.fitting == 'preserve'){//preserves all areas of all images and all aspect ratios of all images.
-		scX = this.width/frameImg.naturalWidth;
-		scY = this.height/frameImg.naturalHeight;
+		scX = this.outputWidth/frameImg.naturalWidth;
+		scY = this.outputHeight/frameImg.naturalHeight;
 		if(scX>scY){//currently the same logic as 'crop' completely, except this reversed condition.
 			scX = scY;
-			trX = -(frameImg.naturalWidth*scY-this.width)/2;
+			trX = -(frameImg.naturalWidth*scY-this.outputWidth)/2;
 		}else{
 			scY = scX;
-			trY = -(frameImg.naturalHeight*scX-this.height)/2;
+			trY = -(frameImg.naturalHeight*scX-this.outputHeight)/2;
 		}
 		ctx.translate(trX,trY);
 		ctx.scale(scX,scY);
@@ -414,8 +442,8 @@ AnimatedEncoder.prototype.procFrame = function(){
 	//these dimensions may be updated if only  a smaller section of the image has updates on it.
 	var frameFinalX = 0;//TODO, scrunch the frame down to only the region that is updated.
 	var frameFinalY = 0;
-	var frameFinalW = this.width;
-	var frameFinalH = this.height;
+	var frameFinalW = this.outputWidth;
+	var frameFinalH = this.outputHeight;
 	//TODO: Frame removal and make previous frame last longer if no changes.
 	//for testing of inter-frame and such:
 		//if(!this.encoderCanvas.parentNode){document.getElementsByTagName('body')[0].appendChild(this.encoderCanvas);}
@@ -558,12 +586,12 @@ AnimatedEncoder.prototype.procFrame = function(){
 				
 				//Force it to be kept if it represents a large portion of the image.
 				//This will stop colors that are close, but still represent large parts of the image from being eliminated.
-				var keepThresh = this.width * this.height * this.frames.length * (1/this.paletteLimit);
+				var keepThresh = this.outputWidth * this.outputHeight * this.frames.length * (1/this.paletteLimit);
 				//The keep threshold should not bee too high or things like gradients can hog all the palette with shades of colors
 				//that are semi-common but not the ones that should be selected.
 				
 				
-				/*if(this.width * this.height < 0x3FFF){
+				/*if(this.outputWidth * this.outputHeight < 0x3FFF){
 					//Exception for small images (< 128 x 128)
 					includeThresh = 1;
 					sortThresh = 2;
@@ -763,12 +791,12 @@ AnimatedEncoder.prototype.procFrame = function(){
 		var indexPos = 0;
 		//var pixelI = 0;
 		//find the rectangular region that contains all changes.
-		var minNOX = this.width, minNOY = this.height, maxNOX = 0, maxNOY = 0,//None-Over
-		    minPOX = this.width, minPOY = this.height, maxPOX = 0, maxPOY = 0,//Prev-Over
-		    minTOX = this.width, minTOY = this.height, maxTOX = 0, maxTOY = 0,//Tran-Over
-		    minNSX = this.width, minNSY = this.height, maxNSX = 0, maxNSY = 0,//None-Source
-		    minPSX = this.width, minPSY = this.height, maxPSX = 0, maxPSY = 0,//Prev-Source
-		    minTSX = this.width, minTSY = this.height, maxTSX = 0, maxTSY = 0,//Tran-Source
+		var minNOX = this.outputWidth, minNOY = this.outputHeight, maxNOX = 0, maxNOY = 0,//None-Over
+		    minPOX = this.outputWidth, minPOY = this.outputHeight, maxPOX = 0, maxPOY = 0,//Prev-Over
+		    minTOX = this.outputWidth, minTOY = this.outputHeight, maxTOX = 0, maxTOY = 0,//Tran-Over
+		    minNSX = this.outputWidth, minNSY = this.outputHeight, maxNSX = 0, maxNSY = 0,//None-Source
+		    minPSX = this.outputWidth, minPSY = this.outputHeight, maxPSX = 0, maxPSY = 0,//Prev-Source
+		    minTSX = this.outputWidth, minTSY = this.outputHeight, maxTSX = 0, maxTSY = 0,//Tran-Source
 		    canNO = true, canPO = true, canTO = true, canNS = true, canPS = true, canTS = true;
 		//the can- booleans will be set to false if a possibility is eliminated and processing does not need to
 		//be done for it for the remainder of the frame.
@@ -802,9 +830,9 @@ AnimatedEncoder.prototype.procFrame = function(){
 			this.quant8Octets(fRGBA.data);
 		}
 		var bufI;
-		for(h = 0;h < this.height;h++){
-		for(w = 0;w < this.width;w++){
-			bufI = (w + h * this.width);
+		for(h = 0;h < this.outputHeight;h++){
+		for(w = 0;w < this.outputWidth;w++){
+			bufI = (w + h * this.outputWidth);
 			i = bufI * 4;//Aligns with the canvas getImageData.
 			bufI *= this.byteStreamMode;//Aligns with the byte stream for the active mode.
 			var pixHasAlpha;
@@ -1254,7 +1282,7 @@ AnimatedEncoder.prototype.procFrame = function(){
 		if(this.frameBeingProcessed == 0){
 			//Ensure that the first frame draws the whole image area. (fcTL,IDAT does not support partial region, fcTL,fdAT does.)
 			//Frame 1 always uses Tran-Source.
-			minTSX = 0;maxTSX = this.width-1;minTSY = 0; maxTSY = this.height - 1;
+			minTSX = 0;maxTSX = this.outputWidth-1;minTSY = 0; maxTSY = this.outputHeight - 1;
 		}
 		//alert('should have ' + ((frameFinalW * frameFinalH) + frameFinalH) + ', stopped at ' + indexPos);
 		//if(this.frameBeingProcessed == 0){
@@ -1438,12 +1466,12 @@ Transparent can be copied from none, but with the region covered by this frame c
 		//Also note that the frame count in acTL would need to be altered to reflect this.
 		
 		//force full frame update for debugging
-		/*minNOX = 0;maxNOX = this.width - 1;minNOY = 0;maxNOY = this.height - 1;
-		minPOX = 0;maxPOX = this.width - 1;minPOY = 0;maxPOY = this.height - 1;
-		minTOX = 0;maxTOX = this.width - 1;minTOY = 0;maxTOY = this.height - 1;
-		minNSX = 0;maxNSX = this.width - 1;minNSY = 0;maxNSY = this.height - 1;
-		minPSX = 0;maxPSX = this.width - 1;minPSY = 0;maxPSY = this.height - 1;
-		minTSX = 0;maxTSX = this.width - 1;minTSY = 0;maxTSY = this.height - 1;*/
+		/*minNOX = 0;maxNOX = this.outputWidth - 1;minNOY = 0;maxNOY = this.outputHeight - 1;
+		minPOX = 0;maxPOX = this.outputWidth - 1;minPOY = 0;maxPOY = this.outputHeight - 1;
+		minTOX = 0;maxTOX = this.outputWidth - 1;minTOY = 0;maxTOY = this.outputHeight - 1;
+		minNSX = 0;maxNSX = this.outputWidth - 1;minNSY = 0;maxNSY = this.outputHeight - 1;
+		minPSX = 0;maxPSX = this.outputWidth - 1;minPSY = 0;maxPSY = this.outputHeight - 1;
+		minTSX = 0;maxTSX = this.outputWidth - 1;minTSY = 0;maxTSY = this.outputHeight - 1;*/
 		var widthN = 0, heightN = 0, widthP = 0, heightP = 0, widthT = 0, heightT = 0;
 		
 		var streamNone = false, streamPrev = false, streamTran = false, bufN, bufP, bufT,
@@ -1489,7 +1517,7 @@ Transparent can be copied from none, but with the region covered by this frame c
 		var nonePos = 0, prevPos = 0, tranPos = 0, chosenDrawBuffer, chosenDisposeBuffer;
 		bufI = 0;
 		//Needed for some byte filtering calculations.
-		var fullScanWidth = this.width * this.byteStreamMode;
+		var fullScanWidth = this.outputWidth * this.byteStreamMode;
 		//var scanWidthN = widthN * this.byteStreamMode;//Needed for some byte filtering calculations.
 		//var scanWidthP = widthP * this.byteStreamMode;
 		//var scanWidthT = widthT * this.byteStreamMode;
@@ -1505,7 +1533,7 @@ Transparent can be copied from none, but with the region covered by this frame c
 		var filterP = heightP > widthP ? 2 : 1;
 		var filterT = heightT > widthT ? 2 : 1;
 		
-		for(h = 0;h < this.height;h++){
+		for(h = 0;h < this.outputHeight;h++){
 			//write the filter mode at the start of each scanline.
 			var noneScan = false, prevScan = false, tranScan = false;
 			if(streamNone && h >= minNY && h <= maxNY){
@@ -1523,7 +1551,7 @@ Transparent can be copied from none, but with the region covered by this frame c
 				tranScan = true;
 				tranPos++;
 			}
-			for(w = 0;w < this.width;w++){
+			for(w = 0;w < this.outputWidth;w++){
 				if(noneScan && streamNone && w >= minNX && w <= maxNX){
 					for(chanI = 0;chanI < this.byteStreamMode;chanI++){//8, 24, and 32 bit pixels must be accounted for
 						streamNone[nonePos] = this.filterBytePNG(bufN, bufI + chanI, filterN, w, h, minNX, minNY, fullScanWidth);
@@ -1664,8 +1692,8 @@ Transparent can be copied from none, but with the region covered by this frame c
 		//Draw onto None and Transparent using the selected buffer that the update was drawn based on.
 		//For None draw the update in the updated region. For Tran, clear to transparent black background in the updated region.
 		bufI = 0;
-		for(h = 0;h < this.height;h++){
-			for(w = 0;w < this.width;w++){
+		for(h = 0;h < this.outputHeight;h++){
+			for(w = 0;w < this.outputWidth;w++){
 				/*if(w >= minCX && w <= maxCX && h >= minCY && h <= maxCY){
 				//Dispose the actual drawn on region with the different dispose methods.
 					//Copy what was on None to Prev. That will be the new previous buffer now that it has advanced.
@@ -1884,7 +1912,7 @@ AnimatedEncoder.prototype.saveAnimatedFile = function(){
 	this.payloads = [];
 	this.frameBeingProcessed = 0;
 	
-	if(this.output){//Clean up the previous data if re-encoding.
+	if(!this.retainPastOutput && this.output){//Clean up the previous data if re-encoding.
 		URL.revokeObjectURL(this.output);
 	}
 
@@ -1897,31 +1925,31 @@ AnimatedEncoder.prototype.saveAnimatedFile = function(){
 	}
 	
 	//===============Auto-Detect Image Size====================
-	
-	//autoDimensionsInternal will make the image size auto-calculated to hold all frames if .autoDimensions says that is desired,
-	//or if an invalid width/height for image size is detected.
-	this.autoDimensionsInternal = this.autoDimensions;//automatic dimensions
-		//automatically turn this on if no width/height set.
-		//it can be overridden with a paramz variable.
-		//(though that may be a bad idea because defaults to 1x1,
-		//allowing expansion when autoDim is true.)
-	
-	//TODO: maybe a reverse mode where it uses MINIMUM sizes?
-	if(this.autoDimensionsInternal){//autoDim will need to expand to fit all images.
-		this.width = 1;
-		this.height = 1;
-		//alert('autoDim updated from '+this.width+'x'+this.height+' ...');
+	/*
+	.width and .height have been moved to .outputWidth and .outputHeight due to a conflict with setting
+	the desired .width/.height attributes. These need to be 2 different sets of variables due to the conflict.
+	outputWidth/outputHeight is what is used for the actual width/height of the image,
+	and it will be the same if .width and .height are set. If width and height are not set, it is auto-calculated.
+	It will now make it a set size if .width and .height are set, and auto otherwise.
+	If .autoDimensions is is set to true, .width/.height will be ignored and treated as not set.
+	That is useful for software that has width height parameters, but can toggle auto dimensions on/off/
+	*/
+	if(this.width && this.height && !this.autoDimensions){
+		//string values from textfields can cause these to not function right as numbers.
+		this.outputWidth = parseInt(this.width);
+		this.outputHeight = parseInt(this.height);
+	}else{//autoDim will need to expand to fit all images.
+		this.outputWidth = 1;
+		this.outputHeight = 1;
+		//alert('autoDim updated from '+this.outputWidth+'x'+this.outputHeight+' ...');
 		for(var f=0;f<this.frames.length;f++){
 		//.naturalWidth/Height must be used to get the actual image size, NOT an html or styling that may be undefined.
-			this.width  = Math.max(this.frames[f].image.naturalWidth,this.width);
-			this.height = Math.max(this.frames[f].image.naturalHeight,this.height);
+			this.outputWidth  = Math.max(this.frames[f].image.naturalWidth,this.outputWidth);
+			this.outputHeight = Math.max(this.frames[f].image.naturalHeight,this.outputHeight);
 			
-			//alert('...to '+this.width+'x'+this.height);
+			//alert('...to '+this.outputWidth+'x'+this.outputHeight);
 		}
 	}
-	//string values from textfields can cause these to not function right as numbers.
-	this.width = parseInt(this.width);
-	this.height = parseInt(this.height);
 	
 	//set up number code to avoid string compares in heavily cycled code.
 	if(typeof this.dithering === 'number'){
@@ -1964,7 +1992,7 @@ AnimatedEncoder.prototype.saveAnimatedFile = function(){
 		//quality level 0.5, the color must represent 1 in 2000 (0.05%) pixels
 		//quality level 0.25, the color must represent 1 in 1333 (0.075%) pixels
 		//quality level 1, the threshold to quantize would be 0, and never reached, but quantization is skipped for full quality anyways.
-		this.quantThresh = this.width * this.height * this.frames.length * 0.001 * (1 - this.quality);
+		this.quantThresh = this.outputWidth * this.outputHeight * this.frames.length * 0.001 * (1 - this.quality);
 		this.initColorCounting();
 		if(this.quality < 1 && window.pako){//Needs deflate functionality to take advantage of color counting.
 			this.procFrameStage = 100;//100 for color counting
@@ -2073,8 +2101,8 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 			out8[20] = 0x00;
 		}
 		AnimatedEncoder.writeUint24(out8,0,21,true);//reserved bits that should be 0
-		AnimatedEncoder.writeUint24(out8,this.width-1,24,true);//width-1
-		AnimatedEncoder.writeUint24(out8,this.height-1,27,true);//height-1
+		AnimatedEncoder.writeUint24(out8,this.outputWidth-1,24,true);//width-1
+		AnimatedEncoder.writeUint24(out8,this.outputHeight-1,27,true);//height-1
 		writePos += 30;
 		
 		if(this.frames.length > 1){//A single frame WEBP with animation chunks could cause breakage and the chunks are not needed in that case
@@ -2095,8 +2123,8 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 				AnimatedEncoder.writeUint32(out8,16+payload.length,writePos+4,true);//length of ANMF (which INCLUDES a VP8/VP8L chunk at the end of it contained within the ANMF)
 				AnimatedEncoder.writeUint24(out8,0,writePos+8,true);//x
 				AnimatedEncoder.writeUint24(out8,0,writePos+11,true);//y
-				AnimatedEncoder.writeUint24(out8,this.width-1,writePos+14,true);//width-1
-				AnimatedEncoder.writeUint24(out8,this.height-1,writePos+17,true);//height-1
+				AnimatedEncoder.writeUint24(out8,this.outputWidth-1,writePos+14,true);//width-1
+				AnimatedEncoder.writeUint24(out8,this.outputHeight-1,writePos+17,true);//height-1
 				frameDelay = this.delay;//delay in milliseconds
 				if(this.frames[i].hasCustomDelay){frameDelay=this.frames[i].delay;}//use frame-specific delay if set.
 				AnimatedEncoder.writeUint24(out8,frameDelay,writePos+20,true);//duration (milliseconds)
@@ -2212,8 +2240,8 @@ ID=0x18538067
 		//IHDR Header Chunk
 		AnimatedEncoder.writeUint32(out8,13,8,false);//IHDR length (Counts data only, not FourCC or CRC)
 		AnimatedEncoder.writeFourCC(out8,'IHDR',12);
-		AnimatedEncoder.writeUint32(out8,this.width,16,false);//width
-		AnimatedEncoder.writeUint32(out8,this.height,20,false);//height
+		AnimatedEncoder.writeUint32(out8,this.outputWidth,16,false);//width
+		AnimatedEncoder.writeUint32(out8,this.outputHeight,20,false);//height
 		out8[24] = 0x08;//bit depth, 8 bits per color channel.
 		if(this.palette){
 			out8[25] = 0x03;//Packed field. color(0x2) and palette(0x1) bits set, 00000011
@@ -2495,10 +2523,10 @@ AnimatedEncoder.getCRC32 = function(u8,startIndex,endIndex){
 	return crc ^ 0xFFFFFFFF;
 };
 AnimatedEncoder.prototype.buildDithMasks = function(){
-	var maskSize = this.width*this.height*4;
-	if(this.width==this.ditherWidth&&this.height==this.ditherHeight){return;}//do not need to remake it if it was already done on the same dimensions
-	this.ditherWidth = this.width;//must check these rather than maskSize because 10x20 or 20x10 could be the same maskSize
-	this.ditherHeight = this.height;
+	var maskSize = this.outputWidth*this.outputHeight*4;
+	if(this.outputWidth==this.ditherWidth&&this.outputHeight==this.ditherHeight){return;}//do not need to remake it if it was already done on the same dimensions
+	this.ditherWidth = this.outputWidth;//must check these rather than maskSize because 10x20 or 20x10 could be the same maskSize
+	this.ditherHeight = this.outputHeight;
 	this.ditherMaskSize = maskSize;
 	this.dithMaskHalf = [];//new Uint8Array(new ArrayBuffer(maskSize));
 	this.dithMaskFourth = [];//new Uint8Array(new ArrayBuffer(maskSize));
@@ -2506,10 +2534,10 @@ AnimatedEncoder.prototype.buildDithMasks = function(){
 	var dHalf = true;
 	//var dFourth;
 	var d = 0;
-	var evenW = this.width%2==0;
+	var evenW = this.outputWidth%2==0;
 	//var wFourthAdj = 0;
-	for(var h=0;h<this.height;h++){
-		for(var w=0;w<this.width;w++){
+	for(var h=0;h<this.outputHeight;h++){
+		for(var w=0;w<this.outputWidth;w++){
 			//dFourth = h%2==(wFourthAdj+w)%2;
 			
 			//this.dithMaskHalf[d] = dHalf;
@@ -2670,7 +2698,7 @@ AnimatedEncoder.prototype.initColorCounting = function(){
 		//Use significant colors count to determine if it needs to go indexed color.
 		//Things like gradients can cause it to go into RGBA mode when not optimal
 		//if going off of uniqueColors.
-	this.significantThresh = Math.max(8,Math.round(this.width * this.height * this.frames.length * 0.0004));
+	this.significantThresh = Math.max(8,Math.round(this.outputWidth * this.outputHeight * this.frames.length * 0.0004));
 };
 
 AnimatedEncoder.prototype.incrementColorCount = function(red, green, blue, alpha){
@@ -2872,7 +2900,7 @@ AnimatedEncoder.prototype.distQuant = function(qError, qData, i, dithW, dithH, c
 	//
 	//          [pixel] [7/16]
 	//   [3/16] [5/16 ] [1/16]
-	if(dithW + 1 < this.width){
+	if(dithW + 1 < this.outputWidth){
 		errorFract = (7/16) * qError;
 		errorSeek = 4;
 		//if(qData[i + errorSeek + cOffset]){
@@ -2881,10 +2909,10 @@ AnimatedEncoder.prototype.distQuant = function(qError, qData, i, dithW, dithH, c
 		//	qData[i + errorSeek + cOffset] = errorFract;//If undefined
 		//}
 	}
-	if(dithH + 1 < this.height){
+	if(dithH + 1 < this.outputHeight){
 		if(dithW > 1){
 			errorFract = (3/16) * qError;
-			errorSeek = this.width * 4 - 4;//scroll down to the next line and one to the left
+			errorSeek = this.outputWidth * 4 - 4;//scroll down to the next line and one to the left
 			//if(qData[i + errorSeek + cOffset]){
 				qData[i + errorSeek + cOffset] += errorFract;
 			//}else{
@@ -2892,15 +2920,15 @@ AnimatedEncoder.prototype.distQuant = function(qError, qData, i, dithW, dithH, c
 			//}
 		}
 		errorFract = (5/16) * qError;
-		errorSeek = this.width * 4;//scroll down to the next line and one to the left
+		errorSeek = this.outputWidth * 4;//scroll down to the next line and one to the left
 		//if(qData[i + errorSeek + cOffset]){
 			qData[i + errorSeek + cOffset] += errorFract;
 		//}else{
 		//	qData[i + errorSeek + cOffset] = errorFract;
 		//}
-		if(dithW + 1 < this.width){
+		if(dithW + 1 < this.outputWidth){
 			errorFract = (1/16) * qError;
-			errorSeek = this.width * 4 + 4;//scroll down to the next line and one to the left
+			errorSeek = this.outputWidth * 4 + 4;//scroll down to the next line and one to the left
 			//if(qData[i + errorSeek + cOffset]){
 				qData[i + errorSeek + cOffset] += errorFract;
 			//}else{
@@ -2935,7 +2963,7 @@ AnimatedEncoder.prototype.filterBytePNG = function(buf, i, fMode, x, y, minX, mi
 	//TODO: May want to add Average(3) and Paeth(4) mode.
 };
 AnimatedEncoder.prototype.initBuffersPNG = function(){
-				var byteBufLength = this.width * this.height * this.byteStreamMode;
+				var byteBufLength = this.outputWidth * this.outputHeight * this.byteStreamMode;
 				this.bufNO = new Uint8Array(new ArrayBuffer(byteBufLength));//None-Over...
 				this.bufPO = new Uint8Array(new ArrayBuffer(byteBufLength));
 				this.bufTO = new Uint8Array(new ArrayBuffer(byteBufLength));
@@ -2994,71 +3022,106 @@ var aDec = new AnimatedDecoder('/path/to_animated.png');
 canvasContext.drawImage(aDec.getFrame(1000), 0, 0);
 
 */
-function AnimatedDecoder(imgURL){
+function AnimatedDecoder(adSource){
+	//adSource can be a URL to an image, or a Blob,  for example from file input. ('File' objects are Blob with .name containing filename)
 	this.ready = false;//Set to true when animated image dissected and ready for frame by frame play/pause etc.
 	this.frames = [];
 	//sourceFormat is 0 for PNG, 1 for GIF
 	this.buildCanv = document.createElement('canvas');//used to build step by step via region/blend/dispose params.
+	this.prevCanv = document.createElement('canvas');
 		//(define buildCanv here so AnimatedDecoder.getFrame() can be drawn as soon as initialized and will not have an error before loaded)
 	this.loadFunc = AnimatedDecoder_sourceLoaded.bind(this);//Make sure 'this' references the class object.
-	this.imgReq = new XMLHttpRequest();
-	this.imgReq.open('GET', imgURL, true);
-	this.imgReq.responseType = 'arraybuffer';
-	this.imgReq.addEventListener('load', this.loadFunc);
-	this.imgReq.send();
+	if(adSource instanceof Blob){
+		//File is a Blob with '.name' set. If file is sent it does not need to wait for an XHR.
+		this.imgReq = new FileReader();
+		this.imgReq.addEventListener('load', this.loadFunc);
+		this.imgReq.readAsArrayBuffer(adSource);
+	}else{
+		this.imgReq = new XMLHttpRequest();
+		this.imgReq.open('GET', adSource, true);
+		this.imgReq.responseType = 'arraybuffer';
+		this.imgReq.addEventListener('load', this.loadFunc);
+		this.imgReq.send();
+	}
 }//end constructor
-function AnimatedDecoder_sourceLoaded(rEvent){
+function AnimatedDecoder_sourceLoaded(adEvent){
 	this.imgReq.removeEventListener('load', this.loadFunc);
 	var headLen;//length of chunks that should be at the head of the file for each extracted and reconstructed image.
 	var copyChunks = [];//start, end location pairs of chunks that should be copied on to the shared head for reconstructed frames.
-	this.copyFrames = [];//Array of objects.
+	this.copyFrames = [];//Array of objects
 		//.start stores start locations for frames(will end at next non-IDAT/fdAT)
 		//.len stores final lengths that the file/array buffer will be for each frame image.
 	this.copyFrame = 0;//Frame being copied into single image.
 	this.ms = 0;//duration in milliseconds for the whole animation.
-	var chunkSig, chunkLen;
-	var oct = new Uint8Array(this.imgReq.response);
+	var oct, chunkSig, chunkLen, cFrame;
+	if(this.imgReq.response){//XHR will have .response
+		oct = new Uint8Array(this.imgReq.response);
+	}else{//FileReader will have .result
+		oct = new Uint8Array(this.imgReq.result);
+	}
 	var pos = 0;//seek position in source file
-	this.oct = oct;
+	this.inputOctetStream = oct;
+	this.animated = false;//Set to true when animation detected.
 	if( oct[0] == 0x89 //PNG Magic number
 	 && oct[1] == 0x50
 	 && oct[2] == 0x4E
 	 && oct[3] == 0x47 ){
-		this.sourceFormat = 0;
+		this.format = 'png';
 		this.png = {};
 		copyChunks.push(0, 33);
 		headLen = 33;
 		var metaChunks = ['tRNS', 'PLTE', 'sRGB', 'gAMA', 'bKGD', 'sBIT', 'hIST', 'cHRM'];//Meta chunks that need to (our ought to) be preserved if present so image data can be drawn correctly.
+		//var acTLSeen = false;//To be APNG acTL must be before IDAT.
 		//All image types have width/height.
 		this.width = AnimatedEncoder.readUint32(oct, 16, false);
 		this.height = AnimatedEncoder.readUint32(oct, 20, false);
 		this.buildCanv.width = this.width;
 		this.buildCanv.height = this.height;
+		this.prevCanv.width = this.width;
+		this.prevCanv.height = this.height;
 		this.png.bitDepth = oct[24];
 		this.png.colorFlags = oct[25];
 		this.png.interlace = oct[28];
 		pos = 33;
-		this.png.hasDefaultImage = false;//set to true if no fcTL before IDAT
+		//this.png.hasDefaultImage = false;//set to true if no fcTL before IDAT
 		chunkSig = AnimatedEncoder.readFourCC(oct, pos + 4);
 		var animFrame = -1;//set to 0 when past the default image if present and the first fcTL is encountered. Increment each fcTL
 		//The animation has not started until an fcTL has been seen.
 		//The IDAT is not part of the animation and is the default image if fcTL is not before it.
 		//So the actual animation frames start at the first fcTL.
+		//Get the frame count by counting each frame entry seen that is part of the animation rather than going by the count in acTL.
+		//Some browsers may ignore the frame count value and just look at this, meaning some images may be out there with an inaccurate value in frameCount.
+		this.frameCount = 0;//(includes default image, if present)
 		while(chunkSig != 'IEND'){//!fcTLSeen || (chunkSig != 'IDAT' && chunkSig != 'fdAT')){
 			chunkLen = AnimatedEncoder.readUint32(oct, pos, false);
 			if(chunkSig == 'acTL'){
 				//acTL is not in metaChunks it is not used to reconstruct as extracted still frames.
-				this.frameCount = AnimatedEncoder.readUint32(oct, pos + 8, false);
-				this.loopCount = AnimatedEncoder.readUint32(oct, pos + 12, false);
+				//this.frameCount = AnimatedEncoder.readUint32(oct, pos + 8, false);//Get this by counting actual frames seen instead.
+				this.loops = AnimatedEncoder.readUint32(oct, pos + 12, false);
 			}
 			if(chunkSig == 'IEND'){
 				break;
 			}
 			if(chunkSig == 'IDAT'){
 				if(animFrame == -1){
+					//(If not animated PNG, defaultImage will be the only frame.)
 					this.png.hasDefaultImage = true;//IDAT not part of the animation
+					cFrame = {};
+					this.copyFrames.push(cFrame);
+					cFrame.start = pos;//Start reading at start of IDAT in new AnimatedDecoderFrame().
+					cFrame.len = 24 + chunkLen + headLen;//current IDAT + shared head + IEND
+					cFrame.width = this.width;//Default image but fill the whole image dimensions.
+					cFrame.height = this.height;
+					cFrame.x = 0;
+					cFrame.y = 0;
+					//cFrame.ms = 0;// N/A for default image.
+					//cFrame.dispose = oct[pos + 32];// N/A
+					//cFrame.blend = oct[pos + 33];// N/A
+					//this.png.defaultImage = cFrame;//will be undefined if no Default Image
+					animFrame++;
+					this.frameCount++;
 				}else{
-					this.copyFrames[animFrame].len += chunkLen + 12;
+					this.copyFrames[animFrame].len += chunkLen + 12;//Secondary IDAT, increment copy region
 				}
 			}
 			if(chunkSig == 'fdAT'){
@@ -3069,8 +3132,10 @@ function AnimatedDecoder_sourceLoaded(rEvent){
 				headLen += chunkLen + 12;
 			}
 			if(chunkSig == 'fcTL'){
+				this.animated = true;
 				animFrame++;
-				var cFrame = {};
+				this.frameCount++;//Remember, frames can have multiple fdAT/IDAT, so count by fcTL.
+				cFrame = {};
 				this.copyFrames.push(cFrame);
 				cFrame.start = pos + chunkLen + 12;//Start reading after the fcTL in new AnimatedDecoderFrame().
 				cFrame.len = 12 + headLen;//shared head + IEND
@@ -3079,29 +3144,21 @@ function AnimatedDecoder_sourceLoaded(rEvent){
 				cFrame.x = AnimatedEncoder.readUint32(oct, pos + 20, false);
 				cFrame.y = AnimatedEncoder.readUint32(oct, pos + 24, false);
 				cFrame.ms = ( AnimatedEncoder.readUint16(oct, pos + 28, false) / AnimatedEncoder.readUint16(oct, pos + 30, false) ) * 1000;//milliseconds
-				cFrame.dispose = oct[pos + 32];
-				cFrame.blend = oct[pos + 33];
+				cFrame.disposal = oct[pos + 32];
+				cFrame.blending = oct[pos + 33];
 				this.ms += cFrame.ms;
-/*-----------------
-			AnimatedEncoder.writeUint32(frame8, 26, pos, false);//length
-			AnimatedEncoder.writeFourCC(frame8, 'fcTL', pos + 4);
-			AnimatedEncoder.writeUint32(frame8, this.frameSequenceCount, pos + 8, false);
-			AnimatedEncoder.writeUint32(frame8, maxCX + 1 - minCX, pos + 12, false);//width
-			AnimatedEncoder.writeUint32(frame8, maxCY + 1 - minCY, pos + 16, false);//height
-			AnimatedEncoder.writeUint32(frame8, minCX, pos + 20, false);//x
-			AnimatedEncoder.writeUint32(frame8, minCY, pos + 24, false);//y
-			AnimatedEncoder.writeUint16(frame8, frameDelay,  pos + 28, false);//Numerator (16-bit uint)
-			AnimatedEncoder.writeUint16(frame8, 1000,        pos + 30, false);//Denominator (16-bit uint)
-			frame8[pos+32] = 0x00;//Disposal. (Will get updated based on what the next frame draws best over.) 0=none, 1=background, 2=previous
-			frame8[pos+33] = chosenBlending;//Blending. 0=source, 1 = over
-			AnimatedEncoder.writeUint32(frame8, AnimatedEncoder.getCRC32(frame8, pos + 4, pos + 34), pos + 34, false);
-----------*/
 			}
 			
 			pos += chunkLen + 12;
 			chunkSig = AnimatedEncoder.readFourCC(oct, pos + 4);
 		}
-		if(animFrame == -1){alert('no fcTL, not APNG');return;}
+		/*if(animFrame == -1){
+			//if(this.onError){
+			//	this.onError(this);
+			//}
+			//alert('no fcTL, not APNG');
+			return;
+		}*/
 		this.sharedHead = new Uint8Array(new ArrayBuffer(headLen));
 		var copyI = 0;
 		for(var ccI = 0;ccI < copyChunks.length;ccI += 2){
@@ -3116,19 +3173,35 @@ function AnimatedDecoder_sourceLoaded(rEvent){
 			new AnimatedDecoderFrame(this_this);
 		}, 50);
 	}//end if PNG
+	delete this.imgReq;
+	delete this.loadFunc;
+	if(this.onHeadDecoded){
+		this.onHeadDecoded(this);
+	}
 }//end _sourceloaded()
 AnimatedDecoder.prototype.getFrame = function(ms){
 	//Get drawable based on Milliseconds duration. If past the end modulo it.
 	//Always get by MS. Getting by index is a bad idea. A good endcoder might remove frames that can be removed and increase the duration of previous frame if there are no changes between frames for an animation based on FPS captures of a source animation, for example.
 	//An assumption of having frame data spaced out at even intervals is flawed.
-	if(!this.frames.length || this.frames.length < this.frameCount){
+	if(!this.frames.length){
 		//If unfinished return canvas or animation at latest progress so far.
 		return this.buildCanv;
 	}
+	if(this.frames.length < this.frameCount){
+		//do not return buildCanv, use latest available frame (build canv may have been wiped by disposal)
+		//try to go 2 frames back and draw a canvas that has been for sure drawn on and not just initialized.
+		return this.frames[Math.max(0, this.frames.length - 2)].baseCanvas;
+	}
 	ms = ms % this.ms;
-	var aeFrame;
+	var aeFrame = this.frames[0];//return default image(0) if plain PNG with no other frames.
 	var aeProg = 0;
-	for(var i = 0;i < this.frames.length;i++){
+	var i;
+	if(this.png && this.png.hasDefaultImage){
+		i = 1;//Start animation after default image.
+	}else{
+		i = 0;
+	}
+	for(;i < this.frames.length;i++){
 		aeFrame = this.frames[i];
 		aeProg += aeFrame.ms;
 		if(aeProg >= ms){break;}
@@ -3157,6 +3230,9 @@ function AnimatedDecoderFrame(aeImg){
 	}
 	var chunkSig, chunkLen, chunkStop;
 	if(aeImg.png){
+		//calculate size (space taken up within the APNG) for analysis purposes. (size the frame takes up in the image is different than size once built into a standalone image)
+		this.sizeInAnimation = oct.length - 12 - aeImg.sharedHead.length + 26;//Does not have sharedHead or IEND, but does have fcTL(26)
+	
 		rPos = this.start;
 		var crc32, crcStart;
 		AnimatedEncoder.writeUint32(oct, this.width, 16, false);//local region for frame
@@ -3165,9 +3241,9 @@ function AnimatedDecoderFrame(aeImg){
 		crc32 = AnimatedEncoder.getCRC32(oct, 12, 29);
 		AnimatedEncoder.writeUint32(oct, crc32, 29, false);
 		
-		chunkSig = AnimatedEncoder.readFourCC(aeImg.oct, rPos + 4);
+		chunkSig = AnimatedEncoder.readFourCC(aeImg.inputOctetStream, rPos + 4);
 		while(chunkSig == 'IDAT' || chunkSig == 'fdAT'){
-			chunkLen = AnimatedEncoder.readUint32(aeImg.oct, rPos, false);
+			chunkLen = AnimatedEncoder.readUint32(aeImg.inputOctetStream, rPos, false);
 			AnimatedEncoder.writeUint32(oct, chunkSig == 'fdAT'?chunkLen - 4:chunkLen, pos, false);
 			AnimatedEncoder.writeFourCC(oct, 'IDAT', pos + 4, false);//Always IDAT never fdAT for non-animated single frame.
 			pos += 8;
@@ -3176,7 +3252,7 @@ function AnimatedDecoderFrame(aeImg){
 			chunkStop = rPos + chunkLen;//Stops after payload before CRC.
 			if(chunkSig == 'fdAT'){rPos += 4;}//skip frameSequenceCount
 			for(;rPos < chunkStop;rPos++){
-				oct[pos] = aeImg.oct[rPos];
+				oct[pos] = aeImg.inputOctetStream[rPos];
 				pos++;
 			}
 			//Recalculate CRC. It will be different without frameSequenceCount;
@@ -3184,71 +3260,93 @@ function AnimatedDecoderFrame(aeImg){
 			AnimatedEncoder.writeUint32(oct, crc32, pos, false);
 			pos += 4;
 			rPos += 4;//skip CRC
-			chunkSig = AnimatedEncoder.readFourCC(aeImg.oct, rPos + 4);
+			chunkSig = AnimatedEncoder.readFourCC(aeImg.inputOctetStream, rPos + 4);
 		}
 		
 		AnimatedEncoder.writeUint32(oct, 0, pos, false);//IEND is empty
 		AnimatedEncoder.writeFourCC(oct, 'IEND', pos + 4);
 		crc32 = AnimatedEncoder.getCRC32(oct, pos + 4, pos + 8);
 		AnimatedEncoder.writeUint32(oct, crc32, pos + 8, false);
-		this.blob = URL.createObjectURL(new Blob([oct], {'type':'image/png'}));
+		this.payloadBlob = new Blob([oct], {'type':'image/png'});
+		this.payloadBlobURL = URL.createObjectURL(this.payloadBlob);
 	}//end is PNG
 	aeImg.frames.push(this);
 	
-	this.img = new Image();
+	this.payloadImage = new Image();
 	this.loadFunc = AnimatedDecoderFrame_loaded.bind(this);
-	this.img.addEventListener('load', this.loadFunc);
-	this.img.src = this.blob;
+	this.payloadImage.addEventListener('load', this.loadFunc);
+	this.payloadImage.src = this.payloadBlobURL;
 	
-}//end constructor
-function AnimatedDecoderFrame_loaded(){
-	this.img.removeEventListener('load', this.loadFunc);
-	var aeImg = this.aeImg;
-	
-	//Note: GIF disposal codes are not the same, they must be converted to match PNG disposal codes.
-	
-	var cx;
-	
-	cx = aeImg.buildCanv.getContext('2d');
-	if(aeImg.copyFrame){//Disposal (cannot dispose with no previous frame)
-		var prevFrame = aeImg.frames[aeImg.copyFrame - 1];
-		//for type 0 no disposal, just draw on the buffer as it is.
-		if(prevFrame.dispose){//clear region to background
-			//Type 2 previous also needs region cleared and then will draw on it.
-			cx.clearRect(prevFrame.x, prevFrame.y, prevFrame.width, prevFrame.height);
-		}
-		if(prevFrame.dispose == 2){
-			cx.drawImage(prevFrame.baseCanvas,
-					prevFrame.x, prevFrame.y, prevFrame.width, prevFrame.height,//Source/Dest coords are the same.
-					prevFrame.x, prevFrame.y, prevFrame.width, prevFrame.height);
-		}
-	}
-	if(!this.blend){//Over blending does not overwrite the area, just draws on top of it.
-		cx.clearRect(this.x, this.y, this.width, this.height);
-	}
-	cx.drawImage(this.img, this.x, this.y);
-	
+	//(Initialize this here so that there are not potential errors when this is returned by .getFrame as undefined.)
 	//The image as it is read from the file. It can be recolored or filtered later for advanced effects.
 	this.baseCanvas = document.createElement('canvas');
 	this.baseCanvas.width = aeImg.width;
 	this.baseCanvas.height = aeImg.height;
 	//TODO: add filteredCanvas for when recolor or other effects dynamically added to the original.
+	//TODO: make a .destroy or .delete function that derefs resources and revokes object URLs.
+}//end constructor
+function AnimatedDecoderFrame_loaded(){
+	this.payloadImage.removeEventListener('load', this.loadFunc);
+	var aeImg = this.aeImg;
 	
-	//draw the buffer state for this frame onto baseCanvas
-	cx = this.baseCanvas.getContext('2d');
-	cx.drawImage(aeImg.buildCanv, 0, 0);
+	//Note: GIF disposal codes are not the same, they must be converted to match PNG disposal codes.
+	
+	var cx;
+	if(aeImg.png && aeImg.png.hasDefaultImage && !aeImg.copyFrame){
+		//Default image is not drawn onto the animation buffer.
+		cx = this.baseCanvas.getContext('2d');
+		cx.drawImage(this.payloadImage, 0, 0);
+	}else{
+		cx = aeImg.prevCanv.getContext('2d');
+		cx.clearRect(0, 0, aeImg.width, aeImg.height);
+		cx.drawImage(aeImg.buildCanv, 0, 0);//save previous state before drawing
+			//(Previous disposes to previous state of the buffer, NOT previous frame as it was drawn)
+		cx = aeImg.buildCanv.getContext('2d');
+		if(!this.blending){//Over blending does not overwrite the area, just draws on top of it.
+			cx.clearRect(this.x, this.y, this.width, this.height);
+		}
+		cx.drawImage(this.payloadImage, this.x, this.y);
+		
+		//draw the buffer state for this frame onto baseCanvas
+		cx = this.baseCanvas.getContext('2d');
+		cx.drawImage(aeImg.buildCanv, 0, 0);
+
+		//now do disposal after it is drawn.
+		cx = aeImg.buildCanv.getContext('2d');
+		var firstFrameI = 0;
+		if(aeImg.png && aeImg.png.hasDefaultImage){
+			firstFrameI = 1;
+		}
+		//if(aeImg.copyFrame > firstFrameI){//Disposal (cannot dispose with no previous frame)
+			//var dispFrame = aeImg.frames[aeImg.copyFrame - 1];
+			//for type 0 no disposal, just draw on the buffer as it is.
+		if(this.disposal == 1){//clear region to background
+			cx.clearRect(this.x, this.y, this.width, this.height);
+		}else if(this.disposal == 2 && aeImg.copyFrame > firstFrameI){
+			//var prevFrame = aeImg.frames[aeImg.copyFrame - 1];
+			cx.clearRect(0, 0, aeImg.width, aeImg.height);
+			cx.drawImage(aeImg.prevCanv, 0, 0);
+						//dispFrame.x, dispFrame.y, dispFrame.width, dispFrame.height,//Source/Dest coords are the same.
+						//dispFrame.x, dispFrame.y, dispFrame.width, dispFrame.height);
+		}
+		//}
+	}//end not default image
 	
 	aeImg.copyFrame++;
+	if(aeImg.onFrameDecoded){
+		aeImg.onFrameDecoded(this);
+	}
 	if(aeImg.copyFrame < aeImg.frameCount){
 		setTimeout(function(){
 			new AnimatedDecoderFrame(aeImg);
 		}, 50);
 	}else{
 		//otherwise all loading finished
-		if(aeImg.onLoaded){
-			aeImg.onLoaded(aeImg);
+		if(aeImg.onDecoded){
+			aeImg.onDecoded(aeImg);
 		}
 	}
+	delete this.loadFunc;
 }//end _finished
 
 /*
