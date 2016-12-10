@@ -3026,7 +3026,6 @@ function AnimatedDecoder(adSource){
 	//adSource can be a URL to an image, or a Blob,  for example from file input. ('File' objects are Blob with .name containing filename)
 	this.ready = false;//Set to true when animated image dissected and ready for frame by frame play/pause etc.
 	this.frames = [];
-	//sourceFormat is 0 for PNG, 1 for GIF
 	this.buildCanv = document.createElement('canvas');//used to build step by step via region/blend/dispose params.
 	this.prevCanv = document.createElement('canvas');
 		//(define buildCanv here so AnimatedDecoder.getFrame() can be drawn as soon as initialized and will not have an error before loaded)
@@ -3062,6 +3061,7 @@ function AnimatedDecoder_sourceLoaded(adEvent){
 	var pos = 0;//seek position in source file
 	this.inputOctetStream = oct;
 	this.animated = false;//Set to true when animation detected.
+	this.frameCount = 0;//(includes default image, if present)
 	if( oct[0] == 0x89 //PNG Magic number
 	 && oct[1] == 0x50
 	 && oct[2] == 0x4E
@@ -3075,10 +3075,6 @@ function AnimatedDecoder_sourceLoaded(adEvent){
 		//All image types have width/height.
 		this.width = AnimatedEncoder.readUint32(oct, 16, false);
 		this.height = AnimatedEncoder.readUint32(oct, 20, false);
-		this.buildCanv.width = this.width;
-		this.buildCanv.height = this.height;
-		this.prevCanv.width = this.width;
-		this.prevCanv.height = this.height;
 		this.png.bitDepth = oct[24];
 		this.png.colorFlags = oct[25];
 		this.png.interlace = oct[28];
@@ -3091,7 +3087,6 @@ function AnimatedDecoder_sourceLoaded(adEvent){
 		//So the actual animation frames start at the first fcTL.
 		//Get the frame count by counting each frame entry seen that is part of the animation rather than going by the count in acTL.
 		//Some browsers may ignore the frame count value and just look at this, meaning some images may be out there with an inaccurate value in frameCount.
-		this.frameCount = 0;//(includes default image, if present)
 		while(chunkSig != 'IEND'){//!fcTLSeen || (chunkSig != 'IDAT' && chunkSig != 'fdAT')){
 			chunkLen = AnimatedEncoder.readUint32(oct, pos, false);
 			if(chunkSig == 'acTL'){
@@ -3160,7 +3155,7 @@ function AnimatedDecoder_sourceLoaded(adEvent){
 			return;
 		}*/
 		this.sharedHead = new Uint8Array(new ArrayBuffer(headLen));
-		var copyI = 0;
+		var copyI = 0;//Copy chunks that are part of the head of the file into the shared head.
 		for(var ccI = 0;ccI < copyChunks.length;ccI += 2){
 			var ccEnd = copyChunks[ccI + 1];
 			for(var i = copyChunks[ccI];i < ccEnd;i++){
@@ -3168,16 +3163,143 @@ function AnimatedDecoder_sourceLoaded(adEvent){
 				copyI++;
 			}
 		}
-		var this_this = this;
-		setTimeout(function(){
-			new AnimatedDecoderFrame(this_this);
-		}, 50);
-	}//end if PNG
+	}else if( //end if PNG
+	    oct[0] == 0x47 //GIF Magic number
+	 && oct[1] == 0x49
+	 && oct[2] == 0x46 ){//not checking 89a, hopefully 87 has no problems
+		//Allow building from GIF so that GIFs can be converted to APNGs
+		this.format = 'gif';
+		this.gif = {};
+		//read logical screen descriptor
+		this.width = AnimatedEncoder.readUint16(oct, 6, true);
+		this.height = AnimatedEncoder.readUint16(oct, 8, true);
+		//alert('GIF h/w ' + this.width + ' x ' + this.height);
+		//[10] is a packed field
+		//alert('logdesc packed field ' + oct[10].toString(16));
+		//ignore color resolution and sort flag, just get global color table flag and size of table if it is there
+		//packed field: global_color_table(1) / color_res(3) / sort(1) / size_of_global_color_table(3)
+		this.gif.globalColorTable = (oct[10] & 0x80) > 0;
+		//alert(oct[10] & 0x80);
+		//alert('hasGCT? ' + this.gif.globalColorTable);
+		var globalColorTableSize = 3 * Math.pow(2, (oct[10] & 0x07) + 1);
+		//GIF has an odd way of storing size that only moves in increments of raising the power.
+		//alert('glob t size '+ this.gif.globalColorTableSize);
+		//[11] is transparent pixel index
+		//[12] is aspect ratio
+		pos += 13;
+		if(this.gif.globalColorTable){
+			this.gif.globalColorTable = [];
+			for(i = 0;i < globalColorTableSize;i++){
+				this.gif.globalColorTable.push(oct[pos]);
+				pos++;
+			}
+		}
+		var chunkLabel;
+		cFrame = {};//Initialize this here. If it is a still GIF with no GCE, this will be ready to insert after image data.
+		cFrame.gif = {};
+		cFrame.len = 0;
+		chunkSig = oct[pos];
+		pos++;
+		while(chunkSig != 0x3B){//end of image marker
+			//alert('GIF chunk: ' + chunkSig.toString(16));
+			//GIF chunks have a series of blocks with 1 byte lengths
+			if(chunkSig == 0x2C){//image descriptor
+				cFrame.x = AnimatedEncoder.readUint16(oct, pos, true);
+				cFrame.y = AnimatedEncoder.readUint16(oct, pos + 2, true);
+				cFrame.width = AnimatedEncoder.readUint16(oct, pos + 4, true);
+				cFrame.height = AnimatedEncoder.readUint16(oct, pos + 6, true);
+				//+8 is packed field: global_color_table(1) / interlace(1) / sort(1) / reserved(2) / size_of_local_color_table(3)
+				pos += 8;
+				cFrame.gif.localColorTable = (oct[pos] & 0x80) > 0;
+				cFrame.gif.interlaced = (oct[pos] & 0x40) > 0;
+				cFrame.gif.sort = (oct[pos] & 0x20) > 0;
+				var localColorTableSize = 3 * Math.pow(2, (oct[pos] & 0x07) + 1);
+				pos++;
+				//alert('has ' + cFrame.gif.localColorTable + ' s: ' + localColorTableSize + ' i: ' + cFrame.gif.interlaced + ' srt: ' + cFrame.gif.sort);
+				
+				if(cFrame.gif.localColorTable){
+					cFrame.gif.localColorTable = [];
+					for(i = 0;i < localColorTableSize;i++){
+						cFrame.gif.localColorTable.push(oct[pos]);
+						pos++;
+					}
+				}
+				
+				cFrame.gif.minCodeWidth = oct[pos];
+				cFrame.start = pos;//start copying at LZW minimum code size
+				pos++;
+
+				cFrame.len += 793;//the frame blob will always have a global color table built off of global, or local if present
+				//head(13) + max-size color table(768) + ImgMarker(1) + ImgDesc(9) + minCodeSize(1) + end marker(1)
+				//(N-App block not needed, just temporary image to be canvas-readable)
+				
+				chunkLen = oct[pos];
+				pos++;
+				cFrame.len += chunkLen + 1;
+				while(chunkLen != 0){//0 length block is a terminator
+					pos += chunkLen;
+					chunkLen = oct[pos];
+					pos++;
+					cFrame.len += chunkLen + 1;
+				}
+				this.copyFrames.push(cFrame);//Do this here, remember GIFs can be static with no GCE
+				this.frameCount++;
+				if(this.frameCount > 1){this.animated = true;}
+			}else if(chunkSig == 0x21){//extension introducer
+				chunkLabel = oct[pos];//label of block
+				pos++;
+				//alert('GIF chunk label: ' + chunkLabel.toString(16));
+				if(chunkLabel == 0xF9){//graphic controls extension
+					cFrame = {};//If GCE present, init with delay/transparency info
+					cFrame.gif = {};
+					cFrame.len = 0;
+					cFrame.disposal = Math.max(0, (oct[pos + 1] >> 2 & 0x07) - 1);
+						//offset by -1 because GIF mode 0 is no required disposal and mode 1 is do not dispose.
+						//2 is dispose to background, 3 is dispose to previous, 4-7 undefined
+						//this makes it consistent with the Animated PNG codes
+					cFrame.blending = 1;//use over blending, GIF does not have blending modes, only disposal logic
+					//alert('disposal ' + cFrame.disposal);
+					cFrame.ms = AnimatedEncoder.readUint16(oct, pos + 2, true) * 10;//100ths of a second
+					//if(cFrame.ms < 100){cFrame.ms = 100;}//GIF images get capped at 10 FPS by most browsers/viewers, this keeps them consistent with how they are seen??
+					//alert('delay extracted ' + cFrame.ms);
+					this.ms += cFrame.ms;
+					//alert(oct[pos + 1] + ' & ' + (oct[pos + 1] & 0x01));
+					if(oct[pos + 1] & 0x01){//if override transparent index flag is set
+						cFrame.gif.transparentIndex = oct[pos + 4];
+						cFrame.len += 8;//must include the GCE in the rebuild stream from the payload to set the transparent pixel
+					}
+					pos += 6;//4 bytes of data plus length(1) and zero length terminator(1)
+				}else{//other/unknown extension
+					chunkLen = oct[pos];
+					pos++;
+					while(chunkLen != 0){//0 length block is a terminator
+						pos += chunkLen;
+						chunkLen = oct[pos];
+						pos++;
+					}
+				}
+			}
+			chunkSig = oct[pos];
+			pos++;
+		}
+		//head(13)
+		this.sharedHead = new Uint8Array([0x47,0x49,0x46,0x38,0x39,0x61,0,0,0,0,0xF7,0,0]);
+		//alert('ended at ' + chunkSig.toString(16));
+	}//end if GIF
 	delete this.imgReq;
 	delete this.loadFunc;
 	if(this.onHeadDecoded){
 		this.onHeadDecoded(this);
 	}
+	this.buildCanv.width = this.width;
+	this.buildCanv.height = this.height;
+	this.prevCanv.width = this.width;
+	this.prevCanv.height = this.height;
+		var this_this = this;
+	setTimeout(function(){
+		new AnimatedDecoderFrame(this_this);
+	}, 50);
+	
 }//end _sourceloaded()
 AnimatedDecoder.prototype.getFrame = function(ms){
 	//Get drawable based on Milliseconds duration. If past the end modulo it.
@@ -3190,7 +3312,7 @@ AnimatedDecoder.prototype.getFrame = function(ms){
 	if(this.frames.length < this.frameCount){
 		//do not return buildCanv, use latest available frame (build canv may have been wiped by disposal)
 		//try to go 2 frames back and draw a canvas that has been for sure drawn on and not just initialized.
-		return this.frames[Math.max(0, this.frames.length - 2)].baseCanvas;
+		return this.frames[Math.max(0, this.frames.length - 2)].canvas;
 	}
 	ms = ms % this.ms;
 	var aeFrame = this.frames[0];//return default image(0) if plain PNG with no other frames.
@@ -3206,7 +3328,7 @@ AnimatedDecoder.prototype.getFrame = function(ms){
 		aeProg += aeFrame.ms;
 		if(aeProg >= ms){break;}
 	}
-	return aeFrame.baseCanvas;
+	return aeFrame.canvas;
 };
 /*
 Although, storing them as full frames ready to draw may be better in cases with instances of the same graphic that are at different animation offsets at different times.
@@ -3269,7 +3391,54 @@ function AnimatedDecoderFrame(aeImg){
 		AnimatedEncoder.writeUint32(oct, crc32, pos + 8, false);
 		this.payloadBlob = new Blob([oct], {'type':'image/png'});
 		this.payloadBlobURL = URL.createObjectURL(this.payloadBlob);
-	}//end is PNG
+	}else if(aeImg.gif){//end is PNG
+		//alert('a');
+		AnimatedEncoder.writeUint16(oct, this.width, 6, true);//local region
+		AnimatedEncoder.writeUint16(oct, this.height, 8, true);
+		pos = 13;
+		var colorTable = this.gif.localColorTable? this.gif.localColorTable : aeImg.gif.globalColorTable;//use local color table if present
+		for(i = 0;i < colorTable.length;i++){
+			oct[pos + i] = colorTable[i];
+		}
+		//there will always be 256 color slots, indices not used will be ignored. no need to optimize temporary blob used intermediately to render on canvas
+		pos += 768;
+		if(this.gif.transparentIndex !== undefined){
+			oct[pos + 0] = 0x21;
+			oct[pos + 1] = 0xF9;
+			oct[pos + 2] = 0x04;
+			oct[pos + 3] = 0x05;// 0000101 reserved(000), no disposal(001), no user-input(0), transparent index flag on(1)
+			oct[pos + 4] = 0xFF;//delay
+			oct[pos + 5] = 0xFF;
+			oct[pos + 6] = this.gif.transparentIndex;//transparent index
+			oct[pos + 7] = 0x00;
+			
+			pos += 8;
+		}
+		oct[pos] = 0x2C;//Image Descriptor
+		pos++;
+		
+		AnimatedEncoder.writeUint16(oct, 0, pos + 0, true);
+		AnimatedEncoder.writeUint16(oct, 0, pos + 2, true);
+		AnimatedEncoder.writeUint16(oct, this.width, pos + 4, true);
+		AnimatedEncoder.writeUint16(oct, this.height, pos + 6, true);
+		var packedField = 0;
+		if(this.gif.interlaced){packedField &= 0x40;}
+		oct[pos + 8] = packedField;
+		
+		pos += 9;
+		//alert('b');
+		
+		for(i = 0;i < this.len;i++){
+			oct[pos + i] = aeImg.inputOctetStream[this.start + i];
+		}
+		pos += i;
+		
+		//alert('c');
+		oct[pos] = 0x3B;//end of image
+		this.payloadBlob = new Blob([oct], {'type':'image/gif'});
+		this.payloadBlobURL = URL.createObjectURL(this.payloadBlob);
+		//alert('pblob ' + this.payloadBlobURL + ' size ' + this.payloadBlob.size + ' ' + String.fromCharCode.apply(null,oct));
+	}
 	aeImg.frames.push(this);
 	
 	this.payloadImage = new Image();
@@ -3279,9 +3448,9 @@ function AnimatedDecoderFrame(aeImg){
 	
 	//(Initialize this here so that there are not potential errors when this is returned by .getFrame as undefined.)
 	//The image as it is read from the file. It can be recolored or filtered later for advanced effects.
-	this.baseCanvas = document.createElement('canvas');
-	this.baseCanvas.width = aeImg.width;
-	this.baseCanvas.height = aeImg.height;
+	this.canvas = document.createElement('canvas');
+	this.canvas.width = aeImg.width;
+	this.canvas.height = aeImg.height;
 	//TODO: add filteredCanvas for when recolor or other effects dynamically added to the original.
 	//TODO: make a .destroy or .delete function that derefs resources and revokes object URLs.
 }//end constructor
@@ -3294,7 +3463,7 @@ function AnimatedDecoderFrame_loaded(){
 	var cx;
 	if(aeImg.png && aeImg.png.hasDefaultImage && !aeImg.copyFrame){
 		//Default image is not drawn onto the animation buffer.
-		cx = this.baseCanvas.getContext('2d');
+		cx = this.canvas.getContext('2d');
 		cx.drawImage(this.payloadImage, 0, 0);
 	}else{
 		cx = aeImg.prevCanv.getContext('2d');
@@ -3308,7 +3477,7 @@ function AnimatedDecoderFrame_loaded(){
 		cx.drawImage(this.payloadImage, this.x, this.y);
 		
 		//draw the buffer state for this frame onto baseCanvas
-		cx = this.baseCanvas.getContext('2d');
+		cx = this.canvas.getContext('2d');
 		cx.drawImage(aeImg.buildCanv, 0, 0);
 
 		//now do disposal after it is drawn.
@@ -3350,6 +3519,6 @@ function AnimatedDecoderFrame_loaded(){
 }//end _finished
 
 /*
-AnimatedDecoderX is an image with multiple layers of images as the animation. Some layers might have different functions, like a recoverable grayscale.
+AnimatedDecoderX is an image with multiple layers of images as the animation. Some layers might have different functions, like a recolorable grayscale.
 */
 
