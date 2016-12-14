@@ -3022,22 +3022,27 @@ var aDec = new AnimatedDecoder('/path/to_animated.png');
 canvasContext.drawImage(aDec.getFrame(1000), 0, 0);
 
 */
-function AnimatedDecoder(adSource){
-	//adSource can be a URL to an image, or a Blob,  for example from file input. ('File' objects are Blob with .name containing filename)
+function AnimatedDecoder(decSource, paramz){
+	//decSource can be a URL to an image, or a Blob,  for example from file input. ('File' objects are Blob with .name containing filename)
 	this.ready = false;//Set to true when animated image dissected and ready for frame by frame play/pause etc.
 	this.frames = [];
 	this.buildCanv = document.createElement('canvas');//used to build step by step via region/blend/dispose params.
+	if(paramz !== undefined){
+		//sending object of parameters instead of string to create a copy that has a filter or change applied.
+		//it will be constructed with different logic by copying an existing AnimatedDecoder
+		return;
+	}
 	this.prevCanv = document.createElement('canvas');
 		//(define buildCanv here so AnimatedDecoder.getFrame() can be drawn as soon as initialized and will not have an error before loaded)
 	this.loadFunc = AnimatedDecoder_sourceLoaded.bind(this);//Make sure 'this' references the class object.
-	if(adSource instanceof Blob){
+	if(decSource instanceof Blob){
 		//File is a Blob with '.name' set. If file is sent it does not need to wait for an XHR.
 		this.imgReq = new FileReader();
 		this.imgReq.addEventListener('load', this.loadFunc);
-		this.imgReq.readAsArrayBuffer(adSource);
+		this.imgReq.readAsArrayBuffer(decSource);
 	}else{
 		this.imgReq = new XMLHttpRequest();
-		this.imgReq.open('GET', adSource, true);
+		this.imgReq.open('GET', decSource, true);
 		this.imgReq.responseType = 'arraybuffer';
 		this.imgReq.addEventListener('load', this.loadFunc);
 		this.imgReq.send();
@@ -3511,6 +3516,7 @@ function AnimatedDecoderFrame_loaded(){
 		}, 50);
 	}else{
 		//otherwise all loading finished
+		aeImg.ready = true;
 		if(aeImg.onDecoded){
 			aeImg.onDecoded(aeImg);
 		}
@@ -3519,6 +3525,93 @@ function AnimatedDecoderFrame_loaded(){
 }//end _finished
 
 /*
-AnimatedDecoderX is an image with multiple layers of images as the animation. Some layers might have different functions, like a recolorable grayscale.
+.cloneWithOptions allows for filters to be applied to a copy of the original.
+Other options may be added later, for now it focuses on just filtering.
+This copy is meant for playback only and will not have all of the metadata or details from the original decoder.
+Send an object as a parameter that has .filter set to the function that accepts the pixel object parameter.
+Here is an example that converts colors to grayscale:
+
+var fOptions = {};
+fOptions.filter = function(pixel){
+	var gray = (pixel.r + pixel.g + pixel.b)/3;
+	pixel.r = gray;
+	pixel.g = gray;
+	pixel.b = gray;
+};
+var grayscaleClone = anAnimatedDecoder.cloneWithOptions(fOptions);
+
 */
+AnimatedDecoder.prototype.cloneWithOptions = function(options){
+	//This is used to create a clone of the animation that has a filter or transformation applied to the canvas bitmap.
+	//(The approach of appling a filter to the drawn results of the current position
+	//could be taken, but is very resource intensive.)
+	//options is an object with parameters like filter function
+	var cParamz = {"clone":true};
+	var cloneDec = new AnimatedDecoder(null, cParamz);
+	options.original = this;
+	cloneDec.options = options;
+	cloneDec.cloneLoadFunc = AnimatedDecoder_cloneFrame.bind(cloneDec);
+	setTimeout(cloneDec.cloneLoadFunc, 50);
+	if(this.png && this.png.hasDefaultImage){
+		//needed to skip default frame in animation.
+		cloneDec.png = {"hasDefaultImage":true};
+	}
+	return cloneDec;
+};
+function AnimatedDecoder_cloneFrame(){
+	if(!this.options.original.ready &&
+	(!this.options.original.frameCount || this.options.original.frames.length < this.frames.length + 2)){
+		//If not fully finished, hold it back 2 frames because the latest one might not be finished yet.
+		//Will have to delay. Cannot finish cloing until the original is done...
+		setTimeout(this.cloneLoadFunc, 500);
+		return;
+	}
+	//Might not have the frameCount/ms yet if original source image had not loaded when cloned.
+	this.frameCount = this.options.original.frameCount;
+	this.ms = this.options.original.ms;
+	var sFrame = this.options.original.frames[this.frames.length];
+	var cFrame = {};
+	this.frames.push(cFrame);
+	cFrame.ms = sFrame.ms;
+	var cv = document.createElement('canvas');
+	cFrame.canvas = cv;
+	cv.width = sFrame.canvas.width;
+	cv.height = sFrame.canvas.height;
+	var cx = cv.getContext('2d');
+	cx.drawImage(sFrame.canvas, 0, 0);
+	if(this.options.filter){
+		var pix = {};//pixel object, will be updated for each pixel
+		pix.w = cv.width;//some filters may reference canvas size/position
+		pix.h = cv.height;
+		pix.x = 0;
+		pix.y = 0;
+		var dat = cx.getImageData(0, 0, cv.width, cv.height);
+		var pixLen = cv.width * cv.height * 4;
+		for(var i=0;i<pixLen;i+=4){
+			pix.r = dat.data[i];
+			pix.g = dat.data[i + 1];
+			pix.b = dat.data[i + 2];
+			pix.a = dat.data[i + 3];
+			this.options.filter(pix);
+			//after the filter has operated on the RGB, set the new values
+			dat.data[i]     = pix.r;
+			dat.data[i + 1] = pix.g;
+			dat.data[i + 2] = pix.b;
+			dat.data[i + 3] = pix.a;
+			pix.x++;
+			if(pix.x == cv.width){
+				pix.x = 0;
+				pix.y++;
+			}
+		}
+		cx.putImageData(dat, 0, 0);
+	}
+	if(this.frames.length < this.frameCount){
+		setTimeout(this.cloneLoadFunc, 50);
+	}else{
+		delete this.cloneLoadFunc;
+		if(this.options.filter){delete this.options.filter;}//filtering done. clear this in case it was a dynamically made function that hogs resources.
+		this.ready = true;
+	}
+}
 
