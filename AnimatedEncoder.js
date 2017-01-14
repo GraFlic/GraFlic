@@ -3331,7 +3331,9 @@ AnimatedDecoder.prototype.getFrame = function(ms){
 	for(;i < this.frames.length;i++){
 		aeFrame = this.frames[i];
 		aeProg += aeFrame.ms;
-		if(aeProg >= ms){break;}
+		if(aeProg > ms){break;}//>, not >=
+		//If 16 FPS, sending 0 as ms, it would return [0]
+		//if sending 16, it would return [0] again if >= because the 16 delay is = 16
 	}
 	return aeFrame.canvas;
 };
