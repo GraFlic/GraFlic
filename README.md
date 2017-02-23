@@ -8,6 +8,7 @@ WEBP is making advancements as well, with more browsers testing it.
 If the Zopfli and/or pako library scripts are included on your page, it can make even smaller Animated PNG files with various techniques such as 8-bit indexed PNG, 24-bit RGB PNG for opaque images, byte filtering optimization, and brute force compression.
 
 https://github.com/imaya/zopfli.js (The Apache License 2.0)
+
 ( ported from https://github.com/google/zopfli )  (The Apache License 2.0)
 
 https://github.com/nodeca/pako/ (MIT License)
