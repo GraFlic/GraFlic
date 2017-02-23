@@ -1583,7 +1583,7 @@ Transparent can be copied from none, but with the region covered by this frame c
 						sModePaeth = new Uint8Array(new ArrayBuffer(sRegionWidthPlusFilter));
 					//Set filter mode codes at first byte.
 					sModeNone[0] = 0;sModeSub[0] = 1;sModeUp[0] = 2;sModeAverage[0] = 3;sModePaeth[0] = 4;
-					bufI = fullScanWidth * h;//reset it each time since it loops with the 3 different disposals.
+					bufI = fullScanWidth * h + sMinX * this.byteStreamMode;//reset it each time since it loops with the 3 different disposals.
 					sPos = 1;//position in the temporary scaliness with each filter mode to compare which one is best. Start after the filter mode byte.
 					for(w = sMinX;w <= sMaxX;w++){
 						//if(w >= sMinX && w <= sMaxX){
