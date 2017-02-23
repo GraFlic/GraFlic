@@ -13,9 +13,10 @@ Inspired by the Animated PNG/GIF encoder of my Deckromancy.com and Punykura.com 
 but built in Javascript rather than AS3 and can leverage the native
 (and in some cases hardware-accelerated) image encoders of the browser
 via Canvas.toDataURL()
+It also can make use of the powerful DEFLATE libraries Zopfli and pako for Animated PNG.
 =============================================================================
 The MIT License (MIT)
-Copyright (c) 2016 Compukaze LLC
+Copyright (c) 2016 - 2017 Compukaze LLC
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights
@@ -33,7 +34,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 =============================================================================
 
-Version 1.1.0
+Version 1.1.1
 
 Format support is based on what formats a given browser supports as
 an export type from <canvas> .toDataURL()
@@ -47,7 +48,7 @@ and Chrome tentatively adding Animated PNG support by the end of 2016,
 GIF support could be pointless in the near future and not the best use of effort right now.
 Remember that GIF would need heavy work, like LZW and indexed color selection implementations.
 
-Here is what browsers would currently (late 2016) be capable of supporting
+Here is what browsers would currently (early 2017) be capable of supporting
 as output (note that Edge and Chrome CANNOT natively PLAY Animated PNG,
 but they WILL the first frame or APNG default image):
 
@@ -81,7 +82,7 @@ The status of being able to VIEW animated images:
         | Animated PNG           | Animated WEBP                
 --------+------------------------+------------------------------------------
 Chrome, | Being worked on        | Supported.
-Opera   | as of Q4 2016.         |
+Opera   | as of Q4 2016/Q1 2017. |
 --------+------------------------+------------------------------------------
 Firefox | Supported.             | Not supported.
         |      	                 | * Safari has reportedly been considering/
@@ -115,12 +116,15 @@ HTML5 does mandate that the image should be able to reproduce all original pixel
 exactly, but it is unclear if this means an image with a low number of colors that
 could be encoded with 8 bit indexed color is mandated to stay 32 bit RGBA.
 
-However, AnimatedEncoder can be comboed with pako for enhanced compression.
+However, AnimatedEncoder can be comboed with Zopfli or pako for enhanced compression.
 
-https://github.com/nodeca/pako/
-  (Also MIT)
-  by    Vitaly Puzrin     https://github.com/puzrin
-  and   Andrei Tupitcyn   https://github.com/andr83
+https://github.com/imaya/zopfli.js (The Apache License 2.0)
+( ported from https://github.com/google/zopfli )  (The Apache License 2.0)
+
+https://github.com/nodeca/pako/ (MIT License)
+
+It is recommended to include pako even if using only Zopfil because it will enable
+much faster scanline filter efficiency tests for faster saves and that does not appear to impact savings.
 
 If the pako script has been included in the page, it will be detected and made use of if possible.
 Images that can encode well with indexed PNG8 for additional savings will use pako's deflate()
@@ -128,7 +132,7 @@ function to build custom IDAT/fdAT image data streams.
 
 USAGE:
 var paramz = {
-	"format":'<png|gif|webp|webm>',
+	"format":'<png|webp>',
 	"quality":<0-1> 0% - 100% quality. Lower quality saves more space.
 	"delay":<positive integer, 1 or greater>, delay in milliseconds
 			(may get limited to 600 on GIF due to browser implementations)
@@ -152,18 +156,29 @@ var paramz = {
 					If you are using ppcm(pixels per centimetre) you can take that
 					times 100 to get the ppm.
 	"png":<object that can contain PNG-specific parameters for tweaking the features or modes used to encode>
-		"png.disposePrevious":<true|false>
+		png.disposePrevious:<true|false>
 			Can be set to false to disable dispose to previous mode. Some platforms such as Pebble smartwatch might not support this disposal mode.
 			(Probably to save resources by not keeping the previous frame in memory since running on compact hardware.)
-		"png.disposeBackground":<true|false>
-		"png.disposeNone":<true|false>
+		png.disposeBackground:<true|false>
+		png.disposeNone:<true|false>
 			(Be careful disabling multiple disposal modes, if there are no modes to work with the image cannot be built.)
-		"png.palette":<Array>
+		png.palette:<Array>
 			Up to 256 ARGB numbers representing a preset palette.
 			Setting this will force it into indexed mode and skip the color counting step.
 			Some hardware like smartwatches might only support certain colors and this can optimize for that.
 			Palette is format-specific, for example GIF can only represent RGB colors and one reserved transparent pixel,
 			while PNG palette can represent RGBA colors on all entries.
+		png.brute:<true|false|1+>
+			If true or 1+, brute-force compression will be done.
+			Requires zopfli.min.js ( https://github.com/imaya/zopfli.js )
+			This takes much longer to complete, but can save allot of size.
+			Since reduced quality PNGs have quantization and dithering, and in Animated PNG often lots of repeated transparent pixels over recycled ares,
+			it increases repeated patterns and makes brute-force compression more helpful.
+			Defaults to false.
+			If "brute" is set to a number, it is the number of iterations to go back and fourth to improve LZ77 pattern recycling efficiency in the DEFLATE compression used by PNG.
+			Higher numbers can shave off more file size, but take longer and more processing power. Very high numbers can have diminishing returns.
+			If set to true, it defaults to 15. 0 will evaluate as false and not use brute-force compression.
+			If only Zopfli is included and not pako, it will use the Zopfli brute-force compression regardless of this setting, but the iterations can be configured.
 	"dithering":<pattern|none|integer>
 		Use patterned dithering or turn dithering off. More modes may be added later. "pattern" is default.
 		Dithering is not format-specific, but a technique that can be applied to various formats.
@@ -218,19 +233,14 @@ function onEncodedFunc(ae){
 	*************** NOT need to be set in paramz *****************
 	"frames":<frame setups>
 	"payloads":<will store the bitstreams of extracted frames to build from>
-	"sourceFormat":<png|gif|webp> (The format that the encodings will be extracted from based on the browser's supported Canvas.toDataURL() encodings. Internally set based on format, webm and webp will both use webp as the source since there is no webm toToDataURL and they share the same VPX bitstreams.)
+	"sourceFormat":<png|gif|webp> (The format that the encodings will be extracted from based on the browser's supported Canvas.toDataURL() encodings. Internally set based on format. For all currently supported types, this will be the same as format.)
 	**************************************************************
 
-[Featuroach] NOTE THAT IMAGE CREATION WILL FAIL IF
-the image is NOT either
-(A) Selected by the user from their device/photo gallery
-(B) Locally located on the same server AND website domain name
-This is because of a Javascript 'security' Featuroach ('Feature'/Bug that hides and creeps around in your code like a filthy roach)
-This featuroach considers accessing the contents of those images a security risk and may scream about 'security' or a 'tainted' canvas in browser console.
-
-UPDATE: You can mostly get around this by disabling CORS restrictions on your browser while testing your code locally.
-	In most cases your website is not going to need the cross-domain images and it will not be a problem once live on your site,
-	but the Cross-Origin Resource Sharing rules can create huge headaches when testing your code locally.
+NOTE: Browsers may consider accessing the contents of images not on the same domain a security risk and may scream about 'security' or a 'tainted' canvas in browser console.
+This can be an issue when testing things locally from your computer files and folders.
+You can mostly get around this by disabling CORS restrictions on your browser while testing your code locally.
+In most cases your website is not going to need the cross-domain images and it will not be a problem once live on your site,
+but the Cross-Origin Resource Sharing rules can create huge headaches when testing your code locally.
 
 */
 'use strict';
@@ -540,14 +550,14 @@ AnimatedEncoder.prototype.procFrame = function(){
 				}
 					
 				//customByteStream cannot be used without a DEFLATE compressor
-				//if the pako deflate library is not present, 32-bit RGBA is the only option.
-				if(window.pako){
+				//if the Zopfli or pako deflate library is not present, 32-bit RGBA is the only option.
+				if(window.pako || window.Zopfli){
 					this.customByteStream = true;
 					if(this.hasTransparency < 2){
 						//If no transparency, and not using a palette, use(will be switched to mode 1 indexed if a palette is used.)
 						this.byteStreamMode = 3;
 					}
-					//If the Pako deflate library exists in the page, it can be used to create PNG8 (toDataURL() currently always PNG32 RGBA)
+					//If the Zopfli or Pako deflate library exists in the page, it can be used to create PNG8 (toDataURL() currently always PNG32 RGBA)
 					//for low quality settings, always force indexed PNG8
 					if(this.quality <= 0.5){
 						this.paletteLimit = Math.round(512 * this.quality);
@@ -692,6 +702,7 @@ AnimatedEncoder.prototype.procFrame = function(){
 					palR = paletteCandidates[i] >> 16 & 0xFF;
 					palG = paletteCandidates[i] >> 8 & 0xFF;
 					palB = paletteCandidates[i] & 0xFF;
+					//The lowest numbered palette indices have the most occurrences.
 					this.palette.push(paletteCandidates[i]);
 					//track exact matches
 					if(this.paletteExactMatch[palA] === undefined){//(0 would be valid)
@@ -1487,7 +1498,7 @@ Transparent can be copied from none, but with the region covered by this frame c
 			}
 			widthN  = maxNX + 1 - minNX;
 			heightN = maxNY + 1 - minNY;
-			streamNone = new Uint8Array(new ArrayBuffer(widthN * heightN * this.byteStreamMode + heightN));
+			streamNone = new Uint8Array(new ArrayBuffer(widthN * heightN * this.byteStreamMode + heightN));//+height because first byte of scanline is filter mode
 		}
 		if(canPS || canPO){
 			if(canPO){
@@ -1522,6 +1533,7 @@ Transparent can be copied from none, but with the region covered by this frame c
 		//var scanWidthP = widthP * this.byteStreamMode;
 		//var scanWidthT = widthT * this.byteStreamMode;
 		
+		//(OLD WAY, misses lots of opportunities to optimize line-by-line)
 		//When writing lots of transparent pixels to recycle matches between frames,
 		//and with quantization making more pixels next to each other the same,
 		//there will be lots of single-color areas that get allot of zeroes when subtracting between frames
@@ -1529,13 +1541,164 @@ Transparent can be copied from none, but with the region covered by this frame c
 		//More zeroes or repeating values after being filtered means lower entropy, causing better compression when deflated.
 		//If height is greater use Up filtering, otherwise use Sub
 		//(that way there are less cases where it is at the edge with no data to the left(Sub) or above(Up) to filter it with)
-		var filterN = heightN > widthN ? 2 : 1;
-		var filterP = heightP > widthP ? 2 : 1;
-		var filterT = heightT > widthT ? 2 : 1;
+		//var filterN = heightN > widthN ? 2 : 1;
+		//var filterP = heightP > widthP ? 2 : 1;
+		//var filterT = heightT > widthT ? 2 : 1;
 		
+		//var canZeroTransparents = this.byteStreamMode == 4;//mode 4 can have the RGB set to zeroes when fully transparent and assume optimal values. (It is not visible and does not matter what is there.)
+								//(theoretically could swap for mode 2 grayscale/alpha if supported)
 		for(h = 0;h < this.outputHeight;h++){
+
+			for(var streamI = 0;streamI < 3;streamI++){
+				var sStream, sBuf, sPos, sByte, sRegionWidth, sStreamPos;
+				var sMinY, sMaxY, sMinX, sMaxX;
+				if(streamI == 0){
+					sStream = streamNone;
+					sBuf = bufN;
+					sRegionWidth = widthN * this.byteStreamMode;
+					sMinY = minNY;sMaxY = maxNY;sMinX = minNX;sMaxX = maxNX;
+					sStreamPos = nonePos;//current position in disposal-specific region.
+				}else if(streamI == 1){
+					sStream = streamPrev;
+					sBuf = bufP;
+					sRegionWidth = widthP * this.byteStreamMode;
+					sMinY = minPY;sMaxY = maxPY;sMinX = minPX;sMaxX = maxPX;
+					sStreamPos = prevPos;//current position in disposal-specific region.
+				}else{
+					sStream = streamTran;
+					sBuf = bufT;
+					sRegionWidth = widthT * this.byteStreamMode;
+					sMinY = minTY;sMaxY = maxTY;sMinX = minTX;sMaxX = maxTX;
+					sStreamPos = tranPos;//current position in disposal-specific region.
+				}
+				//don't bother if the stream is not able to represent the part of the image, or the current scanline is out of range for the updated region.
+				if(sStream && h >= sMinY && h <= sMaxY){
+					var sRegionWidthPlusFilter = sRegionWidth + 1;
+					//Make the scanline test streams include the filter mode byte at the start.
+					//This is PART of the IDAT/fdAT stream and CAN affect efficiency.
+					var 	sModeNone = new Uint8Array(new ArrayBuffer(sRegionWidthPlusFilter)),
+						sModeSub = new Uint8Array(new ArrayBuffer(sRegionWidthPlusFilter)),
+						sModeUp = new Uint8Array(new ArrayBuffer(sRegionWidthPlusFilter)),
+						sModeAverage = new Uint8Array(new ArrayBuffer(sRegionWidthPlusFilter)),
+						sModePaeth = new Uint8Array(new ArrayBuffer(sRegionWidthPlusFilter));
+					//Set filter mode codes at first byte.
+					sModeNone[0] = 0;sModeSub[0] = 1;sModeUp[0] = 2;sModeAverage[0] = 3;sModePaeth[0] = 4;
+					bufI = fullScanWidth * h;//reset it each time since it loops with the 3 different disposals.
+					sPos = 1;//position in the temporary scaliness with each filter mode to compare which one is best. Start after the filter mode byte.
+					for(w = sMinX;w <= sMaxX;w++){
+						//if(w >= sMinX && w <= sMaxX){
+							for(chanI = 0;chanI < this.byteStreamMode;chanI++){//8, 24, and 32 bit pixels must be accounted for
+								/*
+								//TODO: Get this working. This should be able to optimize pixels that are fully transparent in RGBA mode
+								//where the RGB does not matter, but the source buffer would need to be altered to reflect this,
+								//because the next scanline will compare the RGBA values that are in there.
+								if(canZeroTransparents && sBuf[bufI + 3] == 0 && chanI < 3){//If fully transparent and safe to zero out
+									sModeNone[sPos] = 0;
+									sModeSub[sPos] = 0;
+									sModeUp[sPos] = 0;
+									sModeAverage[sPos] = 0;
+									sModePaeth[sPos] = 0;
+									//sNoneZeroes++;
+									//sSubZeroes++;
+									//sUpZeroes++;
+									//sAverageZeroes++;
+									//sPaethZeroes++;
+								}else{
+								*/
+								
+								sByte = sBuf[bufI + chanI];
+								sModeNone[sPos] = sByte;
+								//if(sByte == 0){sNoneZeroes++;}
+								
+								sByte = this.filterBytePNG(sBuf, bufI + chanI, 1, w, h, sMinX, sMinY, fullScanWidth);
+								sModeSub[sPos] = sByte;
+								//if(sByte == 0){sSubZeroes++;}
+								
+								sByte = this.filterBytePNG(sBuf, bufI + chanI, 2, w, h, sMinX, sMinY, fullScanWidth);
+								sModeUp[sPos] = sByte;
+								//if(sByte == 0){sUpZeroes++;}
+								
+								sByte = this.filterBytePNG(sBuf, bufI + chanI, 3, w, h, sMinX, sMinY, fullScanWidth);
+								sModeAverage[sPos] = sByte;
+								//if(sByte == 0){sAverageZeroes++;}
+								
+								sByte = this.filterBytePNG(sBuf, bufI + chanI, 4, w, h, sMinX, sMinY, fullScanWidth);
+								sModePaeth[sPos] = sByte;
+								//if(sByte == 0){sPaethZeroes++;}
+								
+								//}//end not transparent-zeroable
+								
+								sPos++;
+							}
+						//}
+						bufI += this.byteStreamMode;
+					}
+					//Test a quick deflate of the scanline and scalines above it if not the first line.
+					//Other techniques of counting zeroes and things add lots of bloat and complexity,
+					//but do not account for things like repeated strings and more advanced patterns that repeat and compress well.
+					var sNoneScore, sSubScore, sUpScore, sAverageScore, sPaethScore;
+					sPos = sStreamPos;//set to the actual position in the scan data region for current disposal
+					var lastFewScans;//combines the current filtered bytes with the previous lines to see how it compresses in context with the things around it.
+					//the relation to repeated patterns close to it is also important.
+					var scanPrePos = sPos - sRegionWidthPlusFilter * 2;//length of previous lines inserted for context. May be 0 if first line.
+					if(scanPrePos < 0){scanPrePos = 0;}//If it is the first line or close to it, make sure it does not go out of range.
+					lastFewScans = sStream.subarray(scanPrePos, sPos + sRegionWidthPlusFilter);
+					//insert the scan being processed after the first few that were inserted at the start
+					var scanInsPos = lastFewScans.length - sRegionWidthPlusFilter;
+					
+					if(window.pako){
+						//This is a quick test to see what scanline version compresses well, use pako if possible because it is the fastest.
+						//So far, there does not appear to be savings from doing this test with more intense settings.
+						for(w = 0;w < sRegionWidthPlusFilter;w++){lastFewScans[scanInsPos + w] = sModeNone[w];}
+						sNoneScore = window.pako.deflateRaw(lastFewScans).length;
+						for(w = 0;w < sRegionWidthPlusFilter;w++){lastFewScans[scanInsPos + w] = sModeSub[w];}
+						sSubScore = window.pako.deflateRaw(lastFewScans).length;
+						for(w = 0;w < sRegionWidthPlusFilter;w++){lastFewScans[scanInsPos + w] = sModeUp[w];}
+						sUpScore = window.pako.deflateRaw(lastFewScans).length;
+						for(w = 0;w < sRegionWidthPlusFilter;w++){lastFewScans[scanInsPos + w] = sModeAverage[w];}
+						sAverageScore = window.pako.deflateRaw(lastFewScans).length;
+						for(w = 0;w < sRegionWidthPlusFilter;w++){lastFewScans[scanInsPos + w] = sModePaeth[w];}
+						sPaethScore = window.pako.deflateRaw(lastFewScans).length;
+					}else{
+						var dTestOptions = {"iterations":1};
+						for(w = 0;w < sRegionWidthPlusFilter;w++){lastFewScans[scanInsPos + w] = sModeNone[w];}
+						sNoneScore = new Zopfli.DeflateRaw(lastFewScans, dTestOptions).compress().length;
+						for(w = 0;w < sRegionWidthPlusFilter;w++){lastFewScans[scanInsPos + w] = sModeSub[w];}
+						sSubScore = new Zopfli.DeflateRaw(lastFewScans, dTestOptions).compress().length;
+						for(w = 0;w < sRegionWidthPlusFilter;w++){lastFewScans[scanInsPos + w] = sModeUp[w];}
+						sUpScore = new Zopfli.DeflateRaw(lastFewScans, dTestOptions).compress().length;
+						for(w = 0;w < sRegionWidthPlusFilter;w++){lastFewScans[scanInsPos + w] = sModeAverage[w];}
+						sAverageScore = new Zopfli.DeflateRaw(lastFewScans, dTestOptions).compress().length;
+						for(w = 0;w < sRegionWidthPlusFilter;w++){lastFewScans[scanInsPos + w] = sModePaeth[w];}
+						sPaethScore = new Zopfli.DeflateRaw(lastFewScans, dTestOptions).compress().length;
+					}
+					var sOptimalMode = sModeNone;
+					var sBestScore = sNoneScore;//lower is better when going by deflated length
+					if(sSubScore < sBestScore){sBestScore = sSubScore;sOptimalMode = sModeSub;}
+					if(sUpScore < sBestScore){sBestScore = sUpScore;sOptimalMode = sModeUp;}
+					if(sAverageScore < sBestScore){sBestScore = sAverageScore;sOptimalMode = sModeAverage;}
+					if(sPaethScore < sBestScore){sBestScore = sPaethScore;sOptimalMode = sModePaeth;}
+					
+					//The filter mode byte is included in the test streams and will be written by this.
+					for(w = 0;w < sRegionWidthPlusFilter;w++){
+						sStream[sPos] = sOptimalMode[w];
+						sPos++;
+					}
+					//now update the variables(they do not referenceify)
+					if(streamI == 0){
+						nonePos = sPos;
+					}else if(streamI == 1){
+						prevPos = sPos;
+					}else{
+						tranPos = sPos;
+					}
+				}
+			}
+			/*
+			//(OLD WAY, had no line by line filter mode optimization)
 			//write the filter mode at the start of each scanline.
-			var noneScan = false, prevScan = false, tranScan = false;
+			var noneScan = false, prevScan = false, tranScan = false,
+				scanBytes = [ [ [], [], [] ], [ [], [], [] ], [ [], [], [] ] ];
 			if(streamNone && h >= minNY && h <= maxNY){
 				streamNone[nonePos] = filterN;
 				noneScan = true;
@@ -1550,6 +1713,11 @@ Transparent can be copied from none, but with the region covered by this frame c
 				streamTran[tranPos] = filterT;
 				tranScan = true;
 				tranPos++;
+			}
+			for(w = 0;w < this.outputWidth;w++){
+				if(noneScan && streamNone && w >= minNX && w <= maxNX){
+					
+				}
 			}
 			for(w = 0;w < this.outputWidth;w++){
 				if(noneScan && streamNone && w >= minNX && w <= maxNX){
@@ -1571,20 +1739,40 @@ Transparent can be copied from none, but with the region covered by this frame c
 					}
 				}
 				bufI += this.byteStreamMode;
-			}
-		}//end w,h
+			}*/
+		}//end h
 
-		var deflateOptions = {
-			windowBits:15,
-			memLevel:9,
-			level:9
-		};
+		var deflateOptions;
+		var brutePNG;//To use Zopfli or not.
+		if(!window.Zopfli){//No Zopfli present, do not use it.
+			brutePNG = false;
+		}else if(!window.pako){//No pako present, do not use it.
+			brutePNG = true;
+		}else{//both are present, use Zopfli if the png.brute parameter evaluates true.
+			brutePNG = this.png && this.png.brute;
+		}
+		if(brutePNG){//use Zopfli
+			deflateOptions = {"iterations":15};//Standard Default, 15
+			if(typeof this.png.brute === "number"){//If a custom level of iterations is defined by using 1+ rather than just true.
+				deflateOptions.iterations = this.png.brute;
+			}
+		}else{//use pako
+			deflateOptions = {
+				"windowBits":15,
+				"memLevel":9,
+				"level":9
+			};
+		}
 		var chosenByteStream, deflatedNone, deflatedPrev, deflatedTran;
 		var minCX, maxCX, minCY, maxCY;
 		var chosenDisposal;//This is the disposal for the frame BEFORE this one.
 		var chosenBlending;//The blend mode of the CURRENT frame.
 		if(streamNone){
-			deflatedNone = window.pako.deflate(streamNone, deflateOptions);//use .deflate(), NOT .deflateRaw()
+			if(brutePNG){
+				deflatedNone = new Zopfli.Deflate(streamNone, deflateOptions).compress();
+			}else{
+				deflatedNone = window.pako.deflate(streamNone, deflateOptions);//use .deflate(), NOT .deflateRaw()
+			}
 			chosenByteStream = deflatedNone;
 			chosenDisposeBuffer = this.bufNone;
 			chosenDrawBuffer = bufN;
@@ -1593,7 +1781,11 @@ Transparent can be copied from none, but with the region covered by this frame c
 			minCX = minNX;maxCX = maxNX;minCY = minNY;maxCY = maxNY;
 		}
 		if(streamPrev){
-			deflatedPrev = window.pako.deflate(streamPrev, deflateOptions);
+			if(brutePNG){
+				deflatedPrev = new Zopfli.Deflate(streamPrev, deflateOptions).compress();
+			}else{
+				deflatedPrev = window.pako.deflate(streamPrev, deflateOptions);
+			}
 			if(!chosenByteStream || deflatedPrev.length < chosenByteStream.length){
 				chosenByteStream = deflatedPrev;
 				chosenDisposeBuffer = this.bufPrev;
@@ -1604,7 +1796,11 @@ Transparent can be copied from none, but with the region covered by this frame c
 			}
 		}
 		if(streamTran){
-			deflatedTran = window.pako.deflate(streamTran, deflateOptions);
+			if(brutePNG){
+				deflatedTran = new Zopfli.Deflate(streamTran, deflateOptions).compress();
+			}else{
+				deflatedTran = window.pako.deflate(streamTran, deflateOptions);
+			}
 			if(!chosenByteStream || deflatedTran.length < chosenByteStream.length){
 				chosenByteStream = deflatedTran;
 				chosenDisposeBuffer = this.bufTran;
@@ -1994,7 +2190,7 @@ AnimatedEncoder.prototype.saveAnimatedFile = function(){
 		//quality level 1, the threshold to quantize would be 0, and never reached, but quantization is skipped for full quality anyways.
 		this.quantThresh = this.outputWidth * this.outputHeight * this.frames.length * 0.001 * (1 - this.quality);
 		this.initColorCounting();
-		if(this.quality < 1 && window.pako){//Needs deflate functionality to take advantage of color counting.
+		if(this.quality < 1 && ( window.pako || window.Zopfli ) ){//Needs deflate functionality to take advantage of color counting.
 			this.procFrameStage = 100;//100 for color counting
 			this.progressPerFrame /= 2;//it will have twice as many, because it now has two stages of processing.
 		}else{
@@ -2014,7 +2210,7 @@ AnimatedEncoder.prototype.saveAnimatedFile = function(){
 			pngOpts.disposeNone       = this.png.disposeNone       === undefined ? true : this.png.disposeNone == true;
 			pngOpts.disposeBackground = this.png.disposeBackground === undefined ? true : this.png.disposeBackground == true;
 			pngOpts.disposePrevious   = this.png.disposePrevious   === undefined ? true : this.png.disposePrevious == true;
-			if(this.png.palette && window.pako){
+			if(this.png.palette && ( window.pako || window.Zopfli ) ){
 				this.palette = this.png.palette;
 			}
 			//Leave whatever object was sent as a parameter as it is, then have the optimized version live.
@@ -2139,62 +2335,7 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 		}
 		
 	}//============================== END WEBP ==============================
-	//=============================== WEBP ==================================
-	if(this.format == 'webm'){
-		/*
-(EMBL is Big Endian)
-opt = optional
-mnd = mandatory
-a length byte of all 1's (11111111) means it is a list of EBML sub elements.
-There is no end marker. it ends based on the ID of a property when
-a property is encountered that is not a defined sub-element of that parent entry
-This must be guessed based on the doctype's definition of IDs
-EMBL Header(Lv 0, multi, total: 11 bytes)
-ID = 0x1A45DFA3
-			//Should inherit mandatory properties
-			//from the Matroska Spec.
-			//and override some things that WEBM changes
-			{4} 
-			                 |ID        |Length   |Payload
-  EBMLVer.     {4} (0x4286,    0x81,     0x01)
-  EBMLReadVer. {4} (0x42F7,    0x81,     0x01)
-  MaxIDLen.    {4} (0x42F2,    0x81,     0x04)
-  MaxSizeLen.  {4} (0x42F3,    0x81,     0x08)
-  DocType      {7} (0x4282,    0x84,     'webm')
-  DocTypeVer.  {4} (0x4287,    0x81,     0x02) (look into this not sure)
-  DocT.ReadVer.{4} (0x4285,    0x81,     0x02)
-Segment(Lv 0, multi) (All top-level fields, the whole rest of the file)
-ID=0x18538067
-  Info(Lv 1, multi)
-  ID=0x1549A966
-    Title <opt,UTF-8>      {0x7BA9, }
-    DateUTC <opt,UTF-8>      {0x7BA9, }
-    TimecodeScale <uint>    {0x2AD7B1, 0x83, 0x0F4240}
-		time measuring unit. 1,000,000 means milliseconds
-    Duration <float>        {}
-    MuxingApp <mnd,UTF-8>       {0x4D80, 0x9C, 'Deckromancy Animated Encoder'}
-    WritingApp <mnd,UTF-8>      {0x5741, 0x9C, 'Deckromancy Animated Encoder'}
-                                      x-- 1001_1100 (first bit is expansion indicator)
-  Tracks(Lv 1, multi)
-  ID=0x1654AE6B
-    Track Entry(Lv 2, multi)
-    ID=0xAE
-       TrackNumber <mnd,uint>   {0xD7, 0x8?, 'Deckromancy Animated Encoder'}
-       CodecID      {4} (0x86,      0x85,     'V_VP8' or 'V_VP9')
-       (No CodecPrivate data for VP 8/9)
-       CodecName    {4} (0x86,      0x83,     'VP8' or 'VP9')(not sure if needed?)
-			{}
-			{7} Doctype, [2] ID = 0x4282,
-					[1] byte length = 0x84 = 10000100, meaning 4
-						(first bit defines 1 byte length size)
-						(In Unicode fashion, each leading 0 adds an expansion byte)
-					[4] Payload = 'webm'
-			{} DoctypeReadVersion, [2] ID = 0x4285
-						[1] length = 0x81, meaning 1
-						[1] Payload = 0x02
-		*/
-		outputLen = 4;
-	}//============================== END WEBM ==============================
+	/*if(this.format == 'webm'){}//placeholder was here, not currently supported*/
 
 	if(this.format == 'png'){
 		var crc32;
@@ -2957,10 +3098,42 @@ AnimatedEncoder.prototype.filterBytePNG = function(buf, i, fMode, x, y, minX, mi
 			upByte = buf[i - scanWidth];
 		}
 		return (curByte - upByte) % 256;
+	}else if(fMode == 3){//Average, using above and to the left.
+		var aveSub = 0, aveUp = 0;
+		if(x > minX){
+			aveSub = buf[i - this.byteStreamMode];
+		}
+		if(y > minY){
+			aveUp = buf[i - scanWidth];
+		}
+		return (curByte - Math.floor( (aveSub + aveUp) / 2)) % 256;
+	}else if(fMode == 4){//Paeth, check left, above, and above-left
+		var bA = 0, bB = 0, bC = 0;//in order of: left, above, above-left
+		if(x > minX){
+			bA = buf[i - this.byteStreamMode];
+			if(y > minY){
+				bC = buf[i - this.byteStreamMode - scanWidth];
+			}
+		}
+		if(y > minY){
+			bB = buf[i - scanWidth];
+		}
+		var pABC = bA + bB - bC;
+		var pA = Math.abs(pABC - bA);//calculate closeness of bytes A, B, C.
+		var pB = Math.abs(pABC - bB);
+		var pC = Math.abs(pABC - bC);
+		var paethByte;
+		if(pA <= pB && pA <= pC){
+			paethByte = bA;
+		}else if(pB <= pC){
+			paethByte = bB;
+		}else{
+			paethByte = bC;
+		}
+		return (curByte - paethByte) % 256;
 	}else if(fMode == 0){//No filtering.
 		return curByte;
 	}
-	//TODO: May want to add Average(3) and Paeth(4) mode.
 };
 AnimatedEncoder.prototype.initBuffersPNG = function(){
 				var byteBufLength = this.outputWidth * this.outputHeight * this.byteStreamMode;
