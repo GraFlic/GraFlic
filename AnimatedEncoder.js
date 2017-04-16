@@ -16,7 +16,7 @@ via Canvas.toDataURL()
 It also can make use of the powerful DEFLATE libraries Zopfli and pako for Animated PNG.
 =============================================================================
 The MIT License (MIT)
-Copyright (c) 2016 - 2017 Compukaze LLC
+Copyright (c) 2013 - 2017 Compukaze LLC
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights
@@ -81,8 +81,8 @@ The status of being able to VIEW animated images:
 
         | Animated PNG           | Animated WEBP                
 --------+------------------------+------------------------------------------
-Chrome, | Being worked on        | Supported.
-Opera   | as of Q4 2016/Q1 2017. |
+Chrome, | Being tested. Might    | Supported.
+Opera   | be finished mid-2017.  |
 --------+------------------------+------------------------------------------
 Firefox | Supported.             | Not supported.
         |      	                 | * Safari has reportedly been considering/
@@ -220,6 +220,18 @@ function onEncodedFunc(ae){
 	anImage.download = 'filename_that_your_image_should_have.' + ae.format;//This is optional. It gives a meaningful filename when saved.
 }
 ----------ADVANCED--------------------------------
+	"metadata":<array of metadata items|false>
+		An array of strings to be included as metadata. Objects for advanced meta may be added later.
+		Set to boolean false to discard metadata and shave off bytes.
+		Simple "key":"string" metadata items should be recorded in the most basic and standard way possible.
+		For example, PNG stores basic things like "Author" in a tEXt chunk(ASCII) or iTXt chunk(UTF-8).
+		For WEBP, the most basic place to store something might be in EXIF tags.
+		TODO: Handle EXIF keys like "0x013B" or "Exif.image.Artist"
+			(Might need to convert from PNG equivalent "Author")
+		TODO: Standard way to take XMP and put it into whatever place can hold it with the current format.
+	"locale":<string>
+		A standard locale string like 'en-US' for the language of the image. This may be used by "metadata".
+		(Only a single locale is supported, writing metadata for multiple locales is allot of bloat and would be rarely used.)
 	"retainPastOutput":<true|false>, (default is not set, evaluates false)
 		//By default, output is only retained until saveAnimatedFile is run again.
 		//If retainPastOutput is set to true, it will be up to the software using the AnimatedEncoder class
@@ -263,7 +275,6 @@ function AnimatedEncoder(paramz,simpleQuality){
 	}
 	//set up defaults
 	this.format = 'png';//Canvas.toDataURL('image/png'); supported in all browsers, so this is default.
-	this.comment = 'Saved with AnimatedEncoder ( AnimatedWEBPs.com )';
 	this.quality = '0.75';
 	this.outputWidth = 1;
 	this.outputHeight = 1;
@@ -308,13 +319,9 @@ AnimatedEncoder.prototype.supportsFormat = function(desiredFormat){
 	}//===========end of types that are supported if toDataURL is available for them.========
 	return false;
 };
-AnimatedEncoder.prototype.initAnimation = function(){
-	//do stuff needed to initialize
-	//GIF needs to come up with a common palette selection,
-	//Other formats need other stuff
-	if(this.format=='gif'){
-		
-	}
+AnimatedEncoder.prototype.clearFrames = function(){
+	//A standard function for clearing frames. Will look cleaner for developers.
+	this.frames = [];
 };
 /*
 Animated WEBP:
@@ -2254,7 +2261,7 @@ AnimatedEncoder.prototype.saveAnimatedFile = function(){
 AnimatedEncoder.prototype.packAnimatedFile = function(){
 	var outputLen = 0;
 	var out8;
-	var i;
+	var i, key, meta;
 	var chunkSig;
 	var numVal;
 	var writePos = 0;
@@ -2357,6 +2364,53 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 		if(this.ppi || this.ppm){//pHYs is optional
 			outputLen += 21;//pHYs
 		}
+		if(this.metadata === false){
+			meta = false;//Block all metadata to save bytes.
+		}else{
+			meta = this.metadata? this.metadata : {};
+			if(!meta.Software){//Default Software string if not overridden.
+				meta.Software = " AnimatedPNGs.com AnimatedEncoder.js ";
+			}
+			if(!meta['Creation Time']){
+				meta['Creation Time'] = new Date().toUTCString();//Method most likely to get recommended RFC 1123 string for PNG.
+			}
+			//Do not attempt to set 'Source' device. userAgent is deprecated and there is no reliable detection.
+		}
+		if(meta){
+			//meta should be able to adapt to other formats for example
+			//if WEBP might store standard things like author in the EXIF o XMP
+			//TODO: store other params like encoding, compression for the metas?
+			//TODO: iTXt and multibyte string handling could be added.
+			//Put metadata into tEXt chunks.
+			for(key in meta){
+				if((typeof meta[key]) == 'string'){
+					if(  ( AnimatedEncoder.getStringByteLength(key)
+					     + AnimatedEncoder.getStringByteLength(meta[key]))
+					  == (key.length + meta[key].length)
+					){
+						//same number of bytes as chars, ASCII (or non-standard codepage that will have 0x80+ discarded or truncated)
+						meta['temp_' + key] = AnimatedEncoder.escapeAll(key) + '%00' + AnimatedEncoder.escapeAll(meta[key]);
+					}else{
+						//multibytes per char, UTF
+						meta['temp_' + key] = AnimatedEncoder.escapeAll(key) + '%00%00%00';
+						//NULL(separator)
+						//NULL(compression flag off)
+						//NULL(default DEFLATE)
+						if(this.locale){
+							meta['temp_' + key] += AnimatedEncoder.escapeAll(this.locale);
+						}else if(window.navigator.language){
+							meta['temp_' + key] += AnimatedEncoder.escapeAll(window.navigator.language);
+						}//otherwise, iTXt Lang can be unspecified(empty string) if not detected.
+						//NULL(sep)
+						//(Empty skipped translated keyword. Standard keywords should be automatically recognized and translated by decoders.)
+						//TODO: Allow an array of Keyword/TranslatedKeyword mapping? Would rarely be used.
+						//NULL(sep)
+						meta['temp_' + key] += '%00%00' + AnimatedEncoder.escapeAll(meta[key]);
+					}
+					outputLen += 12 + meta['temp_' + key].length / 3;//%XX encoded
+				}
+			}
+		}
 		if(this.palette){
 			outputLen += 12 + this.palette.length * 3;//PLTE chunk, 3 bytes per color 
 			outputLen += 12 + this.palette.length;//tRNS chunk, 1 byte per color
@@ -2421,8 +2475,35 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 			writePos += 21;
 		}//end if has pHYs
 
+		if(meta){
+			for(key in meta){
+				var mItem = this.metadata[key];
+				//Check that it is string. An object could be used to represent advanced meta like a thumbnail.
+				if((typeof mItem) == 'string'){
+					//The whole tEXt/iTXt payload has bee pre-escaped into %XX for ALL chars.
+					AnimatedEncoder.writeUint32(out8,
+						meta['temp_' + key].length / 3,
+						writePos, false);
+					//iTXt needed for char ranges > 0x7F
+					AnimatedEncoder.writeFourCC(out8, meta['temp_' + key].match(/\%[89ABCDEF]/i)? 'iTXt' : 'tEXt', writePos + 4);
+					savePos = writePos + 4;
+					writePos += 8;
+					var strOctets = meta['temp_' + key].substring(1).split('%');//2-char hex strings
+					for(i = 0;i < strOctets.length;i++){//Write text string
+						//Write the bytes that will represent UTF-8 or ASCII to the octet-stream.
+						//Will assume standard ASCII or UTF-8 was entered. Most situations will not do anything else.
+						out8[writePos] = parseInt(strOctets[i], 16);
+						writePos++;
+					}
+					AnimatedEncoder.writeUint32(out8, AnimatedEncoder.getCRC32(out8, savePos, writePos), writePos, false);
+					writePos += 4;
+					delete meta['temp_' + key];
+				}
+			}
+		}
+
 		if(this.palette){
-			AnimatedEncoder.writeUint32(out8, this.palette.length * 3, writePos,false);
+			AnimatedEncoder.writeUint32(out8, this.palette.length * 3, writePos, false);
 			AnimatedEncoder.writeFourCC(out8, 'PLTE', writePos + 4);
 			savePos = writePos + 4;
 			writePos += 8;
@@ -2444,7 +2525,7 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 				out8[writePos] = this.palette[i] >> 24 & 0xFF;
 				writePos ++;
 			}
-			AnimatedEncoder.writeUint32(out8, AnimatedEncoder.getCRC32(out8, savePos, writePos), writePos,false);
+			AnimatedEncoder.writeUint32(out8, AnimatedEncoder.getCRC32(out8, savePos, writePos), writePos, false);
 			writePos += 4;
 		}
 		if((this.hasTransparency || this.frames.length > 1) && this.byteStreamMode == 3){//Will need transparent for recycling if multi-frame.
@@ -2603,20 +2684,6 @@ AnimatedEncoder.readUint16 = function(out8, pos, isLittleEndian){
 		return out8[pos] << 8 | out8[pos + 1];
 	}
 };
-AnimatedEncoder.prototype.int2uint = function(theNumber){
-	//Javascript converts numbers to signed int 32 when doing bitwise ops.
-	//cut off the last bit that it is using as a sign, and add
-	//it to a number with just that high bit set.
-	//this will turn it into what the uint32 would be.
-	//(although it may still be internally stored by javascript as signed with the bits expanded.)
-	//TODO: check into this. 2's complement negatives are supposed to be based on
-	//inverted bits, so not sure why this seems to work.
-	if(theNumber<0){
-		theNumber &= 0x7FFFFFFF;
-		theNumber += 0x80000000;
-	}
-	return theNumber;
-};
 AnimatedEncoder.initCRCTable = function(){
 	AnimatedEncoder.crcTable = new Uint32Array(256);//this broke when using ArrayBuffer(256), not sure why
 	var calc;
@@ -2632,13 +2699,11 @@ AnimatedEncoder.initCRCTable = function(){
 				calc = (calc >>> 1);
 			}
 		}
-		//calc = this.int2uint(calc);
 		AnimatedEncoder.crcTable[i] = calc;
 		//testStr += '\r\n'+calc.toString(16);
 	}
 	//alert('table at 127: '+AnimatedEncoder.crcTable[127]);
 	//alert('crcTable: '+testStr);
-	//alert((0x80000F00 ^ 0x00000E00).toString(16)+', u: '+this.int2uint(0x80000F00 ^ 0x00000E00).toString(16));
 };
 AnimatedEncoder.getCRC32 = function(u8,startIndex,endIndex){
 	//if the CRC table has not been initialized, set it up.
@@ -2662,6 +2727,24 @@ AnimatedEncoder.getCRC32 = function(u8,startIndex,endIndex){
 	//(two's complement would be padded with 1's to the left after shift)
 	//(whether signed or unsigned it is still a row of 32 bits)
 	return crc ^ 0xFFFFFFFF;
+};
+AnimatedEncoder.getStringByteLength = function(mbStr){
+	//Get the length of a string in bytes, which can be different than number of chars.
+	return AnimatedEncoder.escapeAll(mbStr).length / 3;//count the '%20' '%AF' etc
+};
+AnimatedEncoder.escapeAll = function (mbStr){
+	//%XX encodes ALL characters, even ASCII/URL-reserved and '%'
+	var mbChar, mbRes = '';
+	for(var i = 0;i < mbStr.length;i++){
+		mbChar = mbStr.charCodeAt(i);
+		if(mbChar < 0x80){
+			//Escape ASCII char that would be ignored by encodeURI()
+			mbRes += '%' + (mbChar < 0x10? '0' : '') + mbChar.toString(16).toUpperCase();
+		}else{//Now esc any UTF-8 chars not caught in the ASCII range.
+			mbRes += encodeURI(mbStr.charAt(i));
+		}
+	}
+	return mbRes;
 };
 AnimatedEncoder.prototype.buildDithMasks = function(){
 	var maskSize = this.outputWidth*this.outputHeight*4;
@@ -2847,6 +2930,7 @@ AnimatedEncoder.prototype.incrementColorCount = function(red, green, blue, alpha
 	if(!alpha){
 		//Force all fully transparent entries to be exactly the same, causing duplicates to be eliminated.
 		//(Although most or all canvas implementations force this anyways via pre-multiplied alpha)
+		//(the canvas pre-multiplied alpha may actually be internally used only, and return RGBA values as non-pre-multiplied, but with possible information loss, PNG spec does NOT use premultiplied alpha.)
 		//(do it here so that all fully transparent counts are combined)
 		red = 0; green = 0; blue = 0;
 		//TODO: Should this be done on all colors with transparency? To truncate them at pre-multipled alpha value and prevent duplicates?
