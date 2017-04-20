@@ -140,6 +140,9 @@ var paramz = {
 	"height":<uint for pixel dimensions>,
 	"autoDimensions":<true|false>, (if true it will fit the size to hold all images added)
 	"fitting":<actual|stretch|crop|preserve>,
+	"loops":<unsigned integer>,
+		A number 0 or more for the number of times the animation should loop.
+		0 is infinite. 1 plays once, and so on.
 	"generateBase64":<true|false(default)>,
 				Current versions of all major browsers now support URL.createObjectURL,
 				bypassing the need for expensive / time-consuming creation of a base-64 string,
@@ -282,6 +285,7 @@ function AnimatedEncoder(paramz,simpleQuality){
 	this.onEncoded = null;
 	this.fitting = 'actual';
 	this.dithering = 'pattern';
+	this.loops = 0;
 	
 	this.generateBase64 = false;//Set to true for legacy support. Deprecated. This may be removed later.
 	
@@ -2312,8 +2316,7 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 			AnimatedEncoder.writeFourCC(out8, 'ANIM', writePos + 0);
 			AnimatedEncoder.writeUint32(out8, 6, writePos + 4, true);//length of contents (not including ANIM & length)
 			AnimatedEncoder.writeUint32(out8, 0x00000000, writePos + 8, true);//BGColor RGBA, just setting to 0x00000000, the viewer can and does seem to ignore this.
-			out8[writePos + 12] = 0;//16-bit loop count, leave 0 for infinite.
-			out8[writePos + 13] = 0;
+			AnimatedEncoder.writeUint16(out8, this.loops, writePos + 12, true);
 			writePos += 14;
 		}
 		//writePos = 30;
@@ -2552,7 +2555,7 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 			AnimatedEncoder.writeUint32(out8, 8, writePos, false);
 			AnimatedEncoder.writeFourCC(out8, 'acTL', writePos + 4);
 			AnimatedEncoder.writeUint32(out8, this.payloads.length, writePos + 8, false);//Number of frames.
-			AnimatedEncoder.writeUint32(out8, 0, writePos + 12, false);//Loops. 0 for infinite.
+			AnimatedEncoder.writeUint32(out8, this.loops, writePos + 12, false);//Loops. 0 for infinite.
 			AnimatedEncoder.writeUint32(out8, AnimatedEncoder.getCRC32(out8, writePos + 4, writePos + 16), writePos + 16, false);
 		
 			writePos += 20;
