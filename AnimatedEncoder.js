@@ -2369,8 +2369,14 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 		}
 		if(this.metadata === false){
 			meta = false;//Block all metadata to save bytes.
-		}else{
-			meta = this.metadata? this.metadata : {};
+		}else{//If undefined, it will insert default metas.
+			meta = {};
+			if(this.metadata){
+				for(key in this.metadata){
+					//make a separate copy so that things don't happen like like 'Creation Time' getting stuck in memory, creating an invalid timestamp.
+					meta[key] = this.metadata[key];
+				}
+			}
 			if(!meta.Software){//Default Software string if not overridden.
 				meta.Software = " AnimatedPNGs.com AnimatedEncoder.js ";
 			}
@@ -2480,7 +2486,7 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 
 		if(meta){
 			for(key in meta){
-				var mItem = this.metadata[key];
+				var mItem = meta[key];
 				//Check that it is string. An object could be used to represent advanced meta like a thumbnail.
 				if((typeof mItem) == 'string'){
 					//The whole tEXt/iTXt payload has bee pre-escaped into %XX for ALL chars.
