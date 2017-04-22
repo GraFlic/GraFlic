@@ -2201,18 +2201,25 @@ AnimatedEncoder.prototype.saveAnimatedFile = function(){
 		//quality level 1, the threshold to quantize would be 0, and never reached, but quantization is skipped for full quality anyways.
 		this.quantThresh = this.outputWidth * this.outputHeight * this.frames.length * 0.001 * (1 - this.quality);
 		this.initColorCounting();
-		if(this.quality < 1 && ( window.pako || window.Zopfli ) ){//Needs deflate functionality to take advantage of color counting.
+		if(window.pako || window.Zopfli){//Needs deflate functionality to take full advantage of color counting.
+			//Even if it is 100% quality, it needs to count colors,
+			//otherwise it might have <= 256 colors but still get put
+			//as RGBA/RGB when only needing indexed and be sub-optimal.
 			this.procFrameStage = 100;//100 for color counting
 			this.progressPerFrame /= 2;//it will have twice as many, because it now has two stages of processing.
 		}else{
-			this.procFrameStage = 100;//100 for color counting
-			if(this.quality >= 1){
+			if(this.quality < 1){
+				this.procFrameStage = 100;//100 for color counting
+				this.progressPerFrame /= 2;//2 stages of processing.
+			}/*else{
+				//Skipping the color counting only the old way of using the IDAT extracted from the toDataURL,
+				//and only when at 100% quality, because otherwise it needs to count extremely common colors,
+				//and have them override the quantization.
 				//Force full quality to do the last frame only on counting so that it hits the logic for byte stream mode selection.
 				//TODO: Might want to break mode selection into a separate stage code for this purpose.
+				V--Do not do this, it can end up with a color count that only sampled the last frame --V
 				this.frameBeingProcessed = this.frames.length - 1;
-			}else{
-				this.progressPerFrame /= 2;//2 stages of processing.
-			}
+			}*/
 		}
 		if(this.pngOpts){delete this.pngOpts;}
 		if(this.png){//If PNG-specific tweaks were set.
