@@ -3771,12 +3771,16 @@ function AnimatedDecoderFrame_loaded(){
 			//for type 0 no disposal, just draw on the buffer as it is.
 		if(this.disposal == 1){//clear region to background
 			cx.clearRect(this.x, this.y, this.width, this.height);
-		}else if(this.disposal == 2 && aeImg.copyFrame > firstFrameI){
+		}else if(this.disposal == 2){
 			//var prevFrame = aeImg.frames[aeImg.copyFrame - 1];
 			cx.clearRect(0, 0, aeImg.width, aeImg.height);
-			cx.drawImage(aeImg.prevCanv, 0, 0);
+			//Some GIFs seem to have disposal set to previous on the first frame which does not make sense,
+			//but just clear it because there is no previous.
+			if(aeImg.copyFrame > firstFrameI){
+				cx.drawImage(aeImg.prevCanv, 0, 0);
 						//dispFrame.x, dispFrame.y, dispFrame.width, dispFrame.height,//Source/Dest coords are the same.
 						//dispFrame.x, dispFrame.y, dispFrame.width, dispFrame.height);
+			}
 		}
 		//}
 	}//end not default image
