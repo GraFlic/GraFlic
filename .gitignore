@@ -1,0 +1,6 @@
+#Exclude DEFLATE libraries pako and Zopfli. They have their own projects,
+#and are maintained by their own authors.
+/pako
+/pako/*
+/Zopfli
+/Zopfli/*
