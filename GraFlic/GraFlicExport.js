@@ -1,19 +1,19 @@
 /*
-AnimatedEncoder by Compukaze LLC
+GraFlicExport by Compukaze LLC
 
 Visit
 
 AnimatedPNGs.com
-
-AnimatedWEBPs.com
-
-for info on the formats this works with.
+GraFlic.com
 
 Inspired by the Animated PNG/GIF encoder of my Deckromancy.com and Punykura.com projects,
 but built in Javascript rather than AS3 and can leverage the native
 (and in some cases hardware-accelerated) image encoders of the browser
 via Canvas.toDataURL()
-It also can make use of the powerful DEFLATE libraries Zopfli and pako for Animated PNG.
+It also can make use of the powerful DEFLATE libraries Zopfli and pako for Animated PNG to get optimal results. The browser encoders often build inefficient PNG streams without utilizing PNG modes and features to optimize them, so the use of these libraries is recommended.
+
+Animated PNG export is the main focus for now, since it has hit critical mass on browser support and supporting software. Animated WEBP is also promising, but still not quite there on support/momentum. More formats may be supported later.
+
 =============================================================================
 The MIT License (MIT)
 Copyright (c) 2013 - 2017 Compukaze LLC
@@ -34,7 +34,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 =============================================================================
 
-Version 1.1.1
+Version 1.1.2 - edit 1
 
 Format support is based on what formats a given browser supports as
 an export type from <canvas> .toDataURL()
@@ -116,7 +116,7 @@ HTML5 does mandate that the image should be able to reproduce all original pixel
 exactly, but it is unclear if this means an image with a low number of colors that
 could be encoded with 8 bit indexed color is mandated to stay 32 bit RGBA.
 
-However, AnimatedEncoder can be comboed with Zopfli or pako for enhanced compression.
+However, GraFlicExport can be comboed with Zopfli or pako for enhanced compression.
 
 https://github.com/imaya/zopfli.js (The Apache License 2.0)
 ( ported from https://github.com/google/zopfli )  (The Apache License 2.0)
@@ -191,7 +191,7 @@ var paramz = {
 	"onProgress":<function to call as encoding progresses. receives a 0-1 number representing a percentage>,
 	"onFrameAdded":<function that will get called when a frame image has been fully added, after loading and such>
 }
-var ae = new AnimatedEncoder(paramz);
+var ae = new GraFlicExport(paramz);
 	(The parameters can also be changed after initialization by setting ae.width = 500; for example.)
 	"fitting" describes how images are fit into the animation bounds.
 		'actual' = Draw image at actual size on the canvas at (0,0).
@@ -237,12 +237,12 @@ function onEncodedFunc(ae){
 		(Only a single locale is supported, writing metadata for multiple locales is allot of bloat and would be rarely used.)
 	"retainPastOutput":<true|false>, (default is not set, evaluates false)
 		//By default, output is only retained until saveAnimatedFile is run again.
-		//If retainPastOutput is set to true, it will be up to the software using the AnimatedEncoder class
+		//If retainPastOutput is set to true, it will be up to the software using the GraFlicExport class
 		//to do memory management and decide when to revoke ObjectURLs that are no longer needed.
 		//AE by default assumes that if you are re-encoding the image, you are redoing the same image
 		//with different parameters and discards the previous blob file to prevent huge memory leaks.
 		//If making multiple images and wanting the output to stay downloadable/saveable for all images,
-		//set retainPastOutput = true or make multiple AnimatedEncoder() instances.
+		//set retainPastOutput = true or make multiple GraFlicExport() instances.
 
 	********** The following will be set internally and do *******
 	*************** NOT need to be set in paramz *****************
@@ -259,7 +259,7 @@ but the Cross-Origin Resource Sharing rules can create huge headaches when testi
 
 */
 'use strict';
-function AnimatedEncoder(paramz,simpleQuality){
+function GraFlicExport(paramz,simpleQuality){
 	if(paramz == 'webp'//only webp is implemented so far
 	 ||paramz == 'png'
 	 ||paramz == 'gif'
@@ -268,7 +268,7 @@ function AnimatedEncoder(paramz,simpleQuality){
 		//if called with an unsupported string it could break,
 		//but that is not a valid value to call it with
 		//Valid initialization values are:
-//new AnimatedEncoder('webp'|'webm'|'png'|'gif'|Object)
+//new GraFlicExport('webp'|'webm'|'png'|'gif'|Object)
 		paramz = {
 				"format":paramz
 			};
@@ -303,7 +303,7 @@ function AnimatedEncoder(paramz,simpleQuality){
 	
 	this.encoderCanvas = document.createElement('canvas');
 };
-AnimatedEncoder.prototype.supportsFormat = function(desiredFormat){
+GraFlicExport.prototype.supportsFormat = function(desiredFormat){
 	//This means the animated format can be created in the user's current browser.
 	//It does not always mean that browser can display the animation.
 	desiredFormat = desiredFormat.toLowerCase();
@@ -323,7 +323,7 @@ AnimatedEncoder.prototype.supportsFormat = function(desiredFormat){
 	}//===========end of types that are supported if toDataURL is available for them.========
 	return false;
 };
-AnimatedEncoder.prototype.clearFrames = function(){
+GraFlicExport.prototype.clearFrames = function(){
 	//A standard function for clearing frames. Will look cleaner for developers.
 	this.frames = [];
 };
@@ -341,7 +341,7 @@ contents{
 	ANMF (frameX paramz and data)
 }
 */
-AnimatedEncoder.prototype.addFrame = function(frameParamz){
+GraFlicExport.prototype.addFrame = function(frameParamz){
 	/*a frame can be added 3 different ways.
 	only ONE of these should be set
 	{"image":[Object IMG]}
@@ -375,42 +375,42 @@ AnimatedEncoder.prototype.addFrame = function(frameParamz){
 		this.imageLoading = document.createElement('img');
 		frameParamz.image = this.imageLoading;
 		this.frameLoadingParamz = frameParamz;
-		this.imageLoadingFunc = AnimatedEncoder_frameImageLoading.bind(this);
+		this.imageLoadingFunc = GraFlicExport_frameImageLoading.bind(this);
 		this.imageLoading.addEventListener('load', this.imageLoadingFunc);
 		
 		this.fileReading = new FileReader();
-		this.fileReadingFunc = AnimatedEncoder_frameFileReading.bind(this);
+		this.fileReadingFunc = GraFlicExport_frameFileReading.bind(this);
 		this.fileReading.addEventListener('load', this.fileReadingFunc);
 		this.fileReading.readAsDataURL(frameParamz.file);
 	}else if(frameParamz.url){
 		this.imageLoading = document.createElement('img');
 		frameParamz.image = this.imageLoading;
 		this.frameLoadingParamz = frameParamz;
-		this.imageLoadingFunc = AnimatedEncoder_frameImageLoading.bind(this);
+		this.imageLoadingFunc = GraFlicExport_frameImageLoading.bind(this);
 		this.imageLoading.addEventListener('load', this.imageLoadingFunc);
 		this.imageLoading.src = frameParamz.url;
 	}
 };
-function AnimatedEncoder_frameFileReading(aeEvent){
+function GraFlicExport_frameFileReading(aeEvent){
 	this.fileReading.removeEventListener('load', this.fileReadingFunc);
 	this.imageLoading.src = this.fileReading.result;
 	delete this.fileReading;
 	delete this.fileReadingFunc;
 }
-function AnimatedEncoder_frameImageLoading(aeEvent){
+function GraFlicExport_frameImageLoading(aeEvent){
 	this.imageLoading.removeEventListener('load', this.imageLoadingFunc);
 	this.addFrameFromImage(this.frameLoadingParamz);
 	delete this.frameLoadingParamz;
 	delete this.imageLoading;
 	delete this.imageLoadingFunc;
 }
-AnimatedEncoder.prototype.addFrameFromImage = function(frameParamz){
+GraFlicExport.prototype.addFrameFromImage = function(frameParamz){
 	//frames should be added, then processing will be done afterwards.
 	this.frames.push(frameParamz);
 	//alert('frame added, now there are '+this.frames.length+' f.image: '+frameParamz.image);
 	if(this.onFrameAdded){this.onFrameAdded();}
 };
-AnimatedEncoder.prototype.procFrame = function(){
+GraFlicExport.prototype.procFrame = function(){
 	var this_this = this;//works around access bugs with 'this'
 	var curFrame = this.frames[this.frameBeingProcessed];
 	var frameImg = curFrame.image;
@@ -1838,24 +1838,24 @@ Transparent can be copied from none, but with the region covered by this frame c
 			//fcTL chunk needed for each animation frame
 			//only one fcTL, though there maybe multiple contiguous fdAT following.
 				//(will just make one fdAT/IDAT for PNG8)
-			AnimatedEncoder.writeUint32(frame8, 26, pos, false);//length
-			AnimatedEncoder.writeFourCC(frame8, 'fcTL', pos + 4);
-			AnimatedEncoder.writeUint32(frame8, this.frameSequenceCount, pos + 8, false);
-			AnimatedEncoder.writeUint32(frame8, maxCX + 1 - minCX, pos + 12, false);//width
-			AnimatedEncoder.writeUint32(frame8, maxCY + 1 - minCY, pos + 16, false);//height
-			AnimatedEncoder.writeUint32(frame8, minCX, pos + 20, false);//x
-			AnimatedEncoder.writeUint32(frame8, minCY, pos + 24, false);//y
-			AnimatedEncoder.writeUint16(frame8, frameDelay,  pos + 28, false);//Numerator (16-bit uint)
-			AnimatedEncoder.writeUint16(frame8, 1000,        pos + 30, false);//Denominator (16-bit uint)
+			GraFlicExport.writeUint32(frame8, 26, pos, false);//length
+			GraFlicExport.writeFourCC(frame8, 'fcTL', pos + 4);
+			GraFlicExport.writeUint32(frame8, this.frameSequenceCount, pos + 8, false);
+			GraFlicExport.writeUint32(frame8, maxCX + 1 - minCX, pos + 12, false);//width
+			GraFlicExport.writeUint32(frame8, maxCY + 1 - minCY, pos + 16, false);//height
+			GraFlicExport.writeUint32(frame8, minCX, pos + 20, false);//x
+			GraFlicExport.writeUint32(frame8, minCY, pos + 24, false);//y
+			GraFlicExport.writeUint16(frame8, frameDelay,  pos + 28, false);//Numerator (16-bit uint)
+			GraFlicExport.writeUint16(frame8, 1000,        pos + 30, false);//Denominator (16-bit uint)
 			frame8[pos+32] = 0x00;//Disposal. (Will get updated based on what the next frame draws best over.) 0=none, 1=background, 2=previous
 			frame8[pos+33] = chosenBlending;//Blending. 0=source, 1 = over
-			AnimatedEncoder.writeUint32(frame8, AnimatedEncoder.getCRC32(frame8, pos + 4, pos + 34), pos + 34, false);
+			GraFlicExport.writeUint32(frame8, GraFlicExport.getCRC32(frame8, pos + 4, pos + 34), pos + 34, false);
 			pos += 38;
 			this.frameSequenceCount++;
 		}//end if more than one frame
 		if(this.frameBeingProcessed == 0){//The first frame will be IDAT, after that it will be fdAT
-			AnimatedEncoder.writeUint32(frame8, chosenByteStream.length, pos, false);//Does not have frameSeqCount
-			AnimatedEncoder.writeFourCC(frame8, 'IDAT', pos + 4);
+			GraFlicExport.writeUint32(frame8, chosenByteStream.length, pos, false);//Does not have frameSeqCount
+			GraFlicExport.writeFourCC(frame8, 'IDAT', pos + 4);
 			for(i = 0;i < chosenByteStream.length;i++){
 				frame8[pos + 8 + i] = chosenByteStream[i];
 				//document.write( chosenByteStream[i] + ',');
@@ -1864,19 +1864,19 @@ Transparent can be copied from none, but with the region covered by this frame c
 			//012345678901234567890
 			//####ASCI01234567CRRC
 			
-			AnimatedEncoder.writeUint32(frame8,AnimatedEncoder.getCRC32(frame8, pos + 4, pos + 8 + chosenByteStream.length), pos + 8 + chosenByteStream.length, false);//4 less with no FrameSequenceCount.
+			GraFlicExport.writeUint32(frame8,GraFlicExport.getCRC32(frame8, pos + 4, pos + 8 + chosenByteStream.length), pos + 8 + chosenByteStream.length, false);//4 less with no FrameSequenceCount.
 			pos += chosenByteStream.length + 12;//IDAT does not have frameSequenceCount, that was introduced in AnimatedPNG
 		}else{//fdAT
-			AnimatedEncoder.writeUint32(frame8, chosenByteStream.length + 4, pos, false);//extra 4 to store frameSeqCount
-			AnimatedEncoder.writeFourCC(frame8, 'fdAT', pos + 4);
-			AnimatedEncoder.writeUint32(frame8, this.frameSequenceCount, pos + 8, false);//fdAT needs a uint32 to store frameSequenceCount
+			GraFlicExport.writeUint32(frame8, chosenByteStream.length + 4, pos, false);//extra 4 to store frameSeqCount
+			GraFlicExport.writeFourCC(frame8, 'fdAT', pos + 4);
+			GraFlicExport.writeUint32(frame8, this.frameSequenceCount, pos + 8, false);//fdAT needs a uint32 to store frameSequenceCount
 			for(i = 0;i < chosenByteStream.length;i++){
 				frame8[pos + 12 + i] = chosenByteStream[i];
 			}
 			//0         1         2         3
 			//0123456789012345678901234567890
 			//####ASCIFFSQ01234567CRRC
-			AnimatedEncoder.writeUint32(frame8,AnimatedEncoder.getCRC32(frame8, pos + 4, pos + 12 + chosenByteStream.length), pos + 12 + chosenByteStream.length, false);//Must expand range to get the CRC over the FourCC and the extra 4 for the added FrameSequenceCount.
+			GraFlicExport.writeUint32(frame8,GraFlicExport.getCRC32(frame8, pos + 4, pos + 12 + chosenByteStream.length), pos + 12 + chosenByteStream.length, false);//Must expand range to get the CRC over the FourCC and the extra 4 for the added FrameSequenceCount.
 			this.frameSequenceCount++;
 			pos += chosenByteStream.length + 16;//must be 4 longer here to hold the FrameSequenceCount
 			//for(i = 0;i < frame8.length;i++){
@@ -1988,18 +1988,18 @@ Transparent can be copied from none, but with the region covered by this frame c
 					startIDAT=seekPos;
 					//fcTL chunk needed for each animation frame
 					//only one fcTL, though there maybe multiple contiguous fdAT following.
-					AnimatedEncoder.writeUint32(upd8,26,upd8_pos,false);//length
-					AnimatedEncoder.writeFourCC(upd8,'fcTL',upd8_pos+4);
-					AnimatedEncoder.writeUint32(upd8,this.frameSequenceCount,upd8_pos+8,false);
-					AnimatedEncoder.writeUint32(upd8,frameFinalW,upd8_pos+12,false);//width
-					AnimatedEncoder.writeUint32(upd8,frameFinalH,upd8_pos+16,false);//height
-					AnimatedEncoder.writeUint32(upd8,frameFinalX,upd8_pos+20,false);//x
-					AnimatedEncoder.writeUint32(upd8,frameFinalY,upd8_pos+24,false);//y
-					AnimatedEncoder.writeUint16(upd8,frameDelay,upd8_pos+28,false);//Numerator (16-bit uint)
-					AnimatedEncoder.writeUint16(upd8,1000,upd8_pos+30,false);//Denominator (16-bit uint)
+					GraFlicExport.writeUint32(upd8,26,upd8_pos,false);//length
+					GraFlicExport.writeFourCC(upd8,'fcTL',upd8_pos+4);
+					GraFlicExport.writeUint32(upd8,this.frameSequenceCount,upd8_pos+8,false);
+					GraFlicExport.writeUint32(upd8,frameFinalW,upd8_pos+12,false);//width
+					GraFlicExport.writeUint32(upd8,frameFinalH,upd8_pos+16,false);//height
+					GraFlicExport.writeUint32(upd8,frameFinalX,upd8_pos+20,false);//x
+					GraFlicExport.writeUint32(upd8,frameFinalY,upd8_pos+24,false);//y
+					GraFlicExport.writeUint16(upd8,frameDelay,upd8_pos+28,false);//Numerator (16-bit uint)
+					GraFlicExport.writeUint16(upd8,1000,upd8_pos+30,false);//Denominator (16-bit uint)
 					upd8[upd8_pos+32] = 0x00;//Disposal. 0=none, 1=background, 2=previous
 					upd8[upd8_pos+33] = browserEncodedBlending;//Blending. 0=source, 1 = over
-					AnimatedEncoder.writeUint32(upd8,AnimatedEncoder.getCRC32(upd8,upd8_pos+4,upd8_pos+34),upd8_pos+34,false);
+					GraFlicExport.writeUint32(upd8,GraFlicExport.getCRC32(upd8,upd8_pos+4,upd8_pos+34),upd8_pos+34,false);
 					upd8_pos += 38;
 					this.frameSequenceCount++;
 				}
@@ -2012,9 +2012,9 @@ Transparent can be copied from none, but with the region covered by this frame c
 				var destOffset;
 				var sourceOffset;
 				if(is_fdAT){
-					AnimatedEncoder.writeUint32(upd8,chunkLen+4,upd8_pos,false);//extra 4 to store frameSeqCount
-					AnimatedEncoder.writeFourCC(upd8,'fdAT',upd8_pos+4);//overwrite 'IDAT' with 'fdAT'
-					AnimatedEncoder.writeUint32(upd8,this.frameSequenceCount,upd8_pos+8,false);//fdAT needs a uint32 to store frameSequenceCount
+					GraFlicExport.writeUint32(upd8,chunkLen+4,upd8_pos,false);//extra 4 to store frameSeqCount
+					GraFlicExport.writeFourCC(upd8,'fdAT',upd8_pos+4);//overwrite 'IDAT' with 'fdAT'
+					GraFlicExport.writeUint32(upd8,this.frameSequenceCount,upd8_pos+8,false);//fdAT needs a uint32 to store frameSequenceCount
 					copyEnd = 8+chunkLen;
 					destOffset = upd8_pos+12;//destination start point.
 					sourceOffset = seekPos+8;
@@ -2023,7 +2023,7 @@ Transparent can be copied from none, but with the region covered by this frame c
 						upd8[destOffset+i] = raw8[sourceOffset+i];
 					}
 					//The CRC must be recalculated to cover 'fdAT' and the frame sequence number.
-					AnimatedEncoder.writeUint32(upd8,AnimatedEncoder.getCRC32(upd8,upd8_pos+4,upd8_pos+8+chunkLen),upd8_pos+12+chunkLen,false);//Must expand range to get the CRC over the FourCC and the extra 4 for the added FrameSequenceCount.
+					GraFlicExport.writeUint32(upd8,GraFlicExport.getCRC32(upd8,upd8_pos+4,upd8_pos+8+chunkLen),upd8_pos+12+chunkLen,false);//Must expand range to get the CRC over the FourCC and the extra 4 for the added FrameSequenceCount.
 					this.frameSequenceCount++;
 					upd8_pos += chunkLen+16;//must be 4 longer here to hold the FrameSequenceCount
 				}else{
@@ -2113,7 +2113,7 @@ Transparent can be copied from none, but with the region covered by this frame c
 		setTimeout(function(){this_this.packAnimatedFile();},100);
 	}
 };
-AnimatedEncoder.prototype.saveAnimatedFile = function(){
+GraFlicExport.prototype.saveAnimatedFile = function(){
 	if(this.onProgress){this.onProgress(0);}//Make sure any progress displays are starting at 0%.
 	this.outputString = '';//(deprecated)intermediate state before base64 conversion can be done.
 	this.payloads = [];
@@ -2269,7 +2269,7 @@ AnimatedEncoder.prototype.saveAnimatedFile = function(){
 	setTimeout(function(){this_this.procFrame();}, 100);//begin the save process.
 };
 
-AnimatedEncoder.prototype.packAnimatedFile = function(){
+GraFlicExport.prototype.packAnimatedFile = function(){
 	var outputLen = 0;
 	var out8;
 	var i, key, meta;
@@ -2302,28 +2302,28 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 		//alert('creating target octet with size: '+outputLen);
 		out8 = new Uint8Array(new ArrayBuffer(outputLen));
 		
-		AnimatedEncoder.writeFourCC(out8,'RIFF',0);
-		AnimatedEncoder.writeUint32(out8,outputLen-8,4,true);
-		AnimatedEncoder.writeFourCC(out8,'WEBP',8);
+		GraFlicExport.writeFourCC(out8,'RIFF',0);
+		GraFlicExport.writeUint32(out8,outputLen-8,4,true);
+		GraFlicExport.writeFourCC(out8,'WEBP',8);
 		
-		AnimatedEncoder.writeFourCC(out8,'VP8X',12);
-		AnimatedEncoder.writeUint32(out8,10,16,true);//length of contents (not including VP8X & length)
+		GraFlicExport.writeFourCC(out8,'VP8X',12);
+		GraFlicExport.writeUint32(out8,10,16,true);//length of contents (not including VP8X & length)
 		//out8[20] = 0x00;//testing VP8X without animation
 		if(this.frames.length > 1){//If Animated WEBP
 			out8[20] = 0x02;//packed field, just set animation bit on, alpha bit is hint only and alpha not currently working in canvas.toDataURL('image/webp') as of early 2016 anyways
 		}else{//if single frame WEBP
 			out8[20] = 0x00;
 		}
-		AnimatedEncoder.writeUint24(out8,0,21,true);//reserved bits that should be 0
-		AnimatedEncoder.writeUint24(out8,this.outputWidth-1,24,true);//width-1
-		AnimatedEncoder.writeUint24(out8,this.outputHeight-1,27,true);//height-1
+		GraFlicExport.writeUint24(out8,0,21,true);//reserved bits that should be 0
+		GraFlicExport.writeUint24(out8,this.outputWidth-1,24,true);//width-1
+		GraFlicExport.writeUint24(out8,this.outputHeight-1,27,true);//height-1
 		writePos += 30;
 		
 		if(this.frames.length > 1){//A single frame WEBP with animation chunks could cause breakage and the chunks are not needed in that case
-			AnimatedEncoder.writeFourCC(out8, 'ANIM', writePos + 0);
-			AnimatedEncoder.writeUint32(out8, 6, writePos + 4, true);//length of contents (not including ANIM & length)
-			AnimatedEncoder.writeUint32(out8, 0x00000000, writePos + 8, true);//BGColor RGBA, just setting to 0x00000000, the viewer can and does seem to ignore this.
-			AnimatedEncoder.writeUint16(out8, this.loops, writePos + 12, true);
+			GraFlicExport.writeFourCC(out8, 'ANIM', writePos + 0);
+			GraFlicExport.writeUint32(out8, 6, writePos + 4, true);//length of contents (not including ANIM & length)
+			GraFlicExport.writeUint32(out8, 0x00000000, writePos + 8, true);//BGColor RGBA, just setting to 0x00000000, the viewer can and does seem to ignore this.
+			GraFlicExport.writeUint16(out8, this.loops, writePos + 12, true);
 			writePos += 14;
 		}
 		//writePos = 30;
@@ -2332,15 +2332,15 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 		for(i=0;i<this.payloads.length;i++){
 			payload = this.payloads[i];
 			if(this.frames.length > 1){//A single frame WEBP with animation chunks could cause breakage and the chunks are not needed in that case
-				AnimatedEncoder.writeFourCC(out8,'ANMF',writePos);
-				AnimatedEncoder.writeUint32(out8,16+payload.length,writePos+4,true);//length of ANMF (which INCLUDES a VP8/VP8L chunk at the end of it contained within the ANMF)
-				AnimatedEncoder.writeUint24(out8,0,writePos+8,true);//x
-				AnimatedEncoder.writeUint24(out8,0,writePos+11,true);//y
-				AnimatedEncoder.writeUint24(out8,this.outputWidth-1,writePos+14,true);//width-1
-				AnimatedEncoder.writeUint24(out8,this.outputHeight-1,writePos+17,true);//height-1
+				GraFlicExport.writeFourCC(out8,'ANMF',writePos);
+				GraFlicExport.writeUint32(out8,16+payload.length,writePos+4,true);//length of ANMF (which INCLUDES a VP8/VP8L chunk at the end of it contained within the ANMF)
+				GraFlicExport.writeUint24(out8,0,writePos+8,true);//x
+				GraFlicExport.writeUint24(out8,0,writePos+11,true);//y
+				GraFlicExport.writeUint24(out8,this.outputWidth-1,writePos+14,true);//width-1
+				GraFlicExport.writeUint24(out8,this.outputHeight-1,writePos+17,true);//height-1
 				frameDelay = this.delay;//delay in milliseconds
 				if(this.frames[i].hasCustomDelay){frameDelay=this.frames[i].delay;}//use frame-specific delay if set.
-				AnimatedEncoder.writeUint24(out8,frameDelay,writePos+20,true);//duration (milliseconds)
+				GraFlicExport.writeUint24(out8,frameDelay,writePos+20,true);//duration (milliseconds)
 				out8[writePos+23]= 0x00;//1 byte here can be skipped (left all 0)
 					//6 reserved bits and alphablend/dispose which are not usable with the only option of full frame updates (no way of giving frame back references in toDataURL)
 				writePos += 24;
@@ -2385,13 +2385,14 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 				}
 			}
 			if(!meta.Software){//Default Software string if not overridden.
-				meta.Software = " AnimatedPNGs.com AnimatedEncoder.js ";
+				meta.Software = " AnimatedPNGs.com GraFlicExport.js ";
 			}
 			if(!meta['Creation Time']){
 				meta['Creation Time'] = new Date().toUTCString();//Method most likely to get recommended RFC 1123 string for PNG.
 			}
 			//Do not attempt to set 'Source' device. userAgent is deprecated and there is no reliable detection.
 		}
+		var tempKey;
 		if(meta){
 			//meta should be able to adapt to other formats for example
 			//if WEBP might store standard things like author in the EXIF o XMP
@@ -2399,31 +2400,34 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 			//TODO: iTXt and multibyte string handling could be added.
 			//Put metadata into tEXt chunks.
 			for(key in meta){
+				var nonASCII = false;
 				if((typeof meta[key]) == 'string'){
-					if(  ( AnimatedEncoder.getStringByteLength(key)
-					     + AnimatedEncoder.getStringByteLength(meta[key]))
-					  == (key.length + meta[key].length)
-					){
+					tempKey = 'temp_' + key;
+					if(  (key + meta[key]).match(/^[\x00-\x7F]+$/) ){
 						//same number of bytes as chars, ASCII (or non-standard codepage that will have 0x80+ discarded or truncated)
-						meta['temp_' + key] = AnimatedEncoder.escapeAll(key) + '%00' + AnimatedEncoder.escapeAll(meta[key]);
+						meta[tempKey] = key + String.fromCharCode(0) + meta[key];
+						//insert single null separator between key and content
 					}else{
 						//multibytes per char, UTF
-						meta['temp_' + key] = AnimatedEncoder.escapeAll(key) + '%00%00%00';
+						nonASCII = true;
+						meta[tempKey] = key + String.fromCharCode(0, 0, 0);
 						//NULL(separator)
 						//NULL(compression flag off)
 						//NULL(default DEFLATE)
 						if(this.locale){
-							meta['temp_' + key] += AnimatedEncoder.escapeAll(this.locale);
+							meta[tempKey] += this.locale;
 						}else if(window.navigator.language){
-							meta['temp_' + key] += AnimatedEncoder.escapeAll(window.navigator.language);
+							meta[tempKey] += window.navigator.language;
 						}//otherwise, iTXt Lang can be unspecified(empty string) if not detected.
 						//NULL(sep)
 						//(Empty skipped translated keyword. Standard keywords should be automatically recognized and translated by decoders.)
 						//TODO: Allow an array of Keyword/TranslatedKeyword mapping? Would rarely be used.
 						//NULL(sep)
-						meta['temp_' + key] += '%00%00' + AnimatedEncoder.escapeAll(meta[key]);
+						meta[tempKey] += String.fromCharCode(0, 0) + meta[key];
 					}
-					outputLen += 12 + meta['temp_' + key].length / 3;//%XX encoded
+					meta[tempKey] = GraFlicExport.stringToBytesUTF8(meta[tempKey]);
+					meta[tempKey].nonASCII = nonASCII;
+					outputLen += 12 + meta[tempKey].length;
 				}
 			}
 		}
@@ -2449,10 +2453,10 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 		out8[6] = 0x1A;//End of File
 		out8[7] = 0x0A;//Unix LF
 		//IHDR Header Chunk
-		AnimatedEncoder.writeUint32(out8,13,8,false);//IHDR length (Counts data only, not FourCC or CRC)
-		AnimatedEncoder.writeFourCC(out8,'IHDR',12);
-		AnimatedEncoder.writeUint32(out8,this.outputWidth,16,false);//width
-		AnimatedEncoder.writeUint32(out8,this.outputHeight,20,false);//height
+		GraFlicExport.writeUint32(out8,13,8,false);//IHDR length (Counts data only, not FourCC or CRC)
+		GraFlicExport.writeFourCC(out8,'IHDR',12);
+		GraFlicExport.writeUint32(out8,this.outputWidth,16,false);//width
+		GraFlicExport.writeUint32(out8,this.outputHeight,20,false);//height
 		out8[24] = 0x08;//bit depth, 8 bits per color channel.
 		if(this.palette){
 			out8[25] = 0x03;//Packed field. color(0x2) and palette(0x1) bits set, 00000011
@@ -2466,8 +2470,8 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 		out8[26] = 0x00;//Compression Mode, 0=DEFLATE, the only defined type
 		out8[27] = 0x00;//Filter Mode, 0=Adaptive, the only defined type
 		out8[28] = 0x00;//Interlace Method, 0=No interlacing.
-		crc32 = AnimatedEncoder.getCRC32(out8,12,29);
-		AnimatedEncoder.writeUint32(out8,crc32,29,false);//CRC calculated over Data AND FourCC.
+		crc32 = GraFlicExport.getCRC32(out8,12,29);
+		GraFlicExport.writeUint32(out8,crc32,29,false);//CRC calculated over Data AND FourCC.
 		
 		writePos += 33;
 		
@@ -2482,12 +2486,12 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 				var inch2Meter = 1 / 0.0254
 				ppm = this.ppi * inch2Meter;
 			}
-			AnimatedEncoder.writeUint32(out8, 9, writePos,false);
-			AnimatedEncoder.writeFourCC(out8, 'pHYs', writePos + 4);
-			AnimatedEncoder.writeUint32(out8, ppm, writePos + 8, false);//X pixels per unit
-			AnimatedEncoder.writeUint32(out8, ppm, writePos + 12, false);//Y pixels per unit
+			GraFlicExport.writeUint32(out8, 9, writePos,false);
+			GraFlicExport.writeFourCC(out8, 'pHYs', writePos + 4);
+			GraFlicExport.writeUint32(out8, ppm, writePos + 8, false);//X pixels per unit
+			GraFlicExport.writeUint32(out8, ppm, writePos + 12, false);//Y pixels per unit
 			out8[writePos + 16] = 0x01;//Unit type 1 for meter, 0 for unknown.
-			AnimatedEncoder.writeUint32(out8, AnimatedEncoder.getCRC32(out8, writePos + 4, writePos + 17), writePos + 17,false);
+			GraFlicExport.writeUint32(out8, GraFlicExport.getCRC32(out8, writePos + 4, writePos + 17), writePos + 17,false);
 			writePos += 21;
 		}//end if has pHYs
 
@@ -2495,32 +2499,35 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 			for(key in meta){
 				var mItem = meta[key];
 				//Check that it is string. An object could be used to represent advanced meta like a thumbnail.
-				if((typeof mItem) == 'string'){
+				if((typeof mItem) == 'string'){//checking the original meta entry, not the temp_ with the BytesUTF8 conversion done.
 					//The whole tEXt/iTXt payload has bee pre-escaped into %XX for ALL chars.
-					AnimatedEncoder.writeUint32(out8,
-						meta['temp_' + key].length / 3,
+					tempKey = 'temp_' + key;
+					GraFlicExport.writeUint32(out8,
+						meta[tempKey].length,
 						writePos, false);
 					//iTXt needed for char ranges > 0x7F
-					AnimatedEncoder.writeFourCC(out8, meta['temp_' + key].match(/\%[89ABCDEF]/i)? 'iTXt' : 'tEXt', writePos + 4);
-					savePos = writePos + 4;
+					GraFlicExport.writeFourCC(out8, meta[tempKey].nonASCII ? 'iTXt' : 'tEXt', writePos + 4);
+					savePos = writePos + 4;//needed for CRC
 					writePos += 8;
-					var strOctets = meta['temp_' + key].substring(1).split('%');//2-char hex strings
+					GraFlicExport.writeUbytes(out8, meta[tempKey], writePos);
+					writePos += meta[tempKey].length
+					/*var strOctets = meta['temp_' + key].substring(1).split('%');//2-char hex strings
 					for(i = 0;i < strOctets.length;i++){//Write text string
 						//Write the bytes that will represent UTF-8 or ASCII to the octet-stream.
 						//Will assume standard ASCII or UTF-8 was entered. Most situations will not do anything else.
 						out8[writePos] = parseInt(strOctets[i], 16);
 						writePos++;
-					}
-					AnimatedEncoder.writeUint32(out8, AnimatedEncoder.getCRC32(out8, savePos, writePos), writePos, false);
+					}*/
+					GraFlicExport.writeUint32(out8, GraFlicExport.getCRC32(out8, savePos, writePos), writePos, false);
 					writePos += 4;
-					delete meta['temp_' + key];
+					delete meta[tempKey];
 				}
 			}
 		}
 
 		if(this.palette){
-			AnimatedEncoder.writeUint32(out8, this.palette.length * 3, writePos, false);
-			AnimatedEncoder.writeFourCC(out8, 'PLTE', writePos + 4);
+			GraFlicExport.writeUint32(out8, this.palette.length * 3, writePos, false);
+			GraFlicExport.writeFourCC(out8, 'PLTE', writePos + 4);
 			savePos = writePos + 4;
 			writePos += 8;
 			for(i = 0;i < this.palette.length;i++){
@@ -2529,26 +2536,26 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 				out8[writePos + 2] = this.palette[i] & 0xFF;
 				writePos += 3;
 			}
-			AnimatedEncoder.writeUint32(out8, AnimatedEncoder.getCRC32(out8, savePos, writePos), writePos,false);
+			GraFlicExport.writeUint32(out8, GraFlicExport.getCRC32(out8, savePos, writePos), writePos,false);
 			writePos += 4;
 			
 			//Now write tRNS, which must be after PLTE and come before IDAT.
-			AnimatedEncoder.writeUint32(out8, this.palette.length, writePos,false);
-			AnimatedEncoder.writeFourCC(out8, 'tRNS', writePos + 4);
+			GraFlicExport.writeUint32(out8, this.palette.length, writePos,false);
+			GraFlicExport.writeFourCC(out8, 'tRNS', writePos + 4);
 			savePos = writePos + 4;
 			writePos += 8;
 			for(i = 0;i < this.palette.length;i++){
 				out8[writePos] = this.palette[i] >> 24 & 0xFF;
 				writePos ++;
 			}
-			AnimatedEncoder.writeUint32(out8, AnimatedEncoder.getCRC32(out8, savePos, writePos), writePos, false);
+			GraFlicExport.writeUint32(out8, GraFlicExport.getCRC32(out8, savePos, writePos), writePos, false);
 			writePos += 4;
 		}
 		if((this.hasTransparency || this.frames.length > 1) && this.byteStreamMode == 3){//Will need transparent for recycling if multi-frame.
 			//Now write tRNS, which must come before IDAT.
 			//For 24-bit RGB, it is a different format. Write the R,G,B values reserved as the transparent color as 16-bit unsigned integers.
-			AnimatedEncoder.writeUint32(out8, 6, writePos,false);
-			AnimatedEncoder.writeFourCC(out8, 'tRNS', writePos + 4);
+			GraFlicExport.writeUint32(out8, 6, writePos,false);
+			GraFlicExport.writeFourCC(out8, 'tRNS', writePos + 4);
 			savePos = writePos + 4;
 			writePos += 8;
 			out8[writePos]     = 0;//Big-Endian, 2 bytes per channel RGB to be able to hold deep color (Though only 1-byte channel RGB is used).
@@ -2558,18 +2565,18 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 			out8[writePos + 4] = 0;
 			out8[writePos + 5] = this.reservedTransColor[2];
 			writePos += 6;
-			AnimatedEncoder.writeUint32(out8, AnimatedEncoder.getCRC32(out8, savePos, writePos), writePos,false);
+			GraFlicExport.writeUint32(out8, GraFlicExport.getCRC32(out8, savePos, writePos), writePos,false);
 			writePos += 4;
 		}
 		
 		if(this.payloads.length > 1){//At least one frame to be an Animated PNG
 			//do not output Animated PNG chunks if not needed.
 			//writePos = 33;//would be 33 with no acTL
-			AnimatedEncoder.writeUint32(out8, 8, writePos, false);
-			AnimatedEncoder.writeFourCC(out8, 'acTL', writePos + 4);
-			AnimatedEncoder.writeUint32(out8, this.payloads.length, writePos + 8, false);//Number of frames.
-			AnimatedEncoder.writeUint32(out8, this.loops, writePos + 12, false);//Loops. 0 for infinite.
-			AnimatedEncoder.writeUint32(out8, AnimatedEncoder.getCRC32(out8, writePos + 4, writePos + 16), writePos + 16, false);
+			GraFlicExport.writeUint32(out8, 8, writePos, false);
+			GraFlicExport.writeFourCC(out8, 'acTL', writePos + 4);
+			GraFlicExport.writeUint32(out8, this.payloads.length, writePos + 8, false);//Number of frames.
+			GraFlicExport.writeUint32(out8, this.loops, writePos + 12, false);//Loops. 0 for infinite.
+			GraFlicExport.writeUint32(out8, GraFlicExport.getCRC32(out8, writePos + 4, writePos + 16), writePos + 16, false);
 		
 			writePos += 20;
 		}//end is more than one frame
@@ -2584,10 +2591,10 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 		}
 		
 		//now close the image with the IEND chunk.
-		AnimatedEncoder.writeUint32(out8, 0, writePos, false);//IEND is empty
-		AnimatedEncoder.writeFourCC(out8, 'IEND', writePos + 4);
-		crc32 = AnimatedEncoder.getCRC32(out8, writePos + 4, writePos + 8);
-		AnimatedEncoder.writeUint32(out8, crc32, writePos + 8, false);
+		GraFlicExport.writeUint32(out8, 0, writePos, false);//IEND is empty
+		GraFlicExport.writeFourCC(out8, 'IEND', writePos + 4);
+		crc32 = GraFlicExport.getCRC32(out8, writePos + 4, writePos + 8);
+		GraFlicExport.writeUint32(out8, crc32, writePos + 8, false);
 	}
 	//alert('before outputOctetStream set');
 	this.outputOctetStream = out8;
@@ -2607,7 +2614,7 @@ AnimatedEncoder.prototype.packAnimatedFile = function(){
 	}
 	
 };
-AnimatedEncoder.prototype.packChunk = function(){
+GraFlicExport.prototype.packChunk = function(){
 	if(this.chunkPackI<this.outputOctetStream.length){
 		this.outputString += String.fromCharCode.apply(null,this.outputOctetStream.subarray(this.chunkPackI,Math.min(this.outputOctetStream.length,this.chunkPackI+2048)));
 		this.chunkPackI += 2048;
@@ -2633,26 +2640,28 @@ AnimatedEncoder.prototype.packChunk = function(){
 		}
 	}
 };
-AnimatedEncoder.prototype.string2uint8 = function(str){
+GraFlicExport.prototype.string2uint8 = function(str){
+	//Note: this function may be flawed. It does not account for high-range UTF cases.
+	//It is currently mostly used for converting base64 URL to bytes and does not seem to run into any issues there probably since base64 is encoding a sequence of octets...
 	var u8 = new Uint8Array(new ArrayBuffer(str.length));
 	for(var i=0;i<str.length;i++){
 		u8[i] = str.charCodeAt(i);
 	}
 	return u8;
 };
-AnimatedEncoder.writeFourCC = function(out8,chunkSig,pos){
+GraFlicExport.writeFourCC = function(out8,chunkSig,pos){
 	out8[pos+0] = chunkSig.charCodeAt(0);
 	out8[pos+1] = chunkSig.charCodeAt(1);
 	out8[pos+2] = chunkSig.charCodeAt(2);
 	out8[pos+3] = chunkSig.charCodeAt(3);
 };
-AnimatedEncoder.readFourCC = function(in8, pos){
+GraFlicExport.readFourCC = function(in8, pos){
 	return String.fromCharCode(in8[pos + 0])
 	     + String.fromCharCode(in8[pos + 1])
 	     + String.fromCharCode(in8[pos + 2])
 	     + String.fromCharCode(in8[pos + 3]);
 };
-AnimatedEncoder.writeUint32 = function(out8,u32,pos,isLittleEndian){
+GraFlicExport.writeUint32 = function(out8,u32,pos,isLittleEndian){
 	if(isLittleEndian){
 		out8[pos+0] = u32&0xFF;
 		out8[pos+1] = u32>>8&0xFF;
@@ -2665,7 +2674,7 @@ AnimatedEncoder.writeUint32 = function(out8,u32,pos,isLittleEndian){
 		out8[pos+3] = u32&0xFF;
 	}
 };
-AnimatedEncoder.readUint32 = function(in8, pos, isLittleEndian){
+GraFlicExport.readUint32 = function(in8, pos, isLittleEndian){
 	//These can be static functions they don't need the object ref.
 	if(isLittleEndian){
 		return in8[pos + 0] | in8[pos + 1] << 8 | in8[pos + 2] << 16 | in8[pos + 3] << 24;
@@ -2673,7 +2682,7 @@ AnimatedEncoder.readUint32 = function(in8, pos, isLittleEndian){
 		return in8[pos + 0] << 24 | in8[pos + 1] << 16 | in8[pos + 2] << 8 | in8[pos + 3];
 	}
 };
-AnimatedEncoder.writeUint24 = function(out8,u24,pos,isLittleEndian){
+GraFlicExport.writeUint24 = function(out8,u24,pos,isLittleEndian){
 	if(isLittleEndian){
 		out8[pos+0] = u24&0xFF;
 		out8[pos+1] = u24>>8&0xFF;
@@ -2684,7 +2693,7 @@ AnimatedEncoder.writeUint24 = function(out8,u24,pos,isLittleEndian){
 		out8[pos+2] = u24&0xFF;
 	}
 };
-AnimatedEncoder.writeUint16 = function(out8, u16, pos, isLittleEndian){
+GraFlicExport.writeUint16 = function(out8, u16, pos, isLittleEndian){
 	if(isLittleEndian){
 		out8[pos+0] = u16&0xFF;
 		out8[pos+1] = u16>>8&0xFF;
@@ -2693,15 +2702,15 @@ AnimatedEncoder.writeUint16 = function(out8, u16, pos, isLittleEndian){
 		out8[pos+1] = u16&0xFF;
 	}
 };
-AnimatedEncoder.readUint16 = function(out8, pos, isLittleEndian){
+GraFlicExport.readUint16 = function(out8, pos, isLittleEndian){
 	if(isLittleEndian){
 		return out8[pos] | out8[pos + 1] << 8;
 	}else{
 		return out8[pos] << 8 | out8[pos + 1];
 	}
 };
-AnimatedEncoder.initCRCTable = function(){
-	AnimatedEncoder.crcTable = new Uint32Array(256);//this broke when using ArrayBuffer(256), not sure why
+GraFlicExport.initCRCTable = function(){
+	GraFlicExport.crcTable = new Uint32Array(256);//this broke when using ArrayBuffer(256), not sure why
 	var calc;
 	var i;
 	var i2;
@@ -2715,16 +2724,16 @@ AnimatedEncoder.initCRCTable = function(){
 				calc = (calc >>> 1);
 			}
 		}
-		AnimatedEncoder.crcTable[i] = calc;
+		GraFlicExport.crcTable[i] = calc;
 		//testStr += '\r\n'+calc.toString(16);
 	}
-	//alert('table at 127: '+AnimatedEncoder.crcTable[127]);
+	//alert('table at 127: '+GraFlicExport.crcTable[127]);
 	//alert('crcTable: '+testStr);
 };
-AnimatedEncoder.getCRC32 = function(u8,startIndex,endIndex){
+GraFlicExport.getCRC32 = function(u8,startIndex,endIndex){
 	//if the CRC table has not been initialized, set it up.
-	if(!AnimatedEncoder.crcTable){
-		AnimatedEncoder.initCRCTable();
+	if(!GraFlicExport.crcTable){
+		GraFlicExport.initCRCTable();
 	}
 	var i;
 	var crc = 0xFFFFFFFF;
@@ -2733,7 +2742,7 @@ AnimatedEncoder.getCRC32 = function(u8,startIndex,endIndex){
 	//index read (like array loop length logic)
 	for(i=startIndex;i<endIndex;i++){
 		cIndex = ((crc^(u8[i]))&(0xFF));
-		crc = AnimatedEncoder.crcTable[cIndex] ^ (crc>>>8) ;
+		crc = GraFlicExport.crcTable[cIndex] ^ (crc>>>8) ;
 	}
 	//Note that Javascript converts numbers to SIGNED 32 bit ints before
 	//doing most bitwise operations.
@@ -2744,25 +2753,96 @@ AnimatedEncoder.getCRC32 = function(u8,startIndex,endIndex){
 	//(whether signed or unsigned it is still a row of 32 bits)
 	return crc ^ 0xFFFFFFFF;
 };
-AnimatedEncoder.getStringByteLength = function(mbStr){
+GraFlicExport.getStringByteLength = function(mbStr){
 	//Get the length of a string in bytes, which can be different than number of chars.
-	return AnimatedEncoder.escapeAll(mbStr).length / 3;//count the '%20' '%AF' etc
+	//DEPRECATED. This wastes processing by doing the whole escapeAll process just to return a lenght.
+	//Just get the string from escapeAll, divide the length by 3 and compare it to the JS16 string length to see if it has multibyte UTF-8 characters and would need more handling than ASCII.
+	return GraFlicExport.escapeAll(mbStr).length / 3;//count the '%20' '%AF' etc
 };
-AnimatedEncoder.escapeAll = function (mbStr){
+GraFlicExport.escapeAll = function(mbStr){//TODO: If needed allow params for other styles of escaping?
 	//%XX encodes ALL characters, even ASCII/URL-reserved and '%'
-	var mbChar, mbRes = '';
+	mbStr = mbStr.split('');//make character array
+	var mbChar, mbRes = '', accumNonASCII = '';
 	for(var i = 0;i < mbStr.length;i++){
-		mbChar = mbStr.charCodeAt(i);
+		//Only charCodeAt not codePointAt is needed. Any non-ASCII will have high bits set, whether a single component or high range char with two 16-bit components in the pair.
+		mbChar = mbStr[i].charCodeAt(0);
 		if(mbChar < 0x80){
+			if(accumNonASCII.length){
+				mbRes += encodeURI(accumNonASCII);
+				accumNonASCII = '';
+			}
 			//Escape ASCII char that would be ignored by encodeURI()
 			mbRes += '%' + (mbChar < 0x10? '0' : '') + mbChar.toString(16).toUpperCase();
-		}else{//Now esc any UTF-8 chars not caught in the ASCII range.
-			mbRes += encodeURI(mbStr.charAt(i));
+		}else{
+			accumNonASCII += mbStr[i];
+			//Must encodeURI as it goes. If doing it at the end after all ASCII was escaped, the % of the %XX will get caught in the escapes and break it.
+			//JS uses UTF-16 for strings. 
+			//Only do the encodeURI to the remaining buffer at the end and before an ASCII is encountered. If trying to encodeURI on each char, that 16-bit char may be part of a 2-component sequence of chars that form together to make a high range UTF char. In that case it will be and error if attempted without the other part of the set.
 		}
+		/*else{
+			mbChar = String.fromCodePoint(mbChar);
+			mbRes += mbChar;
+			if(mbChar.length > 1){i++;}
+		}*/
+		
+		/*else if(mbChar < 0xD800 || mbChar > 0xDFFF){
+			mbRes += String.fromCharCode(mbChar);
+		}else{
+			//D800 - DFFF are reserved and used to signal that another 16-bit component follows and combines with this one to make a high-range character.
+			//Advance to the next 16-bit char and combine it with the high component.
+			mbRes += String.fromCodePoint(mbStr.codePointAt(i));
+			i++;//Skip one because this was a multi-component character.
+		}*/
+	}
+	if(accumNonASCII.length){
+		mbRes += encodeURI(accumNonASCII);
 	}
 	return mbRes;
 };
-AnimatedEncoder.prototype.buildDithMasks = function(){
+GraFlicExport.stringToBytesUTF8 = function(str){
+	//Converts a string to a Uint8Array that is UTF-8 format and suitable for writing into binary and files.
+	str = GraFlicExport.escapeAll(str);
+	//(first remove first '%' and split to get the UTF-8 octet hex codes in an array)
+	str = str.substring(1).split('%');
+	var strBytesUTF8 = new Uint8Array(new ArrayBuffer(str.length));
+	for(var i = 0;i < str.length;i++){
+		strBytesUTF8[i] = parseInt(str[i], 16);//Write the Hex sting as binary byte for each escaped UTF-8 byte.
+	}
+	return strBytesUTF8;
+};
+GraFlicExport.writeUbytes = function(out8, bytesU8, pos){
+	//Writes unsigned bytes to a octet stream (Uint8Array)
+	//This can be used to write a UTF8 String into a file.
+	//To do this, first call stringToBytesUTF8 to get the bytes to send here.
+	//Do that first so that the length in bytes of the string can be noted.
+	//That usually has to be done first earlier in the logic to allocate the correct Uint8Array size for the file.
+	for(var i = 0;i < bytesU8.length;i++){
+		out8[pos + i] = bytesU8[i];
+	}
+};
+GraFlicExport.readStringUTF8 = function(out8, pos, sLen){
+	//This will read a string out of an octet stream (Uint8Array) at the position for the given length.
+	//It will return a String in standard JS format (UTF-16)
+	//TODO: Maybe look at future JS String/Encoding classes/support to simplify UTF-8/JS UTF-16 conversion code if they ever become finished and standard.
+	var bytesUTF8 = out8.subarray(pos, pos + sLen);
+	var strJS16 = '';
+	var byte8;
+	for(var i =0;i < bytesUTF8.length;i++){
+		byte8 = bytesUTF8[i];
+		if(byte8 < 0x80){//ASCII range
+			if(byte8 == 37){//%, keep it escaped since it could collide with decoding other %## octets.
+				strJS16 += '%25';
+			}else{
+				strJS16 += String.fromCharCode(byte8);//decodeURI() will not decode certain ASCII characters that URLs use, so convert them easily with this before sending to decodeURI.
+			}
+		}else{
+			strJS16 += '%' + byte8.toString(16);//byte > 7F. All multibyte UTF-8 sequences have the high bit set on every byte and will be > 7F for all.
+		}
+	}
+	strJS16 = decodeURI(strJS16);
+	return strJS16;
+};
+GraFlicExport.prototype.buildDithMasks = function(){
 	var maskSize = this.outputWidth*this.outputHeight*4;
 	if(this.outputWidth==this.ditherWidth&&this.outputHeight==this.ditherHeight){return;}//do not need to remake it if it was already done on the same dimensions
 	this.ditherWidth = this.outputWidth;//must check these rather than maskSize because 10x20 or 20x10 could be the same maskSize
@@ -2800,7 +2880,7 @@ AnimatedEncoder.prototype.buildDithMasks = function(){
 		}
 	}
 };
-AnimatedEncoder.prototype.buildDithMasksV2 = function(){
+GraFlicExport.prototype.buildDithMasksV2 = function(){
 	if(this.dithMask){return;}
 	//Each greater number represents a value of true for the next level of
 	//more sparse dithering. Patterns should always line up with eachother
@@ -2819,7 +2899,7 @@ AnimatedEncoder.prototype.buildDithMasksV2 = function(){
 		[0, 1, 0, 1, 0, 1, 0, 1]
 	];
 };
-AnimatedEncoder.prototype.quant8Octets = function(octets){
+GraFlicExport.prototype.quant8Octets = function(octets){
 		var quant8 = 0;//full quality. no quantization or dithering.
 		if(this.quality < 1){
 			quant8 = 1;//Not usually much savings, but hard to tell the difference from the full quality.
@@ -2925,7 +3005,7 @@ AnimatedEncoder.prototype.quant8Octets = function(octets){
 	}
 };
 
-AnimatedEncoder.prototype.initColorCounting = function(){
+GraFlicExport.prototype.initColorCounting = function(){
 	this.colorLookup = [];
 	//for(var i = 0;i < 256;i++){//create an array for each potential level of opacity.
 	//	this.colorLookup.push([]);
@@ -2941,7 +3021,7 @@ AnimatedEncoder.prototype.initColorCounting = function(){
 	this.significantThresh = Math.max(8,Math.round(this.outputWidth * this.outputHeight * this.frames.length * 0.0004));
 };
 
-AnimatedEncoder.prototype.incrementColorCount = function(red, green, blue, alpha){
+GraFlicExport.prototype.incrementColorCount = function(red, green, blue, alpha){
 	//var rgb = red << 16 | green << 8 | blue;
 	if(!alpha){
 		//Force all fully transparent entries to be exactly the same, causing duplicates to be eliminated.
@@ -2986,7 +3066,7 @@ AnimatedEncoder.prototype.incrementColorCount = function(red, green, blue, alpha
 		this.sigColorLookup[sigIndex] = 1;
 	}
 };
-AnimatedEncoder.prototype.getColorCount = function(red, green, blue, alpha){
+GraFlicExport.prototype.getColorCount = function(red, green, blue, alpha){
 	//var rgb = red << 16 | green << 8 | blue;
 	//Remember, undefined will evaluate as false.
 	if(   this.colorLookup[alpha]
@@ -2998,7 +3078,7 @@ AnimatedEncoder.prototype.getColorCount = function(red, green, blue, alpha){
 	}
 	return 0;//otherwise, return 0.
 };
-AnimatedEncoder.prototype.getPaletteIndex = function(fData, qData, i, dithW, dithH){
+GraFlicExport.prototype.getPaletteIndex = function(fData, qData, i, dithW, dithH){
 	var red   = fData[i], 
 	    green = fData[i + 1],
 	    blue  = fData[i + 2],
@@ -3099,7 +3179,7 @@ AnimatedEncoder.prototype.getPaletteIndex = function(fData, qData, i, dithW, dit
 	
 	return closestColor;
 };
-AnimatedEncoder.prototype.getClosestColor = function(red, green, blue, alpha){
+GraFlicExport.prototype.getClosestColor = function(red, green, blue, alpha){
 	var colorDif;
 	var closestColorDif = 0x7FFFFFFF;//Don't go full value, remember JS numbers are 2's complement signed.
 	var closestColor = 0;
@@ -3126,7 +3206,7 @@ AnimatedEncoder.prototype.getClosestColor = function(red, green, blue, alpha){
 	//Returns an array with the closest color and additional values for the color channels to save from having to recalculate them.
 	return [closestColor, closeR, closeG, closeB, closeA];
 };
-AnimatedEncoder.prototype.distQuant = function(qError, qData, i, dithW, dithH, cOffset){
+GraFlicExport.prototype.distQuant = function(qError, qData, i, dithW, dithH, cOffset){
 	//qData is used to track the errors.
 	//This is used because some pixels (like exact match with palette)
 	//should not accept the quantization error that may have been generated
@@ -3178,7 +3258,7 @@ AnimatedEncoder.prototype.distQuant = function(qError, qData, i, dithW, dithH, c
 		}
 	}
 };
-AnimatedEncoder.prototype.filterBytePNG = function(buf, i, fMode, x, y, minX, minY, scanWidth){
+GraFlicExport.prototype.filterBytePNG = function(buf, i, fMode, x, y, minX, minY, scanWidth){
 	//x, y, w, h are the x, y, width and height in pixels regardless of number of bytes per pixel.
 	//scanWidth is the width of the full image bounds times the bytes per pixel.
 	//(Remember, it is reading from the full-dimensions buffer. And must offset by the full width to get the Up position for example.)
@@ -3235,7 +3315,7 @@ AnimatedEncoder.prototype.filterBytePNG = function(buf, i, fMode, x, y, minX, mi
 		return curByte;
 	}
 };
-AnimatedEncoder.prototype.initBuffersPNG = function(){
+GraFlicExport.prototype.initBuffersPNG = function(){
 				var byteBufLength = this.outputWidth * this.outputHeight * this.byteStreamMode;
 				this.bufNO = new Uint8Array(new ArrayBuffer(byteBufLength));//None-Over...
 				this.bufPO = new Uint8Array(new ArrayBuffer(byteBufLength));
@@ -3288,26 +3368,26 @@ AnimatedEncoder.prototype.initBuffersPNG = function(){
 };
 
 /*
-AnimatedDecoder loads an animated image like Animated PNG and breaks it down into drawable frames so that the image can be used by web apps that need to freeze frame at specific frames. Developers can use Animated PNGs as components in a web-app that will create an animation making use of these animations.
+GraFlicDecoder loads an animated image like Animated PNG and breaks it down into drawable frames so that the image can be used by web apps that need to freeze frame at specific frames. Developers can use Animated PNGs as components in a web-app that will create an animation making use of these animations.
 
 Example:
-var aDec = new AnimatedDecoder('/path/to_animated.png');
+var aDec = new GraFlicDecoder('/path/to_animated.png');
 canvasContext.drawImage(aDec.getFrame(1000), 0, 0);
 
 */
-function AnimatedDecoder(decSource, paramz){
+function GraFlicDecoder(decSource, paramz){
 	//decSource can be a URL to an image, or a Blob,  for example from file input. ('File' objects are Blob with .name containing filename)
 	this.ready = false;//Set to true when animated image dissected and ready for frame by frame play/pause etc.
 	this.frames = [];
 	this.buildCanv = document.createElement('canvas');//used to build step by step via region/blend/dispose params.
 	if(paramz !== undefined){
 		//sending object of parameters instead of string to create a copy that has a filter or change applied.
-		//it will be constructed with different logic by copying an existing AnimatedDecoder
+		//it will be constructed with different logic by copying an existing GraFlicDecoder
 		return;
 	}
 	this.prevCanv = document.createElement('canvas');
-		//(define buildCanv here so AnimatedDecoder.getFrame() can be drawn as soon as initialized and will not have an error before loaded)
-	this.loadFunc = AnimatedDecoder_sourceLoaded.bind(this);//Make sure 'this' references the class object.
+		//(define buildCanv here so GraFlicDecoder.getFrame() can be drawn as soon as initialized and will not have an error before loaded)
+	this.loadFunc = GraFlicDecoder_sourceLoaded.bind(this);//Make sure 'this' references the class object.
 	if(decSource instanceof Blob){
 		//File is a Blob with '.name' set. If file is sent it does not need to wait for an XHR.
 		this.imgReq = new FileReader();
@@ -3321,7 +3401,7 @@ function AnimatedDecoder(decSource, paramz){
 		this.imgReq.send();
 	}
 }//end constructor
-function AnimatedDecoder_sourceLoaded(adEvent){
+function GraFlicDecoder_sourceLoaded(adEvent){
 	this.imgReq.removeEventListener('load', this.loadFunc);
 	var headLen;//length of chunks that should be at the head of the file for each extracted and reconstructed image.
 	var copyChunks = [];//start, end location pairs of chunks that should be copied on to the shared head for reconstructed frames.
@@ -3351,14 +3431,14 @@ function AnimatedDecoder_sourceLoaded(adEvent){
 		var metaChunks = ['tRNS', 'PLTE', 'sRGB', 'gAMA', 'bKGD', 'sBIT', 'hIST', 'cHRM'];//Meta chunks that need to (our ought to) be preserved if present so image data can be drawn correctly.
 		//var acTLSeen = false;//To be APNG acTL must be before IDAT.
 		//All image types have width/height.
-		this.width = AnimatedEncoder.readUint32(oct, 16, false);
-		this.height = AnimatedEncoder.readUint32(oct, 20, false);
+		this.width = GraFlicExport.readUint32(oct, 16, false);
+		this.height = GraFlicExport.readUint32(oct, 20, false);
 		this.png.bitDepth = oct[24];
 		this.png.colorFlags = oct[25];
 		this.png.interlace = oct[28];
 		pos = 33;
 		//this.png.hasDefaultImage = false;//set to true if no fcTL before IDAT
-		chunkSig = AnimatedEncoder.readFourCC(oct, pos + 4);
+		chunkSig = GraFlicExport.readFourCC(oct, pos + 4);
 		var animFrame = -1;//set to 0 when past the default image if present and the first fcTL is encountered. Increment each fcTL
 		//The animation has not started until an fcTL has been seen.
 		//The IDAT is not part of the animation and is the default image if fcTL is not before it.
@@ -3366,11 +3446,11 @@ function AnimatedDecoder_sourceLoaded(adEvent){
 		//Get the frame count by counting each frame entry seen that is part of the animation rather than going by the count in acTL.
 		//Some browsers may ignore the frame count value and just look at this, meaning some images may be out there with an inaccurate value in frameCount.
 		while(chunkSig != 'IEND'){//!fcTLSeen || (chunkSig != 'IDAT' && chunkSig != 'fdAT')){
-			chunkLen = AnimatedEncoder.readUint32(oct, pos, false);
+			chunkLen = GraFlicExport.readUint32(oct, pos, false);
 			if(chunkSig == 'acTL'){
 				//acTL is not in metaChunks it is not used to reconstruct as extracted still frames.
-				//this.frameCount = AnimatedEncoder.readUint32(oct, pos + 8, false);//Get this by counting actual frames seen instead.
-				this.loops = AnimatedEncoder.readUint32(oct, pos + 12, false);
+				//this.frameCount = GraFlicExport.readUint32(oct, pos + 8, false);//Get this by counting actual frames seen instead.
+				this.loops = GraFlicExport.readUint32(oct, pos + 12, false);
 			}
 			if(chunkSig == 'IEND'){
 				break;
@@ -3381,7 +3461,7 @@ function AnimatedDecoder_sourceLoaded(adEvent){
 					this.png.hasDefaultImage = true;//IDAT not part of the animation
 					cFrame = {};
 					this.copyFrames.push(cFrame);
-					cFrame.start = pos;//Start reading at start of IDAT in new AnimatedDecoderFrame().
+					cFrame.start = pos;//Start reading at start of IDAT in new GraFlicDecoderFrame().
 					cFrame.len = 24 + chunkLen + headLen;//current IDAT + shared head + IEND
 					cFrame.width = this.width;//Default image but fill the whole image dimensions.
 					cFrame.height = this.height;
@@ -3410,20 +3490,20 @@ function AnimatedDecoder_sourceLoaded(adEvent){
 				this.frameCount++;//Remember, frames can have multiple fdAT/IDAT, so count by fcTL.
 				cFrame = {};
 				this.copyFrames.push(cFrame);
-				cFrame.start = pos + chunkLen + 12;//Start reading after the fcTL in new AnimatedDecoderFrame().
+				cFrame.start = pos + chunkLen + 12;//Start reading after the fcTL in new GraFlicDecoderFrame().
 				cFrame.len = 12 + headLen;//shared head + IEND
-				cFrame.width = AnimatedEncoder.readUint32(oct, pos + 12, false);
-				cFrame.height = AnimatedEncoder.readUint32(oct, pos + 16, false);
-				cFrame.x = AnimatedEncoder.readUint32(oct, pos + 20, false);
-				cFrame.y = AnimatedEncoder.readUint32(oct, pos + 24, false);
-				cFrame.ms = ( AnimatedEncoder.readUint16(oct, pos + 28, false) / AnimatedEncoder.readUint16(oct, pos + 30, false) ) * 1000;//milliseconds
+				cFrame.width = GraFlicExport.readUint32(oct, pos + 12, false);
+				cFrame.height = GraFlicExport.readUint32(oct, pos + 16, false);
+				cFrame.x = GraFlicExport.readUint32(oct, pos + 20, false);
+				cFrame.y = GraFlicExport.readUint32(oct, pos + 24, false);
+				cFrame.ms = ( GraFlicExport.readUint16(oct, pos + 28, false) / GraFlicExport.readUint16(oct, pos + 30, false) ) * 1000;//milliseconds
 				cFrame.disposal = oct[pos + 32];
 				cFrame.blending = oct[pos + 33];
 				this.ms += cFrame.ms;
 			}
 			
 			pos += chunkLen + 12;
-			chunkSig = AnimatedEncoder.readFourCC(oct, pos + 4);
+			chunkSig = GraFlicExport.readFourCC(oct, pos + 4);
 		}
 		/*if(animFrame == -1){
 			//if(this.onError){
@@ -3449,8 +3529,8 @@ function AnimatedDecoder_sourceLoaded(adEvent){
 		this.format = 'gif';
 		this.gif = {};
 		//read logical screen descriptor
-		this.width = AnimatedEncoder.readUint16(oct, 6, true);
-		this.height = AnimatedEncoder.readUint16(oct, 8, true);
+		this.width = GraFlicExport.readUint16(oct, 6, true);
+		this.height = GraFlicExport.readUint16(oct, 8, true);
 		//alert('GIF h/w ' + this.width + ' x ' + this.height);
 		//[10] is a packed field
 		//alert('logdesc packed field ' + oct[10].toString(16));
@@ -3482,10 +3562,10 @@ function AnimatedDecoder_sourceLoaded(adEvent){
 			//alert('GIF chunk: ' + chunkSig.toString(16));
 			//GIF chunks have a series of blocks with 1 byte lengths
 			if(chunkSig == 0x2C){//image descriptor
-				cFrame.x = AnimatedEncoder.readUint16(oct, pos, true);
-				cFrame.y = AnimatedEncoder.readUint16(oct, pos + 2, true);
-				cFrame.width = AnimatedEncoder.readUint16(oct, pos + 4, true);
-				cFrame.height = AnimatedEncoder.readUint16(oct, pos + 6, true);
+				cFrame.x = GraFlicExport.readUint16(oct, pos, true);
+				cFrame.y = GraFlicExport.readUint16(oct, pos + 2, true);
+				cFrame.width = GraFlicExport.readUint16(oct, pos + 4, true);
+				cFrame.height = GraFlicExport.readUint16(oct, pos + 6, true);
 				//+8 is packed field: global_color_table(1) / interlace(1) / sort(1) / reserved(2) / size_of_local_color_table(3)
 				pos += 8;
 				cFrame.gif.localColorTable = (oct[pos] & 0x80) > 0;
@@ -3537,7 +3617,7 @@ function AnimatedDecoder_sourceLoaded(adEvent){
 						//this makes it consistent with the Animated PNG codes
 					cFrame.blending = 1;//use over blending, GIF does not have blending modes, only disposal logic
 					//alert('disposal ' + cFrame.disposal);
-					cFrame.ms = AnimatedEncoder.readUint16(oct, pos + 2, true) * 10;//100ths of a second
+					cFrame.ms = GraFlicExport.readUint16(oct, pos + 2, true) * 10;//100ths of a second
 					//if(cFrame.ms < 100){cFrame.ms = 100;}//GIF images get capped at 10 FPS by most browsers/viewers, this keeps them consistent with how they are seen??
 					//alert('delay extracted ' + cFrame.ms);
 					this.ms += cFrame.ms;
@@ -3575,11 +3655,11 @@ function AnimatedDecoder_sourceLoaded(adEvent){
 	this.prevCanv.height = this.height;
 		var this_this = this;
 	setTimeout(function(){
-		new AnimatedDecoderFrame(this_this);
+		new GraFlicDecoderFrame(this_this);
 	}, 50);
 	
 }//end _sourceloaded()
-AnimatedDecoder.prototype.getFrame = function(ms){
+GraFlicDecoder.prototype.getFrame = function(ms){
 	//Get drawable based on Milliseconds duration. If past the end modulo it.
 	//Always get by MS. Getting by index is a bad idea. A good endcoder might remove frames that can be removed and increase the duration of previous frame if there are no changes between frames for an animation based on FPS captures of a source animation, for example.
 	//An assumption of having frame data spaced out at even intervals is flawed.
@@ -3614,7 +3694,7 @@ AnimatedDecoder.prototype.getFrame = function(ms){
 Although, storing them as full frames ready to draw may be better in cases with instances of the same graphic that are at different animation offsets at different times.
 If converting GIF to Animated PNG, it will take the fully drawn version of frames and do the pixel-recycling logic in the encoder.
 */
-function AnimatedDecoderFrame(aeImg){
+function GraFlicDecoderFrame(aeImg){
 	if(!this.copyFrame){delete aeImg.loadFunc;}
 	this.aeImg = aeImg;
 	var key;
@@ -3637,17 +3717,17 @@ function AnimatedDecoderFrame(aeImg){
 	
 		rPos = this.start;
 		var crc32, crcStart;
-		AnimatedEncoder.writeUint32(oct, this.width, 16, false);//local region for frame
-		AnimatedEncoder.writeUint32(oct, this.height, 20, false);
+		GraFlicExport.writeUint32(oct, this.width, 16, false);//local region for frame
+		GraFlicExport.writeUint32(oct, this.height, 20, false);
 		//rememeber to recalc CRC when width and height changed in head IHDR(remember IHDR MUST be first.)
-		crc32 = AnimatedEncoder.getCRC32(oct, 12, 29);
-		AnimatedEncoder.writeUint32(oct, crc32, 29, false);
+		crc32 = GraFlicExport.getCRC32(oct, 12, 29);
+		GraFlicExport.writeUint32(oct, crc32, 29, false);
 		
-		chunkSig = AnimatedEncoder.readFourCC(aeImg.inputOctetStream, rPos + 4);
+		chunkSig = GraFlicExport.readFourCC(aeImg.inputOctetStream, rPos + 4);
 		while(chunkSig == 'IDAT' || chunkSig == 'fdAT'){
-			chunkLen = AnimatedEncoder.readUint32(aeImg.inputOctetStream, rPos, false);
-			AnimatedEncoder.writeUint32(oct, chunkSig == 'fdAT'?chunkLen - 4:chunkLen, pos, false);
-			AnimatedEncoder.writeFourCC(oct, 'IDAT', pos + 4, false);//Always IDAT never fdAT for non-animated single frame.
+			chunkLen = GraFlicExport.readUint32(aeImg.inputOctetStream, rPos, false);
+			GraFlicExport.writeUint32(oct, chunkSig == 'fdAT'?chunkLen - 4:chunkLen, pos, false);
+			GraFlicExport.writeFourCC(oct, 'IDAT', pos + 4, false);//Always IDAT never fdAT for non-animated single frame.
 			pos += 8;
 			rPos += 8;
 			crcStart = pos - 4;//the start where it is being WRITTEN into(-4 to CRC over FourCC)
@@ -3658,23 +3738,23 @@ function AnimatedDecoderFrame(aeImg){
 				pos++;
 			}
 			//Recalculate CRC. It will be different without frameSequenceCount;
-			crc32 = AnimatedEncoder.getCRC32(oct, crcStart, pos);
-			AnimatedEncoder.writeUint32(oct, crc32, pos, false);
+			crc32 = GraFlicExport.getCRC32(oct, crcStart, pos);
+			GraFlicExport.writeUint32(oct, crc32, pos, false);
 			pos += 4;
 			rPos += 4;//skip CRC
-			chunkSig = AnimatedEncoder.readFourCC(aeImg.inputOctetStream, rPos + 4);
+			chunkSig = GraFlicExport.readFourCC(aeImg.inputOctetStream, rPos + 4);
 		}
 		
-		AnimatedEncoder.writeUint32(oct, 0, pos, false);//IEND is empty
-		AnimatedEncoder.writeFourCC(oct, 'IEND', pos + 4);
-		crc32 = AnimatedEncoder.getCRC32(oct, pos + 4, pos + 8);
-		AnimatedEncoder.writeUint32(oct, crc32, pos + 8, false);
+		GraFlicExport.writeUint32(oct, 0, pos, false);//IEND is empty
+		GraFlicExport.writeFourCC(oct, 'IEND', pos + 4);
+		crc32 = GraFlicExport.getCRC32(oct, pos + 4, pos + 8);
+		GraFlicExport.writeUint32(oct, crc32, pos + 8, false);
 		this.payloadBlob = new Blob([oct], {'type':'image/png'});
 		this.payloadBlobURL = URL.createObjectURL(this.payloadBlob);
 	}else if(aeImg.gif){//end is PNG
 		//alert('a');
-		AnimatedEncoder.writeUint16(oct, this.width, 6, true);//local region
-		AnimatedEncoder.writeUint16(oct, this.height, 8, true);
+		GraFlicExport.writeUint16(oct, this.width, 6, true);//local region
+		GraFlicExport.writeUint16(oct, this.height, 8, true);
 		pos = 13;
 		var colorTable = this.gif.localColorTable? this.gif.localColorTable : aeImg.gif.globalColorTable;//use local color table if present
 		for(i = 0;i < colorTable.length;i++){
@@ -3697,10 +3777,10 @@ function AnimatedDecoderFrame(aeImg){
 		oct[pos] = 0x2C;//Image Descriptor
 		pos++;
 		
-		AnimatedEncoder.writeUint16(oct, 0, pos + 0, true);
-		AnimatedEncoder.writeUint16(oct, 0, pos + 2, true);
-		AnimatedEncoder.writeUint16(oct, this.width, pos + 4, true);
-		AnimatedEncoder.writeUint16(oct, this.height, pos + 6, true);
+		GraFlicExport.writeUint16(oct, 0, pos + 0, true);
+		GraFlicExport.writeUint16(oct, 0, pos + 2, true);
+		GraFlicExport.writeUint16(oct, this.width, pos + 4, true);
+		GraFlicExport.writeUint16(oct, this.height, pos + 6, true);
 		var packedField = 0;
 		if(this.gif.interlaced){packedField &= 0x40;}
 		oct[pos + 8] = packedField;
@@ -3722,7 +3802,7 @@ function AnimatedDecoderFrame(aeImg){
 	aeImg.frames.push(this);
 	
 	this.payloadImage = new Image();
-	this.loadFunc = AnimatedDecoderFrame_loaded.bind(this);
+	this.loadFunc = GraFlicDecoderFrame_loaded.bind(this);
 	this.payloadImage.addEventListener('load', this.loadFunc);
 	this.payloadImage.src = this.payloadBlobURL;
 	
@@ -3734,7 +3814,7 @@ function AnimatedDecoderFrame(aeImg){
 	//TODO: add filteredCanvas for when recolor or other effects dynamically added to the original.
 	//TODO: make a .destroy or .delete function that derefs resources and revokes object URLs.
 }//end constructor
-function AnimatedDecoderFrame_loaded(){
+function GraFlicDecoderFrame_loaded(){
 	this.payloadImage.removeEventListener('load', this.loadFunc);
 	var aeImg = this.aeImg;
 	
@@ -3791,7 +3871,7 @@ function AnimatedDecoderFrame_loaded(){
 	}
 	if(aeImg.copyFrame < aeImg.frameCount){
 		setTimeout(function(){
-			new AnimatedDecoderFrame(aeImg);
+			new GraFlicDecoderFrame(aeImg);
 		}, 50);
 	}else{
 		//otherwise all loading finished
@@ -3817,19 +3897,19 @@ fOptions.filter = function(pixel){
 	pixel.g = gray;
 	pixel.b = gray;
 };
-var grayscaleClone = anAnimatedDecoder.cloneWithOptions(fOptions);
+var grayscaleClone = anGraFlicDecoder.cloneWithOptions(fOptions);
 
 */
-AnimatedDecoder.prototype.cloneWithOptions = function(options){
+GraFlicDecoder.prototype.cloneWithOptions = function(options){
 	//This is used to create a clone of the animation that has a filter or transformation applied to the canvas bitmap.
 	//(The approach of appling a filter to the drawn results of the current position
 	//could be taken, but is very resource intensive.)
 	//options is an object with parameters like filter function
 	var cParamz = {"clone":true};
-	var cloneDec = new AnimatedDecoder(null, cParamz);
+	var cloneDec = new GraFlicDecoder(null, cParamz);
 	options.original = this;
 	cloneDec.options = options;
-	cloneDec.cloneLoadFunc = AnimatedDecoder_cloneFrame.bind(cloneDec);
+	cloneDec.cloneLoadFunc = GraFlicDecoder_cloneFrame.bind(cloneDec);
 	setTimeout(cloneDec.cloneLoadFunc, 50);
 	if(this.png && this.png.hasDefaultImage){
 		//needed to skip default frame in animation.
@@ -3837,7 +3917,7 @@ AnimatedDecoder.prototype.cloneWithOptions = function(options){
 	}
 	return cloneDec;
 };
-function AnimatedDecoder_cloneFrame(){
+function GraFlicDecoder_cloneFrame(){
 	if(!this.options.original.ready &&
 	(!this.options.original.frameCount || this.options.original.frames.length < this.frames.length + 2)){
 		//If not fully finished, hold it back 2 frames because the latest one might not be finished yet.
