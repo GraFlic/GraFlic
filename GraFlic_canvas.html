@@ -3,6 +3,7 @@
 <meta charset="UTF-8"/>
 <title>GraFlic™ Animated PNG Drawing Tool &mdash; AnimatedPNGs.com | GraFlic.com</title>
 <link rel="stylesheet" href="GraFlic.css"/>
+<link rel="favicon" href="favicon.png"/>
 <script src="GraFlic/GraFlicUtil.js"></script>
 <script src="GraFlic/GraFlicExport.js"></script>
 <script src="pako/pako.min.js"></script>
@@ -37,7 +38,7 @@
 
 <tr>
 <td colspan="2" class="GraFlic_x">
-Note: This is an early version of the format and many things are not set in stone. Things may change under the hood and files made now might not load in later versions. In some cases it could be manually reconfigured to later version formtting by renaming the .graflic to .zip, repairing JSON files and re-packaging it to a ZIP.
+This is an early version of the format, and is very subject to change. <a href="#About_saves">Saves may not load in future versions without workarounds.</a> 
 </td>
 </tr>
 
@@ -91,7 +92,7 @@ x
 </select>
 <button id="GraFlicC_new_bitmap_btn">➕🖼</button>
 <input type="text" id="GraFlicC_bitmap_title_txt" value="🖼" style="width:16em;"/>
-&nbsp;<input type="text" id="GraFlicC_bitmap_z_index_txt" value="0" style="width:5em;"/><span class="GraFlic_j">🗻</span>
+&nbsp;<input type="text" id="GraFlicC_bitmap_z_index_txt" value="0" style="width:5em;"/><span class="GraFlic_j">🕴</span>
 </td>
 <td rowspan="2">
 <select id="GraFlicC_plays_on_frames_sel" multiple>
@@ -195,7 +196,7 @@ x
 </tr>
 
 <tr>
-<th class="GraFlic_j">🏳️‍🌈</th>
+<th class="GraFlic_j">🌈</th>
 <td class="GraFlic_e">
 <input type="range" id="GraFlicC_palette_hue_rng" min="0" max="1" step="0.00001" value="0"/>
 </td>
@@ -1292,9 +1293,9 @@ function f_makeFilename(){
 	//v_hostname = v_hostname.replace(/png/gi, 'PNG');
 	//v_hostname = v_hostname.replace(/apng/gi, 'APNG');
 	if(!v_metadata.general.Title){
-		v_filename = GraFlicUtil.filenameSafe(v_metadata.general.Title);// + '_' + v_hostname;
-	}else{
 		v_filename = Date.now();//v_hostname + '_' + Date.now();
+	}else{
+		v_filename = GraFlicUtil.filenameSafe(v_metadata.general.Title);// + '_' + v_hostname;
 	}
 	return v_filename;
 }
@@ -1420,12 +1421,12 @@ function f_init(){
 	//----------------------------------------------
 
 	//=========== build default palette ============
-	f_initPaletteColorRGBA(0, 0, 0, 0, "Transparent");//palette[0] should ALWAYS be fully transparent
-	f_initPaletteColorRGBA(0, 0, 0, 1, "True Black");//Default to true black for color [1].
-	f_initPaletteColorRGBA(1, 1, 1, 1, "True White");//Default to true white for color [2].
-	f_initPaletteColorRGBA(1, 0, 0, 1, "Red");
-	f_initPaletteColorRGBA(0, 1, 0, 1, "Green");
-	f_initPaletteColorRGBA(0, 0, 1, 1, "Blue");
+	f_initPaletteColorRGBA(0, 0, 0, 0, '🏁');//palette[0] should ALWAYS be fully transparent
+	f_initPaletteColorRGBA(0, 0, 0, 1, '🏴');//Default to true black for color [1].
+	f_initPaletteColorRGBA(1, 1, 1, 1, '🏳');//Default to true white for color [2].
+	f_initPaletteColorRGBA(1, 0, 0, 1, '❤️');
+	f_initPaletteColorRGBA(0, 1, 0, 1, '💚');
+	f_initPaletteColorRGBA(0, 0, 1, 1, '💙');
 	v_jsv.selected_palette_index = 1;
 	v_curPaletteColor = v_jsv.palette[v_jsv.selected_palette_index];
 	v_paletteRevertCol = f_makeCopyOfJSON(v_curPaletteColor);
@@ -2326,7 +2327,7 @@ function f_loadWorkFileLoaded(){
 <tbody>
 <tr><td class="GraFlic_j">🖼</td><td>Bitmap. A bitmap is a graphic image. Multiple bitmaps are used to create an animated image.</td></tr>
 <tr><td class="GraFlic_j">🎞</td><td>Frame. Represents an animation frame that plays for a moment of time. Bitmaps can configure what frames they appear on.</td></tr>
-<tr><td class="GraFlic_j">🗻</td><td>Z-Index. Higher value bitmaps are drawn on top of lower value bitmaps. This number can be negative.</td></tr>
+<tr><td class="GraFlic_j">🕴</td><td>Z-Index. Higher value bitmaps are drawn on top of lower value bitmaps. This number can be negative.</td></tr>
 <tr><td class="GraFlic_j">🌊</td><td>Flood-fill color.</td></tr>
 <tr><td class="GraFlic_j">👻</td><td>Ghosting. Show other frames in translucent mode to help as a drawing guide. Also a symbol for palette level of opacity.</td></tr>
 <tr><td class="GraFlic_j">💎</td><td>Gem view. Show fill sections with less opacity than line sections to aid asa drawing guide.</td></tr>
@@ -2334,6 +2335,9 @@ function f_loadWorkFileLoaded(){
 <tr><td>.graflic</td><td>This is the file format for saving/restoring a project.</td></tr>
 </tbody>
 </table>
+<p id="About_saves">
+<b>About saves:</b> This is an early version of the format and many things are not set in stone. Things may change under the hood and files made now might not load in later versions. In some cases it could be manually reconfigured to later version formatting by renaming the .graflic to .zip, repairing JSON files and re-packaging it to a ZIP.
+</p>
 <div class="GraFlic_f">
 <small>Copyright 2017, Compukaze LLC. <a href="https://github.com/GraFlic/GraFlic">GraFlic™ libraries and tools are available under the MIT license.</a> GraFlic™ and Compukaze™ are trademarks of Compukaze LLC</small>
 </div>
