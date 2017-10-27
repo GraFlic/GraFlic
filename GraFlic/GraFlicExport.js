@@ -3368,26 +3368,26 @@ GraFlicExport.prototype.initBuffersPNG = function(){
 };
 
 /*
-GraFlicDecoder loads an animated image like Animated PNG and breaks it down into drawable frames so that the image can be used by web apps that need to freeze frame at specific frames. Developers can use Animated PNGs as components in a web-app that will create an animation making use of these animations.
+GraFlicImport loads an animated image like Animated PNG and breaks it down into drawable frames so that the image can be used by web apps that need to freeze frame at specific frames. Developers can use Animated PNGs as components in a web-app that will create an animation making use of these animations.
 
 Example:
-var aDec = new GraFlicDecoder('/path/to_animated.png');
+var aDec = new GraFlicImport('/path/to_animated.png');
 canvasContext.drawImage(aDec.getFrame(1000), 0, 0);
 
 */
-function GraFlicDecoder(decSource, paramz){
+function GraFlicImport(decSource, paramz){
 	//decSource can be a URL to an image, or a Blob,  for example from file input. ('File' objects are Blob with .name containing filename)
 	this.ready = false;//Set to true when animated image dissected and ready for frame by frame play/pause etc.
 	this.frames = [];
 	this.buildCanv = document.createElement('canvas');//used to build step by step via region/blend/dispose params.
 	if(paramz !== undefined){
 		//sending object of parameters instead of string to create a copy that has a filter or change applied.
-		//it will be constructed with different logic by copying an existing GraFlicDecoder
+		//it will be constructed with different logic by copying an existing GraFlicImport
 		return;
 	}
 	this.prevCanv = document.createElement('canvas');
-		//(define buildCanv here so GraFlicDecoder.getFrame() can be drawn as soon as initialized and will not have an error before loaded)
-	this.loadFunc = GraFlicDecoder_sourceLoaded.bind(this);//Make sure 'this' references the class object.
+		//(define buildCanv here so GraFlicImport.getFrame() can be drawn as soon as initialized and will not have an error before loaded)
+	this.loadFunc = GraFlicImport_sourceLoaded.bind(this);//Make sure 'this' references the class object.
 	if(decSource instanceof Blob){
 		//File is a Blob with '.name' set. If file is sent it does not need to wait for an XHR.
 		this.imgReq = new FileReader();
@@ -3401,7 +3401,7 @@ function GraFlicDecoder(decSource, paramz){
 		this.imgReq.send();
 	}
 }//end constructor
-function GraFlicDecoder_sourceLoaded(adEvent){
+function GraFlicImport_sourceLoaded(adEvent){
 	this.imgReq.removeEventListener('load', this.loadFunc);
 	var headLen;//length of chunks that should be at the head of the file for each extracted and reconstructed image.
 	var copyChunks = [];//start, end location pairs of chunks that should be copied on to the shared head for reconstructed frames.
@@ -3461,7 +3461,7 @@ function GraFlicDecoder_sourceLoaded(adEvent){
 					this.png.hasDefaultImage = true;//IDAT not part of the animation
 					cFrame = {};
 					this.copyFrames.push(cFrame);
-					cFrame.start = pos;//Start reading at start of IDAT in new GraFlicDecoderFrame().
+					cFrame.start = pos;//Start reading at start of IDAT in new GraFlicImportFrame().
 					cFrame.len = 24 + chunkLen + headLen;//current IDAT + shared head + IEND
 					cFrame.width = this.width;//Default image but fill the whole image dimensions.
 					cFrame.height = this.height;
@@ -3490,7 +3490,7 @@ function GraFlicDecoder_sourceLoaded(adEvent){
 				this.frameCount++;//Remember, frames can have multiple fdAT/IDAT, so count by fcTL.
 				cFrame = {};
 				this.copyFrames.push(cFrame);
-				cFrame.start = pos + chunkLen + 12;//Start reading after the fcTL in new GraFlicDecoderFrame().
+				cFrame.start = pos + chunkLen + 12;//Start reading after the fcTL in new GraFlicImportFrame().
 				cFrame.len = 12 + headLen;//shared head + IEND
 				cFrame.width = GraFlicExport.readUint32(oct, pos + 12, false);
 				cFrame.height = GraFlicExport.readUint32(oct, pos + 16, false);
@@ -3655,11 +3655,11 @@ function GraFlicDecoder_sourceLoaded(adEvent){
 	this.prevCanv.height = this.height;
 		var this_this = this;
 	setTimeout(function(){
-		new GraFlicDecoderFrame(this_this);
+		new GraFlicImportFrame(this_this);
 	}, 50);
 	
 }//end _sourceloaded()
-GraFlicDecoder.prototype.getFrame = function(ms){
+GraFlicImport.prototype.getFrame = function(ms){
 	//Get drawable based on Milliseconds duration. If past the end modulo it.
 	//Always get by MS. Getting by index is a bad idea. A good endcoder might remove frames that can be removed and increase the duration of previous frame if there are no changes between frames for an animation based on FPS captures of a source animation, for example.
 	//An assumption of having frame data spaced out at even intervals is flawed.
@@ -3694,7 +3694,7 @@ GraFlicDecoder.prototype.getFrame = function(ms){
 Although, storing them as full frames ready to draw may be better in cases with instances of the same graphic that are at different animation offsets at different times.
 If converting GIF to Animated PNG, it will take the fully drawn version of frames and do the pixel-recycling logic in the encoder.
 */
-function GraFlicDecoderFrame(aeImg){
+function GraFlicImportFrame(aeImg){
 	if(!this.copyFrame){delete aeImg.loadFunc;}
 	this.aeImg = aeImg;
 	var key;
@@ -3802,7 +3802,7 @@ function GraFlicDecoderFrame(aeImg){
 	aeImg.frames.push(this);
 	
 	this.payloadImage = new Image();
-	this.loadFunc = GraFlicDecoderFrame_loaded.bind(this);
+	this.loadFunc = GraFlicImportFrame_loaded.bind(this);
 	this.payloadImage.addEventListener('load', this.loadFunc);
 	this.payloadImage.src = this.payloadBlobURL;
 	
@@ -3814,7 +3814,7 @@ function GraFlicDecoderFrame(aeImg){
 	//TODO: add filteredCanvas for when recolor or other effects dynamically added to the original.
 	//TODO: make a .destroy or .delete function that derefs resources and revokes object URLs.
 }//end constructor
-function GraFlicDecoderFrame_loaded(){
+function GraFlicImportFrame_loaded(){
 	this.payloadImage.removeEventListener('load', this.loadFunc);
 	var aeImg = this.aeImg;
 	
@@ -3871,7 +3871,7 @@ function GraFlicDecoderFrame_loaded(){
 	}
 	if(aeImg.copyFrame < aeImg.frameCount){
 		setTimeout(function(){
-			new GraFlicDecoderFrame(aeImg);
+			new GraFlicImportFrame(aeImg);
 		}, 50);
 	}else{
 		//otherwise all loading finished
@@ -3897,19 +3897,19 @@ fOptions.filter = function(pixel){
 	pixel.g = gray;
 	pixel.b = gray;
 };
-var grayscaleClone = anGraFlicDecoder.cloneWithOptions(fOptions);
+var grayscaleClone = anGraFlicImport.cloneWithOptions(fOptions);
 
 */
-GraFlicDecoder.prototype.cloneWithOptions = function(options){
+GraFlicImport.prototype.cloneWithOptions = function(options){
 	//This is used to create a clone of the animation that has a filter or transformation applied to the canvas bitmap.
 	//(The approach of appling a filter to the drawn results of the current position
 	//could be taken, but is very resource intensive.)
 	//options is an object with parameters like filter function
 	var cParamz = {"clone":true};
-	var cloneDec = new GraFlicDecoder(null, cParamz);
+	var cloneDec = new GraFlicImport(null, cParamz);
 	options.original = this;
 	cloneDec.options = options;
-	cloneDec.cloneLoadFunc = GraFlicDecoder_cloneFrame.bind(cloneDec);
+	cloneDec.cloneLoadFunc = GraFlicImport_cloneFrame.bind(cloneDec);
 	setTimeout(cloneDec.cloneLoadFunc, 50);
 	if(this.png && this.png.hasDefaultImage){
 		//needed to skip default frame in animation.
@@ -3917,7 +3917,7 @@ GraFlicDecoder.prototype.cloneWithOptions = function(options){
 	}
 	return cloneDec;
 };
-function GraFlicDecoder_cloneFrame(){
+function GraFlicImport_cloneFrame(){
 	if(!this.options.original.ready &&
 	(!this.options.original.frameCount || this.options.original.frames.length < this.frames.length + 2)){
 		//If not fully finished, hold it back 2 frames because the latest one might not be finished yet.

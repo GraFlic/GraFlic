@@ -53,7 +53,7 @@ Each file in files is an object and will have .data for the raw binary, and in s
 Other properties may be added later.
 Maybe a .metadata to retain metadata about files like creation/modification time?
 */
-function GraFlicArchive(paramz, zipDataUint8){
+function GraFlicArchive(zipDataUint8, paramz){
 	//'this' object will be returned to the caller with contents of the ZIP.
 	this.files = {};//each file will have potentially .data containing the files, extracted and decompressed. The filename will be the key to access the file object in files. JSON will have .json containing the reconstituted JSON object. Text will have .text containing the text string. JSON and text do not currently fill the .data property because it would not be very useful and would waste resources.
 	//Images(PNG/JPG/GIF/WEBP) will have their raw binary appear in files in case metadata needs examining, and will also have an ObjectURL put here in images for easy loading by DOM elements in .blob.
