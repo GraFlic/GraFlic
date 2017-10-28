@@ -1,4 +1,4 @@
-<!doctype><html>
+<!doctype html><html>
 <head>
 <meta charset="UTF-8"/>
 <title>GraFlic™ Animated PNG Drawing Tool &mdash; AnimatedPNGs.com | GraFlic.com</title>
@@ -56,7 +56,7 @@ SOFTWARE.
 <div style="height:50%;overflow:hidden;">
 <canvas id="GraFlicC_mini_canvas" width="200" height="400" style="width:100%;"></canvas>
 </div>
-<div>
+</div>
 </td>
 </tr>
 
@@ -83,7 +83,6 @@ This is an early version of the format, and is very subject to change. <a href="
 <td>
 <span id="GraFlicC_palette_color_clr" style="font-family:'Courier New',courier,monospace;background-color:black;border:2px solid #7F7F7F;padding:2px;" class="GraFlic_j">🎨</span>
 <select id="palette_color_sel">
-</select>
 </select>
 &nbsp;<input type="checkbox" id="GraFlicC_tool_erase_chk"/>
 <label for="GraFlicC_tool_erase_chk" class="GraFlic_j">❌</label>
@@ -112,8 +111,7 @@ x
 
 <tr>
 <td>
-<span class="GraFlic_j">📝🖼</span><select id="GraFlicC_bitmap_sel">
-</select>
+<span class="GraFlic_j">📝🖼</span><select id="GraFlicC_bitmap_sel"></select>
 <button id="GraFlicC_new_bitmap_btn">➕🖼</button>
 <input type="text" id="GraFlicC_bitmap_title_txt" value="🖼" style="width:16em;"/>
 &nbsp;<input type="text" id="GraFlicC_bitmap_z_index_txt" value="0" style="width:5em;"/><span class="GraFlic_j">🕴</span>
@@ -126,9 +124,7 @@ x
 
 <tr>
 <td>
-<div>
-<span class="GraFlic_j">👁🎞</span><select id="GraFlicC_frame_sel">
-</select>
+<span class="GraFlic_j">👁🎞</span><select id="GraFlicC_frame_sel"></select>
 <button id="GraFlicC_new_frame_btn">➕🎞</button>
 <input type="text" id="GraFlicC_frame_title_txt" value="🎞" style="width:8em;"/>
 &nbsp;<input type="text" id="GraFlicC_frame_ms_txt" value="" style="width:5em;"/><span class="GraFlic_j">⏳</span>
@@ -147,7 +143,7 @@ x
 <a id="GraFlicC_download_work_link" target="_blank" href="#"></a>
 </td>
 <td rowspan="2" style="text-align:center;vertical-align:middle;">
-<img id="GraFlicC_project_thumb" src="favicon.png" style="max-width:48;max-height:48;"/>
+<img id="GraFlicC_project_thumb" src="favicon.png" alt="Thumb" style="max-width:48;max-height:48;"/>
 </td>
 </tr>
 
@@ -1063,4 +1059,4 @@ function f_onRedrawn(){
 </div>
 
 </body>
-<html>
+</html>
