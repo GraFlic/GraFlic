@@ -1,5 +1,5 @@
 /*
-This is a collection of utilities used by web-apps that utilize the GraFlic libraries such as GraFlicExport at:
+This is a collection of utilities used by web-apps that utilize the GraFlic libraries such as GraFlicEncoder at:
 AnimatedPNGs.com
 Deckromancy.com
 
@@ -45,18 +45,19 @@ Since the goal of this is restoring the state of a JS web app, '.json' files wil
 /*
 GraFlicArchive() constructor takes a Uint8Array and optional parameters.
 
-.files is an Object that has properties, who are named with strings based on the filename, including any folder path if applicable. Use a for loop to cycle thru the files or if the save has preset filenames that control parts of the save, access them directly.
+.f is an Object that has properties, who are named with strings based on the filename, including any folder path if applicable. Use a for loop to cycle thru the files or if the save has preset filenames that control parts of the save, access them directly.
 Examples:
-returnedObject.files['save.json']
-returnedObject.files['images/example.png']
-Each file in files is an object and will have .data for the raw binary, and in some cases have .blob with the ObjectURL blob link.
+returnedObject.f['save.json']
+returnedObject.f['images/example.png']
+Each file in files is an object and will have .d (data) for the raw binary, and in some cases have .b (blob link) with the ObjectURL blob link.
 Other properties may be added later.
 Maybe a .metadata to retain metadata about files like creation/modification time?
 */
 function GraFlicArchive(zipDataUint8, paramz){
 	//'this' object will be returned to the caller with contents of the ZIP.
-	this.files = {};//each file will have potentially .data containing the files, extracted and decompressed. The filename will be the key to access the file object in files. JSON will have .json containing the reconstituted JSON object. Text will have .text containing the text string. JSON and text do not currently fill the .data property because it would not be very useful and would waste resources.
-	//Images(PNG/JPG/GIF/WEBP) will have their raw binary appear in files in case metadata needs examining, and will also have an ObjectURL put here in images for easy loading by DOM elements in .blob.
+	this.f = {};//each file will have potentially .d (data) containing the files, extracted and decompressed. The filename will be the key to access the file object in files. JSON will have .json containing the reconstituted JSON object. Text will have .t (text) containing the text string. JSON and text do not currently fill the .d property because it would not be very useful and would waste resources.
+	this.j = {};//short links to .json ( JS-parsed and ready live JSON for stuff.json would be accessed at .j.stuff )
+	//Images(PNG/JPG/GIF/WEBP) will have their raw binary appear in files in case metadata needs examining, and will also have an ObjectURL put here in images for easy loading by DOM elements in .b (blob link).
 	//Other properties may be added to this result object later if needed.
 	
 	GraFlicArchive.archives.push(this);//Each archive created will be tracked here so that a file can be looked up if the path exists in any archive in memory with static getFileFromAny()
@@ -112,16 +113,16 @@ function GraFlicArchive(zipDataUint8, paramz){
 	var v_cdSig = 0;
 	while(v_cdSig != 0x06054B50){
 		v_cdPos--;
-		v_cdSig = GraFlicExport.readUint32(v_oct, v_cdPos, true);
+		v_cdSig = GraFlicEncoder.readUint32(v_oct, v_cdPos, true);
 		//console.log(v_cdSig.toString(16));
 	}
-	var v_filesCountZIP = GraFlicExport.readUint16(v_oct, v_cdPos + 10, true);//Number of entries in central directory.
+	var v_filesCountZIP = GraFlicEncoder.readUint16(v_oct, v_cdPos + 10, true);//Number of entries in central directory.
 	var v_filesRead = 0;
-	var v_cdStart = GraFlicExport.readUint32(v_oct, v_cdPos + 16, true);//Where the central directory starts
+	var v_cdStart = GraFlicEncoder.readUint32(v_oct, v_cdPos + 16, true);//Where the central directory starts
 	v_cdPos = v_cdStart;
 	while(v_filesRead < v_filesCountZIP){
-		console.log('CentDir pos: ' + v_cdPos + ' sig: ' + GraFlicExport.readUint32(v_oct, v_cdPos, true).toString(16));
-		v_relOffset = GraFlicExport.readUint32(v_oct, v_cdPos + 42, true);
+		console.log('CentDir pos: ' + v_cdPos + ' sig: ' + GraFlicEncoder.readUint32(v_oct, v_cdPos, true).toString(16));
+		v_relOffset = GraFlicEncoder.readUint32(v_oct, v_cdPos + 42, true);
 		if(v_relOffset == 0){v_offsetMode = 1;}
 		//0 is never valid for the offset from central directory defined in the spec. If the first offset is 0, it must use the undocumented mode that uses the offset from the start of the file.
 		if(v_offsetMode == 1){
@@ -133,19 +134,19 @@ function GraFlicArchive(zipDataUint8, paramz){
 		console.log('version needed to extract, version: ' + v_oct[v_cdPos + 6] + ' OS: ' + v_oct[v_cdPos + 7]);
 		console.log('rel offset: ' + v_relOffset + ' starting at: ' + v_fileHeadStart);
 		v_pos = v_fileHeadStart;
-		v_payloadSize = GraFlicExport.readUint32(v_oct, v_cdPos + 20, true);//Read size out of central directory where it should be calculated. In the local file header it may be undefined if bit 3 of the flags is set. So far, this seems to reliably work to get payload size.
-		v_cdFilenameSize = GraFlicExport.readUint16(v_oct, v_cdPos + 28, true);
-		v_cdExtraFieldSize = GraFlicExport.readUint16(v_oct, v_cdPos + 30, true);//The extra field on central directory might be different from local file header.
-		v_commentSize = GraFlicExport.readUint16(v_oct, v_cdPos + 32, true);//Comment ONLY appears on central directory header, NOT the local file header.
+		v_payloadSize = GraFlicEncoder.readUint32(v_oct, v_cdPos + 20, true);//Read size out of central directory where it should be calculated. In the local file header it may be undefined if bit 3 of the flags is set. So far, this seems to reliably work to get payload size.
+		v_cdFilenameSize = GraFlicEncoder.readUint16(v_oct, v_cdPos + 28, true);
+		v_cdExtraFieldSize = GraFlicEncoder.readUint16(v_oct, v_cdPos + 30, true);//The extra field on central directory might be different from local file header.
+		v_commentSize = GraFlicEncoder.readUint16(v_oct, v_cdPos + 32, true);//Comment ONLY appears on central directory header, NOT the local file header.
 
-		console.log('local file header sig: ' + GraFlicExport.readUint32(v_oct, v_pos, true).toString(16));
-		v_bitFlags = GraFlicExport.readUint16(v_oct, v_pos + 6, true);
-		v_payloadCompression = GraFlicExport.readUint16(v_oct, v_pos + 8, true);
-		v_filenameSize = GraFlicExport.readUint16(v_oct, v_pos + 26, true);
-		v_extraFieldSize = GraFlicExport.readUint16(v_oct, v_pos + 28, true);
+		console.log('local file header sig: ' + GraFlicEncoder.readUint32(v_oct, v_pos, true).toString(16));
+		v_bitFlags = GraFlicEncoder.readUint16(v_oct, v_pos + 6, true);
+		v_payloadCompression = GraFlicEncoder.readUint16(v_oct, v_pos + 8, true);
+		v_filenameSize = GraFlicEncoder.readUint16(v_oct, v_pos + 26, true);
+		v_extraFieldSize = GraFlicEncoder.readUint16(v_oct, v_pos + 28, true);
 		v_pos += 30;
 		
-		v_filename = GraFlicExport.readStringUTF8(v_oct, v_pos, v_filenameSize);
+		v_filename = GraFlicEncoder.readStringUTF8(v_oct, v_pos, v_filenameSize);
 		//OLD only ASCII compatible: v_filename = String.fromCharCode.apply(null, v_oct.subarray(v_pos, v_pos + v_filenameSize));
 		v_pos += v_filenameSize;
 		v_pos += v_extraFieldSize;//This app does not use extra field, but check for it in case the ZIP was edited and repackaged by another ZIP writer.
@@ -176,48 +177,98 @@ function GraFlicArchive(zipDataUint8, paramz){
 				console.log('The folder was repackaged inside of itself it seems. Filename fixed to: ' + v_filename);
 			}
 			var xFile = {};
-			xFile.path = v_filename;//keep a reference for what the path is in case object referenced elsewhere.
-			try{
-			//JSON and text will not have .data populated since it is pretty useless in most cases and would waste resources.
-			if(v_filename.match(/\.json$/i)){
+			xFile.p = v_filename;//keep a reference for what the path is in case object referenced elsewhere.
+			try{//-----------------------------------------------------------------------------------
+			if(v_filename.match(/\.gz$/i)){
+				//If .gz first decompress it with whatever compression method is defined in the ZIP entry (usually 0 none),
+				//then set the decompressor to ungzip because .gz has internal compression of its own.
+				v_extractedBytes = v_decompressor(v_extractedBytes);
+				v_decompressor = window.pako.ungzip;
+				console.log('.gz file, setting decompression to GZip');
+			}
+			//JSON and text will not have .d (data) populated since it is pretty useless in most cases and would waste resources.
+			if(v_filename.match(/\.json(\.gz)?$/i)){
 				//JSON needs extra logic to JSONize it into memory.
-				xFile.json = JSON.parse(v_decompressor(v_extractedBytes, {'to':'string'}));
+				xFile.j = JSON.parse(v_decompressor(v_extractedBytes, {'to':'string'}));
 				//alert('extracted JSON(' + v_filename + '): ' + JSON.stringify(xFile));
-			}else if(v_filename.match(/\.txt$/i)){
-				xFile.text = v_decompressor(v_extractedBytes, {'to':'string'});
-			}else if(v_filename.match(/\.(a*png|jpe*g|giff*|webp)/i)){
-				//Keep image Uint8Array linked in case it needs to be examined for metadata such as EXIF rotation.
-				//Also make a loadable BLOB ObjectURL so it can easily be loaded into images in the DOM.
-				//Since the Uint8Array is used to build the BLOB for the ObjectURL, it would seem that dereferencing
-				//it would probably not save any runtime resources, may as well keep it alive for analysis if needed.
-				xFile.data = v_decompressor(v_extractedBytes);
-				this.fileToBLOB(xFile);
+				this.j[v_filename.replace(/\.json(\.gz)?$/i, '')] = xFile.j;//Set up a quick link for accessing JSON.
+							//JSON files will typically contain the main configuration, parameters, and settings of a format
+							//and need to be accessed often so .j.config.valX is less cluttered than: .f['config.json'].valX
+							//do this after the file was successfully extracted
+			}else if(v_filename.match(/\.txt(\.gz)?$/i)){
+				xFile.t = v_decompressor(v_extractedBytes, {'to':'string'});
 			}else{
-				xFile.data = v_decompressor(v_extractedBytes);
+				xFile.d = v_decompressor(v_extractedBytes);
 				//Some browser may truncate the array text when tracing to debug and look like all zeroes.
 				//console.log('extracted U8Array(' + v_filename + '): ' + xFile);
 			}
 			}catch(fileError){
 				console.log('error reconstituting ' + v_filename + ', it may be a junk or auto-generated file.');
-			}
-			this.files[v_filename] = xFile;//if completed with no errors, include it in the files object
+			}//-------------------------------- end try/catch ----------------------------------------
+
+			//else if(v_filename.match(/\.(a*png|jpe*g|giff*|webp)(\.gz)?$/i)){
+			//}
+				//Keep image Uint8Array linked in case it needs to be examined for metadata such as EXIF rotation.
+				//Also make a loadable BLOB ObjectURL so it can easily be loaded into images in the DOM.
+				//Since the Uint8Array is used to build the BLOB for the ObjectURL, it would seem that dereferencing
+				//it would probably not save any runtime resources, may as well keep it alive for analysis if needed.
+			//make BLOBs for all files too
+			xFile.d = v_decompressor(v_extractedBytes);
+			this.fileToBLOB(xFile);
+			this.f[v_filename] = xFile;//if completed with no errors, include it in the files object
 		}
 		v_filesRead++;
 	}//end while
 };//(semicolon not needed since function definition not = function, but it appears to not effect things being here...) end of GraFlicArchive() constructor
 GraFlicArchive.prototype.addFile = function(v_fileAdded){
-	this.files[v_fileAdded.path] = v_fileAdded;
+	//required params:
+	//.p (path)
+	//some content, unless it is a folder
+	//(.d (data) or .j (json) or .t (text) )
+	//other properties:
+	//.b - blob link, will be created based on .d data if present
+	//.temp - if defined true, this will not be saved in the archive binary
+		//In many cases there is temp data needed to function at run time but not needed in the save.
+		//Setting these things up with separate logic can cause bloat and lots of redundant code in some cases.
+		//For the sake of consistency and keeping the code trimmed down, adding it to the archive but setting .temp may be better.
+	
+	if(this.f[v_fileAdded.p] && this.f[v_fileAdded.p].b){
+		//If overwriting the file, first destroy the previous blob
+		URL.revokeObjectURL(this.f[v_fileAdded.p].b);
+	}
+	if(v_fileAdded.j){//Set up short link for json since JSON is very often accessed.
+		//alert(v_fileAdded.p.replace(/\.json(\.gz)?$/i, ''));
+		this.j[v_fileAdded.p.replace(/\.json(\.gz)?$/i,'')] = v_fileAdded.j;
+	}
+	this.f[v_fileAdded.p] = v_fileAdded;
 	this.fileToBLOB(v_fileAdded);
 };//end .addFile()
+GraFlicArchive.prototype.deleteFile = function(v_fPath){
+	if(this.f[v_fPath]){
+		if(this.f[v_fPath].b){
+			URL.revokeObjectURL(this.f[v_fPath].b);
+		}
+		var v_fPathNoExt = v_fPath.replace(/\.[^\.]+(\.gz)?$/i, '');
+		if(this.j[v_fPathNoExt]){//if a quick access var for JS was created, remove it (example: .f['stuff.json'].j could be accessed at .j.stuff)
+			delete this.j[v_fPathNoExt];
+		}
+		//TODO: would a this.t for quick .txt access be useful?
+		delete this.f[v_fPath];
+	}
+};
 GraFlicArchive.prototype.fileToBLOB = function(v_srcFile){
-	if(!v_srcFile.blob){//Do not make the blob if it has already been created elsewhere and set.
+	if(v_srcFile.d){//BLOB creation may not be possible if .d (data) not set. BLOBs are mainly needed for things like images, which will have that
 		var objParamz = {};
 		objParamz.type = 'application/octet-stream';
-		if(v_srcFile.path.match(/\.a*png$/i)){objParamz.type = 'image/png';}
-		if(v_srcFile.path.match(/\.jpe*g$/i)){objParamz.type = 'image/jpeg';}
-		if(v_srcFile.path.match(/\.giff*$/i)){objParamz.type = 'image/gif';}
-		if(v_srcFile.path.match(/\.webp$/i)){objParamz.type = 'image/webp';}
-		v_srcFile.blob = URL.createObjectURL(  new Blob([v_srcFile.data], objParamz)  );
+		//.gz will be auto decompressed on load, and auto-compressed internally on save (before being stored in the ZIP with method 0 no compression)
+		if(v_srcFile.p.match(/\.a*png(\.gz)?$/i)){objParamz.type = 'image/png';}
+		if(v_srcFile.p.match(/\.jpe*g(\.gz)?$/i)){objParamz.type = 'image/jpeg';}
+		if(v_srcFile.p.match(/\.giff*(\.gz)?$/i)){objParamz.type = 'image/gif';}
+		if(v_srcFile.p.match(/\.webp(\.gz)?$/i)){objParamz.type = 'image/webp';}
+		if(v_srcFile.p.match(/\.txt(\.gz)?$/i)){objParamz.type = 'text/plain';}
+		if(v_srcFile.p.match(/\.json(\.gz)?$/i)){objParamz.type = 'application/json';}
+		
+		v_srcFile.b = URL.createObjectURL(  new Blob([v_srcFile.d], objParamz)  );
 	}
 };//end .fileToBLOB()
 GraFlicUtil.noCompression = function(fBytes, fParamZ){return fBytes;};//Do nothing with compression type 0, none.
@@ -240,19 +291,25 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 		"data":<points to the object that will be saved as a file. such an object can be Uint8Array raw data, or a JS object that will be converted into a JSON string. This can also be set to false or omitted if it is an entry with no data like a folder.>
 	}
 	*/
-	//the result will be saved to this.blob - An ObjectURL to the BLOB of the zip
-	//TODO: include? zRes.data - The octet stream of the raw data. Maybe not because it does not need to usually be analyzed directly until loaded again via .loadFromZIP()
+	//the result will be saved to this.b - An ObjectURL link to the BLOB of the zip
+	//TODO: include? zRes.d - The octet stream of the raw data. Maybe not because it does not need to usually be analyzed directly until loaded again via .loadFromZIP()
 	
 	//This format should be ZIP based and even keep the .zip extension. Custom extensions without a widely known mime-type have a hard time being handled correctly for download in the various browsers. This also tells users, they can extract it, analyze it, edit it, replace files, and rebuild the zip to do things like replace embedded images or edit the JSON directly. Typically only advanced users would do this, but it is good to have as an option.
 	//ZIP uses little-Endian for all values, unless specifically said otherwise.
 	//Zip version needed is 2.0, supports DEFLATE compression and folders.
-	//var v_saveLen = 8;// magic number and version number
-	var v_saveLen = 0;//ZIP has no magic number properly, but will usually start with PK due to file header signature.
+	var v_saveLen = 22;//(End of Central Directory length)
+		//ZIP has no magic number properly, but will usually start with PK due to file header signature.
 	var v_i;
 	var v_i2;
 	var v_iKey;
 	//pako deflate Options
 	var v_pakoDO = {
+		"windowBits":15,
+		"memLevel":9,
+		"level":9
+	};
+	var v_pakoGO = {
+		"gzip":true,
 		"windowBits":15,
 		"memLevel":9,
 		"level":9
@@ -269,44 +326,59 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 	var curFileCompression;
 	var curFileUncompressedSize;//needed to save what the size was before deflating.
 	var v_fileCount = 0;
-	for(v_iKey in this.files){
+	for(v_iKey in this.f){
 		console.log('[' + v_iKey + ']');
-		curFile = this.files[v_iKey];
-		curFilePayload = curFile.data;
+		curFile = this.f[v_iKey];
+		if(curFile.temp){//Some files are temporarily used in run-time memory, but should not be saved to the archive.
+			console.log('skipping temporary file: ' + curFile.p);
+		}else{//--------------------- if not a temp file ------------------
+		curFilePayload = curFile.d;
 		curFileCompression = 8;//Default to method 8, Deflate.
-		if(curFile.path.match(/\.json$/i)){
-			//TODO: in some cases maybe JSON is pre-stringified and in .text instead of .json ??
-			curFilePayload = JSON.stringify(curFile.json, null, '\t');//By default, use tab spacing to help readability.
+		if(curFile.p.match(/\.json$/i)){
+			//TODO: in some cases maybe JSON is pre-stringified and in .t instead of .j ??
+			curFilePayload = GraFlicEncoder.stringToBytesUTF8(JSON.stringify(curFile.j, null, '\t'));//By default, use tab spacing to help readability.
+			//Somehow previously, UTF seemed to work with just copying string to Uint8 array...?
+			//But shouldn't this be a UTF-16 DOM String that needs conversion...? (It seems pako must have auto-handled the string.)
 		}
-		if(curFile.path.match(/\.txt$/i)){
-			curFilePayload = curFile.text;
+		if(curFile.p.match(/\.txt$/i)){
+			curFilePayload = GraFlicEncoder.stringToBytesUTF8(curFile.t);
 		}
-		if(curFile.path.match(/\.(gz|a*png|jpe*g|giff*|webp)$/i)){
+		if(curFile.p.match(/\.(gz|a*png|jpe*g|giff*|webp)$/i)){
 			//GZip compressed files and Images have their own built-in compression, so compressing already compressed data is not efficient.
 			curFileCompression = 0;
 		}
-		if(!curFilePayload){//if .data is not set, then it is an empty entry like a folder
+		if(!curFilePayload){//if .d (data) is not set, then it is an empty entry like a folder
 			curFilePayload = new Uint8Array(new ArrayBuffer(0));//Make 0 length data object.
 			curFileCompression = 0;
 		}
-		curFileUncompressedSize = curFilePayload.length;//save size before the Deflate..
+		if(curFile.p.match(/\.gz$/i)){//this will apply to ALL files with .gz at the end (.dat.gz, .png.gz, .txt.gz ...)
+			//ZIP compression will have been set to 0 none for having .gz at the end already,
+			//now do the internal compression for the .gz
+			//For some reason not getting the right magic number using gzip()
+			//when the params specifically have "gzip":true it seems to work
+			//maybe passing custom params to pako.gzip without "gzip":true sets GZip wrapper to false??
+			curFilePayload = window.pako.gzip(curFilePayload, v_pakoGO);
+			//console.log('GZ magic number: ' + curFilePayload[0].toString(16) + ' ' + curFilePayload[1].toString(16));
+			//var v_unGZTest = window.pako.ungzip(curFilePayload);
+		}
+		curFileUncompressedSize = curFilePayload.length;//save size before the Deflate.. (however, be sure to do this after logic so .gz has the correct original size, not size before internal gz compression)
 		if(curFileCompression == 8){//if using compression. Only currently supports Deflate(8) or no compression (0).
 			curFilePayload = window.pako.deflateRaw(curFilePayload, v_pakoDO);
 		}
-		console.log('queuing file: ' + curFile.path + ' dataSize: ' + curFilePayload.length + ' compress mode: ' + curFileCompression + ' original size: ' + curFileUncompressedSize);
+		console.log('queuing file: ' + curFile.p + ' dataSize: ' + curFilePayload.length + ' compress mode: ' + curFileCompression + ' original size: ' + curFileUncompressedSize);
 		v_filesToWrite.push(
-			GraFlicExport.stringToBytesUTF8(curFile.path),//get UTF-8 compatible Uint8Array... (JS 16-bit string chars do not translate to UTF-8)
+			GraFlicEncoder.stringToBytesUTF8(curFile.p),//get UTF-8 compatible Uint8Array... (JS 16-bit string chars do not translate to UTF-8)
 			curFilePayload,
 			curFileCompression,
 			curFileUncompressedSize
 		);
 		v_fileCount++;
+		}//---------------- end not temp file --------------------------
 	}
 
 	for(v_i = 0;v_i < v_filesToWrite.length;v_i += 4){//count the size of everything that was queue to be added to the file.
-		v_saveLen += 98 + v_filesToWrite[v_i].length * 2 + v_filesToWrite[v_i + 1].length;
-				//Divided by 3 because %## escapes for UTF-8
-			//(30) ZIP local file header value lengths, + (46) central file header + (22) End of Central Directory
+		v_saveLen += 76 + v_filesToWrite[v_i].length * 2 + v_filesToWrite[v_i + 1].length;
+			//(30) ZIP local file header value lengths, + (46) central file header
 			//(filename appears in both headers, so * 2)
 	}
 	console.log('Allocating ZIP file size: ' + v_saveLen);
@@ -348,7 +420,7 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 		//cdh array has [position of file header, cdc binary ... ] pairs. It needs to calculate the offset based on where the local file header starts.
 		v_centralDirectoryHeaders.push(v_pos);
 		//local file header signature
-		GraFlicExport.writeUint32(v_oct, 0x04034B50, v_pos, true);
+		GraFlicEncoder.writeUint32(v_oct, 0x04034B50, v_pos, true);
 		v_pos += 4;
 		var v_copyPosCDH = v_pos;//copy everything from here into the central directory header where it also appears.
 		//2.0, version needed to extract. Assuming the 2 bytes are major version, minor version.
@@ -371,37 +443,37 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 		//|        1 (or 0 since using ZIP 2.0)           |     0    |     0     |      0      |
 		//It looks like some of these are not defined as of ZIP 2.0, only the first 3 bits are, so leave others as 0.
 		//Apparently bits are in REVERSE ORDER, so this should be 0x0002, not 0x4000.
-		GraFlicExport.writeUint16(v_oct, 0x0002, v_pos, true);
+		GraFlicEncoder.writeUint16(v_oct, 0x0002, v_pos, true);
 		v_pos += 2;
 		//Note: Do bits 1 and 2 need to be zeroed if uncompressed? Spec says it is undefined in that case so it seems it shouldn't matter...
 		
 		//compression method
-		GraFlicExport.writeUint16(v_oct, v_filesToWrite[v_i + 2], v_pos, true);
+		GraFlicEncoder.writeUint16(v_oct, v_filesToWrite[v_i + 2], v_pos, true);
 		v_pos += 2;
 		//MS-DOS format date and time.
-		GraFlicExport.writeUint16(v_oct, packedTime, v_pos, true);
+		GraFlicEncoder.writeUint16(v_oct, packedTime, v_pos, true);
 		v_pos += 2;
-		GraFlicExport.writeUint16(v_oct, packedDate, v_pos, true);
+		GraFlicEncoder.writeUint16(v_oct, packedDate, v_pos, true);
 		v_pos += 2;
 		//CRC32 (Assuming CRC of the compressed or plain file itself.)
-		GraFlicExport.writeUint32(v_oct, GraFlicExport.getCRC32(v_payload2Copy, 0, v_payload2Copy.length), v_pos, true);
+		GraFlicEncoder.writeUint32(v_oct, GraFlicEncoder.getCRC32(v_payload2Copy, 0, v_payload2Copy.length), v_pos, true);
 		v_pos += 4;
 		//compressed size
-		GraFlicExport.writeUint32(v_oct, v_payloadSize, v_pos, true);
+		GraFlicEncoder.writeUint32(v_oct, v_payloadSize, v_pos, true);
 		v_pos += 4;
 		
 		//uncompressed size
-		GraFlicExport.writeUint32(v_oct, v_filesToWrite[v_i + 3], v_pos, true);
+		GraFlicEncoder.writeUint32(v_oct, v_filesToWrite[v_i + 3], v_pos, true);
 		v_pos += 4;
 		
 		//filename length
-		GraFlicExport.writeUint16(v_oct, v_filenameSize, v_pos, true);
+		GraFlicEncoder.writeUint16(v_oct, v_filenameSize, v_pos, true);
 		v_pos += 2;
 		
 		//extra field length. 0, does not use extra field.
-		GraFlicExport.writeUint16(v_oct, 0, v_pos, true);
+		GraFlicEncoder.writeUint16(v_oct, 0, v_pos, true);
 		v_pos += 2;
-		GraFlicExport.writeUbytes(v_oct, v_filenameBytesUTF8, v_pos);
+		GraFlicEncoder.writeUbytes(v_oct, v_filenameBytesUTF8, v_pos);
 		v_pos += v_filenameBytesUTF8.length;
 		/*
 		//write filename (first remove first '%' and split to get the UTF-8 octet hex codes in an array)
@@ -420,19 +492,19 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 		}
 		v_centralDirectoryHeaders.push(v_centralDH);
 		
-		GraFlicExport.writeUint32(v_centralDH, 0x02014B50, 0, true);//signature
+		GraFlicEncoder.writeUint32(v_centralDH, 0x02014B50, 0, true);//signature
 		
 		v_centralDH[4] = 20;//Version made by * 10, 2.1
 		v_centralDH[5] = 3;//OS code 3 *nix
 		//... copied from local file header ...
-		GraFlicExport.writeUint16(v_centralDH, 0, 30, true);//extra field length (do not use either of these extra/comment)
-		GraFlicExport.writeUint16(v_centralDH, 0, 32, true);//comment length
-		GraFlicExport.writeUint16(v_centralDH, 0x0000, 34, true);//disk number
-		GraFlicExport.writeUint16(v_centralDH, 0x0000, 36, true);//internal file attributes
-		GraFlicExport.writeUint32(v_centralDH, 0x00000000, 38, true);//external file attributes
-		GraFlicExport.writeUint32(v_centralDH, 0x00000000, 42, true);//relative offset to local file header (will be filled in when the position it is offsetting from is known.)
+		GraFlicEncoder.writeUint16(v_centralDH, 0, 30, true);//extra field length (do not use either of these extra/comment)
+		GraFlicEncoder.writeUint16(v_centralDH, 0, 32, true);//comment length
+		GraFlicEncoder.writeUint16(v_centralDH, 0x0000, 34, true);//disk number
+		GraFlicEncoder.writeUint16(v_centralDH, 0x0000, 36, true);//internal file attributes
+		GraFlicEncoder.writeUint32(v_centralDH, 0x00000000, 38, true);//external file attributes
+		GraFlicEncoder.writeUint32(v_centralDH, 0x00000000, 42, true);//relative offset to local file header (will be filled in when the position it is offsetting from is known.)
 		//Central directory header has filename too.
-		GraFlicExport.writeUbytes(v_centralDH, v_filenameBytesUTF8, 46);
+		GraFlicEncoder.writeUbytes(v_centralDH, v_filenameBytesUTF8, 46);
 		/*for(v_i2 = 0;v_i2 < v_filenameSize;v_i2++){
 			v_centralDH[46 + v_i2] = v_filenameBytesUTF8[v_i2];//escapes previously parsed to bytes
 		}*/
@@ -440,17 +512,19 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 		//--------------------------------------------------
 		
 		//copy payload to the ZIP file
-		for(v_i2 = 0;v_i2 < v_payloadSize;v_i2++){
+		GraFlicEncoder.writeUbytes(v_oct, v_payload2Copy, v_pos);
+		v_pos += v_payloadSize;
+		/*for(v_i2 = 0;v_i2 < v_payloadSize;v_i2++){
 			v_oct[v_pos] = v_payload2Copy[v_i2];
 			v_pos++;
-		}
+		}*/
 	}//end for
 	//The central directories have been previously built. now copy them to the central directory at the end.
 	var v_startCD = v_pos;//used to calculate central directory size and offset.
 	for(v_i = 0;v_i < v_centralDirectoryHeaders.length;v_i += 2){
 		v_centralDH = v_centralDirectoryHeaders[v_i + 1];
 		var v_correspondingFileHeaderPos = v_centralDirectoryHeaders[v_i];
-		GraFlicExport.writeUint32(v_centralDH, v_pos - v_correspondingFileHeaderPos, 42, true);//relative offset to local file header
+		GraFlicEncoder.writeUint32(v_centralDH, v_pos - v_correspondingFileHeaderPos, 42, true);//relative offset to local file header
 		for(v_i2 = 0;v_i2 < v_centralDH.length;v_i2++){
 			v_oct[v_pos] = v_centralDH[v_i2];
 			v_pos++;
@@ -458,21 +532,21 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 	}
 	//============ Write end of directory header. ===================
 	var v_sizeCD = v_pos - v_startCD;//assuming size of central directory does not include this end of directory header...
-	GraFlicExport.writeUint32(v_oct, 0x06054B50, v_pos, true);
+	GraFlicEncoder.writeUint32(v_oct, 0x06054B50, v_pos, true);
 	v_pos += 4;
-	GraFlicExport.writeUint16(v_oct, 0, v_pos, true);//Current disk number
+	GraFlicEncoder.writeUint16(v_oct, 0, v_pos, true);//Current disk number
 	v_pos += 2;
-	GraFlicExport.writeUint16(v_oct, 0, v_pos, true);//Disk where central directory starts
+	GraFlicEncoder.writeUint16(v_oct, 0, v_pos, true);//Disk where central directory starts
 	v_pos += 2;
-	GraFlicExport.writeUint16(v_oct, v_fileCount, v_pos, true);//Central Directory records count on current disk
+	GraFlicEncoder.writeUint16(v_oct, v_fileCount, v_pos, true);//Central Directory records count on current disk
 	v_pos += 2;
-	GraFlicExport.writeUint16(v_oct, v_fileCount, v_pos, true);//Central Directory record count
+	GraFlicEncoder.writeUint16(v_oct, v_fileCount, v_pos, true);//Central Directory record count
 	v_pos += 2;
-	GraFlicExport.writeUint32(v_oct, v_sizeCD, v_pos, true);//Central Directory size
+	GraFlicEncoder.writeUint32(v_oct, v_sizeCD, v_pos, true);//Central Directory size
 	v_pos += 4;
-	GraFlicExport.writeUint32(v_oct, v_startCD, v_pos, true);//Central Directory position, bytes away from the start of the zip
+	GraFlicEncoder.writeUint32(v_oct, v_startCD, v_pos, true);//Central Directory position, bytes away from the start of the zip
 	v_pos += 4;
-	GraFlicExport.writeUint16(v_oct, 0, v_pos, true);//Comment Size
+	GraFlicEncoder.writeUint16(v_oct, 0, v_pos, true);//Comment Size
 	v_pos += 2;
 //Comment (Not written, comment length set to 0.)
 	//-----------------------------------------
@@ -485,7 +559,7 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 			blobParams = blobMimetype;
 		}
 	}
-	this.blob = URL.createObjectURL( new Blob([v_oct], blobParams) );
+	this.b = URL.createObjectURL( new Blob([v_oct], blobParams) );
 };//end GraFlicArchive.saveBLOB()
 GraFlicArchive.archives = [];//A list of archives that have been loaded into memory. Useful for getting a file from any archive that has the path to it.
 GraFlicArchive.getFileFromAny = function(fPath){
@@ -494,8 +568,8 @@ GraFlicArchive.getFileFromAny = function(fPath){
 	var curArchive;
 	for(var i = 0;i < GraFlicArchive.archives.length;i++){
 		curArchive = GraFlicArchive.archives[i];
-		if(curArchive.files[fPath]){
-			return curArchive.files[fPath];
+		if(curArchive.f[fPath]){
+			return curArchive.f[fPath];
 		}
 	}
 	return false;
@@ -508,14 +582,14 @@ GraFlicArchive.prototype.revokeAll = function(){
 };
 GraFlicArchive.prototype.revokeFiles = function(){
 	var v_file;
-	for(var v_iKey in this.files){
-		v_file = this.files[v_iKey];
-		if(v_file.blob){URL.revokeObjectURL(v_file.blob);}
+	for(var v_iKey in this.f){
+		v_file = this.f[v_iKey];
+		if(v_file.b){URL.revokeObjectURL(v_file.b);}
 	}
 };
 GraFlicArchive.prototype.revokeArchiveFile = function(){
-	if(this.blob){//Clear previous save to stop memory leak.
-		URL.revokeObjectURL(this.blob);
+	if(this.b){//Clear previous save to stop memory leak.
+		URL.revokeObjectURL(this.b);
 	}
 };
 

@@ -1,5 +1,5 @@
 /*
-GraFlicExport by Compukaze LLC
+GraFlicEncoder by Compukaze LLC
 
 Visit
 
@@ -116,7 +116,7 @@ HTML5 does mandate that the image should be able to reproduce all original pixel
 exactly, but it is unclear if this means an image with a low number of colors that
 could be encoded with 8 bit indexed color is mandated to stay 32 bit RGBA.
 
-However, GraFlicExport can be comboed with Zopfli or pako for enhanced compression.
+However, GraFlicEncoder can be comboed with Zopfli or pako for enhanced compression.
 
 https://github.com/imaya/zopfli.js (The Apache License 2.0)
 ( ported from https://github.com/google/zopfli )  (The Apache License 2.0)
@@ -191,7 +191,7 @@ var paramz = {
 	"onProgress":<function to call as encoding progresses. receives a 0-1 number representing a percentage>,
 	"onFrameAdded":<function that will get called when a frame image has been fully added, after loading and such>
 }
-var ae = new GraFlicExport(paramz);
+var ae = new GraFlicEncoder(paramz);
 	(The parameters can also be changed after initialization by setting ae.width = 500; for example.)
 	"fitting" describes how images are fit into the animation bounds.
 		'actual' = Draw image at actual size on the canvas at (0,0).
@@ -237,12 +237,12 @@ function onEncodedFunc(ae){
 		(Only a single locale is supported, writing metadata for multiple locales is allot of bloat and would be rarely used.)
 	"retainPastOutput":<true|false>, (default is not set, evaluates false)
 		//By default, output is only retained until saveAnimatedFile is run again.
-		//If retainPastOutput is set to true, it will be up to the software using the GraFlicExport class
+		//If retainPastOutput is set to true, it will be up to the software using the GraFlicEncoder class
 		//to do memory management and decide when to revoke ObjectURLs that are no longer needed.
 		//AE by default assumes that if you are re-encoding the image, you are redoing the same image
 		//with different parameters and discards the previous blob file to prevent huge memory leaks.
 		//If making multiple images and wanting the output to stay downloadable/saveable for all images,
-		//set retainPastOutput = true or make multiple GraFlicExport() instances.
+		//set retainPastOutput = true or make multiple GraFlicEncoder() instances.
 
 	********** The following will be set internally and do *******
 	*************** NOT need to be set in paramz *****************
@@ -259,7 +259,7 @@ but the Cross-Origin Resource Sharing rules can create huge headaches when testi
 
 */
 'use strict';
-function GraFlicExport(paramz,simpleQuality){
+function GraFlicEncoder(paramz,simpleQuality){
 	if(paramz == 'webp'//only webp is implemented so far
 	 ||paramz == 'png'
 	 ||paramz == 'gif'
@@ -268,7 +268,7 @@ function GraFlicExport(paramz,simpleQuality){
 		//if called with an unsupported string it could break,
 		//but that is not a valid value to call it with
 		//Valid initialization values are:
-//new GraFlicExport('webp'|'webm'|'png'|'gif'|Object)
+//new GraFlicEncoder('webp'|'webm'|'png'|'gif'|Object)
 		paramz = {
 				"format":paramz
 			};
@@ -303,7 +303,7 @@ function GraFlicExport(paramz,simpleQuality){
 	
 	this.encoderCanvas = document.createElement('canvas');
 };
-GraFlicExport.prototype.supportsFormat = function(desiredFormat){
+GraFlicEncoder.prototype.supportsFormat = function(desiredFormat){
 	//This means the animated format can be created in the user's current browser.
 	//It does not always mean that browser can display the animation.
 	desiredFormat = desiredFormat.toLowerCase();
@@ -323,7 +323,7 @@ GraFlicExport.prototype.supportsFormat = function(desiredFormat){
 	}//===========end of types that are supported if toDataURL is available for them.========
 	return false;
 };
-GraFlicExport.prototype.clearFrames = function(){
+GraFlicEncoder.prototype.clearFrames = function(){
 	//A standard function for clearing frames. Will look cleaner for developers.
 	this.frames = [];
 };
@@ -341,7 +341,7 @@ contents{
 	ANMF (frameX paramz and data)
 }
 */
-GraFlicExport.prototype.addFrame = function(frameParamz){
+GraFlicEncoder.prototype.addFrame = function(frameParamz){
 	/*a frame can be added 3 different ways.
 	only ONE of these should be set
 	{"image":[Object IMG]}
@@ -360,13 +360,15 @@ GraFlicExport.prototype.addFrame = function(frameParamz){
 	var this_this = this;
 	//since a zero-length frame might be something some format supports at some point,
 	//auto detect and set custom delay to true if any delay parameter is set.
+	/*
 	//depending on ===undefined is confusing and might be unreliable
 	frameParamz.hasCustomDelay = false;
 	for(var key in frameParamz){
 		if(key=='delay'){
 			frameParamz.hasCustomDelay = true;
 		}
-	}
+	}//acutlally === undefined seems fine
+	*/
 	if(frameParamz.image){
 		this.addFrameFromImage(frameParamz);
 	}else if(frameParamz.file){
@@ -375,42 +377,42 @@ GraFlicExport.prototype.addFrame = function(frameParamz){
 		this.imageLoading = document.createElement('img');
 		frameParamz.image = this.imageLoading;
 		this.frameLoadingParamz = frameParamz;
-		this.imageLoadingFunc = GraFlicExport_frameImageLoading.bind(this);
+		this.imageLoadingFunc = GraFlicEncoder_frameImageLoading.bind(this);
 		this.imageLoading.addEventListener('load', this.imageLoadingFunc);
 		
 		this.fileReading = new FileReader();
-		this.fileReadingFunc = GraFlicExport_frameFileReading.bind(this);
+		this.fileReadingFunc = GraFlicEncoder_frameFileReading.bind(this);
 		this.fileReading.addEventListener('load', this.fileReadingFunc);
 		this.fileReading.readAsDataURL(frameParamz.file);
 	}else if(frameParamz.url){
 		this.imageLoading = document.createElement('img');
 		frameParamz.image = this.imageLoading;
 		this.frameLoadingParamz = frameParamz;
-		this.imageLoadingFunc = GraFlicExport_frameImageLoading.bind(this);
+		this.imageLoadingFunc = GraFlicEncoder_frameImageLoading.bind(this);
 		this.imageLoading.addEventListener('load', this.imageLoadingFunc);
 		this.imageLoading.src = frameParamz.url;
 	}
 };
-function GraFlicExport_frameFileReading(aeEvent){
+function GraFlicEncoder_frameFileReading(aeEvent){
 	this.fileReading.removeEventListener('load', this.fileReadingFunc);
 	this.imageLoading.src = this.fileReading.result;
 	delete this.fileReading;
 	delete this.fileReadingFunc;
 }
-function GraFlicExport_frameImageLoading(aeEvent){
+function GraFlicEncoder_frameImageLoading(aeEvent){
 	this.imageLoading.removeEventListener('load', this.imageLoadingFunc);
 	this.addFrameFromImage(this.frameLoadingParamz);
 	delete this.frameLoadingParamz;
 	delete this.imageLoading;
 	delete this.imageLoadingFunc;
 }
-GraFlicExport.prototype.addFrameFromImage = function(frameParamz){
+GraFlicEncoder.prototype.addFrameFromImage = function(frameParamz){
 	//frames should be added, then processing will be done afterwards.
 	this.frames.push(frameParamz);
 	//alert('frame added, now there are '+this.frames.length+' f.image: '+frameParamz.image);
 	if(this.onFrameAdded){this.onFrameAdded();}
 };
-GraFlicExport.prototype.procFrame = function(){
+GraFlicEncoder.prototype.procFrame = function(){
 	var this_this = this;//works around access bugs with 'this'
 	var curFrame = this.frames[this.frameBeingProcessed];
 	var frameImg = curFrame.image;
@@ -775,7 +777,8 @@ GraFlicExport.prototype.procFrame = function(){
 	var raw8;
 	var upd8;
 	var frameDelay = this.delay;//delay in milliseconds
-	if(curFrame.hasCustomDelay){frameDelay=curFrame.delay;}//use frame-specific delay if set.
+	//(remember, 0 delay may be valid so simple ! will not work)
+	if(curFrame.delay !== undefined){frameDelay=curFrame.delay;}//use frame-specific delay if set.
 	//for(i=0;i<upd8.length;i++){
 	//	upd8[i] = 0x50;//fill with 'P' to see if there are errors writing when viewed from text editor.
 	//}
@@ -1838,24 +1841,24 @@ Transparent can be copied from none, but with the region covered by this frame c
 			//fcTL chunk needed for each animation frame
 			//only one fcTL, though there maybe multiple contiguous fdAT following.
 				//(will just make one fdAT/IDAT for PNG8)
-			GraFlicExport.writeUint32(frame8, 26, pos, false);//length
-			GraFlicExport.writeFourCC(frame8, 'fcTL', pos + 4);
-			GraFlicExport.writeUint32(frame8, this.frameSequenceCount, pos + 8, false);
-			GraFlicExport.writeUint32(frame8, maxCX + 1 - minCX, pos + 12, false);//width
-			GraFlicExport.writeUint32(frame8, maxCY + 1 - minCY, pos + 16, false);//height
-			GraFlicExport.writeUint32(frame8, minCX, pos + 20, false);//x
-			GraFlicExport.writeUint32(frame8, minCY, pos + 24, false);//y
-			GraFlicExport.writeUint16(frame8, frameDelay,  pos + 28, false);//Numerator (16-bit uint)
-			GraFlicExport.writeUint16(frame8, 1000,        pos + 30, false);//Denominator (16-bit uint)
+			GraFlicEncoder.writeUint32(frame8, 26, pos, false);//length
+			GraFlicEncoder.writeFourCC(frame8, 'fcTL', pos + 4);
+			GraFlicEncoder.writeUint32(frame8, this.frameSequenceCount, pos + 8, false);
+			GraFlicEncoder.writeUint32(frame8, maxCX + 1 - minCX, pos + 12, false);//width
+			GraFlicEncoder.writeUint32(frame8, maxCY + 1 - minCY, pos + 16, false);//height
+			GraFlicEncoder.writeUint32(frame8, minCX, pos + 20, false);//x
+			GraFlicEncoder.writeUint32(frame8, minCY, pos + 24, false);//y
+			GraFlicEncoder.writeUint16(frame8, frameDelay,  pos + 28, false);//Numerator (16-bit uint)
+			GraFlicEncoder.writeUint16(frame8, 1000,        pos + 30, false);//Denominator (16-bit uint)
 			frame8[pos+32] = 0x00;//Disposal. (Will get updated based on what the next frame draws best over.) 0=none, 1=background, 2=previous
 			frame8[pos+33] = chosenBlending;//Blending. 0=source, 1 = over
-			GraFlicExport.writeUint32(frame8, GraFlicExport.getCRC32(frame8, pos + 4, pos + 34), pos + 34, false);
+			GraFlicEncoder.writeUint32(frame8, GraFlicEncoder.getCRC32(frame8, pos + 4, pos + 34), pos + 34, false);
 			pos += 38;
 			this.frameSequenceCount++;
 		}//end if more than one frame
 		if(this.frameBeingProcessed == 0){//The first frame will be IDAT, after that it will be fdAT
-			GraFlicExport.writeUint32(frame8, chosenByteStream.length, pos, false);//Does not have frameSeqCount
-			GraFlicExport.writeFourCC(frame8, 'IDAT', pos + 4);
+			GraFlicEncoder.writeUint32(frame8, chosenByteStream.length, pos, false);//Does not have frameSeqCount
+			GraFlicEncoder.writeFourCC(frame8, 'IDAT', pos + 4);
 			for(i = 0;i < chosenByteStream.length;i++){
 				frame8[pos + 8 + i] = chosenByteStream[i];
 				//document.write( chosenByteStream[i] + ',');
@@ -1864,19 +1867,19 @@ Transparent can be copied from none, but with the region covered by this frame c
 			//012345678901234567890
 			//####ASCI01234567CRRC
 			
-			GraFlicExport.writeUint32(frame8,GraFlicExport.getCRC32(frame8, pos + 4, pos + 8 + chosenByteStream.length), pos + 8 + chosenByteStream.length, false);//4 less with no FrameSequenceCount.
+			GraFlicEncoder.writeUint32(frame8,GraFlicEncoder.getCRC32(frame8, pos + 4, pos + 8 + chosenByteStream.length), pos + 8 + chosenByteStream.length, false);//4 less with no FrameSequenceCount.
 			pos += chosenByteStream.length + 12;//IDAT does not have frameSequenceCount, that was introduced in AnimatedPNG
 		}else{//fdAT
-			GraFlicExport.writeUint32(frame8, chosenByteStream.length + 4, pos, false);//extra 4 to store frameSeqCount
-			GraFlicExport.writeFourCC(frame8, 'fdAT', pos + 4);
-			GraFlicExport.writeUint32(frame8, this.frameSequenceCount, pos + 8, false);//fdAT needs a uint32 to store frameSequenceCount
+			GraFlicEncoder.writeUint32(frame8, chosenByteStream.length + 4, pos, false);//extra 4 to store frameSeqCount
+			GraFlicEncoder.writeFourCC(frame8, 'fdAT', pos + 4);
+			GraFlicEncoder.writeUint32(frame8, this.frameSequenceCount, pos + 8, false);//fdAT needs a uint32 to store frameSequenceCount
 			for(i = 0;i < chosenByteStream.length;i++){
 				frame8[pos + 12 + i] = chosenByteStream[i];
 			}
 			//0         1         2         3
 			//0123456789012345678901234567890
 			//####ASCIFFSQ01234567CRRC
-			GraFlicExport.writeUint32(frame8,GraFlicExport.getCRC32(frame8, pos + 4, pos + 12 + chosenByteStream.length), pos + 12 + chosenByteStream.length, false);//Must expand range to get the CRC over the FourCC and the extra 4 for the added FrameSequenceCount.
+			GraFlicEncoder.writeUint32(frame8,GraFlicEncoder.getCRC32(frame8, pos + 4, pos + 12 + chosenByteStream.length), pos + 12 + chosenByteStream.length, false);//Must expand range to get the CRC over the FourCC and the extra 4 for the added FrameSequenceCount.
 			this.frameSequenceCount++;
 			pos += chosenByteStream.length + 16;//must be 4 longer here to hold the FrameSequenceCount
 			//for(i = 0;i < frame8.length;i++){
@@ -1988,18 +1991,18 @@ Transparent can be copied from none, but with the region covered by this frame c
 					startIDAT=seekPos;
 					//fcTL chunk needed for each animation frame
 					//only one fcTL, though there maybe multiple contiguous fdAT following.
-					GraFlicExport.writeUint32(upd8,26,upd8_pos,false);//length
-					GraFlicExport.writeFourCC(upd8,'fcTL',upd8_pos+4);
-					GraFlicExport.writeUint32(upd8,this.frameSequenceCount,upd8_pos+8,false);
-					GraFlicExport.writeUint32(upd8,frameFinalW,upd8_pos+12,false);//width
-					GraFlicExport.writeUint32(upd8,frameFinalH,upd8_pos+16,false);//height
-					GraFlicExport.writeUint32(upd8,frameFinalX,upd8_pos+20,false);//x
-					GraFlicExport.writeUint32(upd8,frameFinalY,upd8_pos+24,false);//y
-					GraFlicExport.writeUint16(upd8,frameDelay,upd8_pos+28,false);//Numerator (16-bit uint)
-					GraFlicExport.writeUint16(upd8,1000,upd8_pos+30,false);//Denominator (16-bit uint)
+					GraFlicEncoder.writeUint32(upd8,26,upd8_pos,false);//length
+					GraFlicEncoder.writeFourCC(upd8,'fcTL',upd8_pos+4);
+					GraFlicEncoder.writeUint32(upd8,this.frameSequenceCount,upd8_pos+8,false);
+					GraFlicEncoder.writeUint32(upd8,frameFinalW,upd8_pos+12,false);//width
+					GraFlicEncoder.writeUint32(upd8,frameFinalH,upd8_pos+16,false);//height
+					GraFlicEncoder.writeUint32(upd8,frameFinalX,upd8_pos+20,false);//x
+					GraFlicEncoder.writeUint32(upd8,frameFinalY,upd8_pos+24,false);//y
+					GraFlicEncoder.writeUint16(upd8,frameDelay,upd8_pos+28,false);//Numerator (16-bit uint)
+					GraFlicEncoder.writeUint16(upd8,1000,upd8_pos+30,false);//Denominator (16-bit uint)
 					upd8[upd8_pos+32] = 0x00;//Disposal. 0=none, 1=background, 2=previous
 					upd8[upd8_pos+33] = browserEncodedBlending;//Blending. 0=source, 1 = over
-					GraFlicExport.writeUint32(upd8,GraFlicExport.getCRC32(upd8,upd8_pos+4,upd8_pos+34),upd8_pos+34,false);
+					GraFlicEncoder.writeUint32(upd8,GraFlicEncoder.getCRC32(upd8,upd8_pos+4,upd8_pos+34),upd8_pos+34,false);
 					upd8_pos += 38;
 					this.frameSequenceCount++;
 				}
@@ -2012,9 +2015,9 @@ Transparent can be copied from none, but with the region covered by this frame c
 				var destOffset;
 				var sourceOffset;
 				if(is_fdAT){
-					GraFlicExport.writeUint32(upd8,chunkLen+4,upd8_pos,false);//extra 4 to store frameSeqCount
-					GraFlicExport.writeFourCC(upd8,'fdAT',upd8_pos+4);//overwrite 'IDAT' with 'fdAT'
-					GraFlicExport.writeUint32(upd8,this.frameSequenceCount,upd8_pos+8,false);//fdAT needs a uint32 to store frameSequenceCount
+					GraFlicEncoder.writeUint32(upd8,chunkLen+4,upd8_pos,false);//extra 4 to store frameSeqCount
+					GraFlicEncoder.writeFourCC(upd8,'fdAT',upd8_pos+4);//overwrite 'IDAT' with 'fdAT'
+					GraFlicEncoder.writeUint32(upd8,this.frameSequenceCount,upd8_pos+8,false);//fdAT needs a uint32 to store frameSequenceCount
 					copyEnd = 8+chunkLen;
 					destOffset = upd8_pos+12;//destination start point.
 					sourceOffset = seekPos+8;
@@ -2023,7 +2026,7 @@ Transparent can be copied from none, but with the region covered by this frame c
 						upd8[destOffset+i] = raw8[sourceOffset+i];
 					}
 					//The CRC must be recalculated to cover 'fdAT' and the frame sequence number.
-					GraFlicExport.writeUint32(upd8,GraFlicExport.getCRC32(upd8,upd8_pos+4,upd8_pos+8+chunkLen),upd8_pos+12+chunkLen,false);//Must expand range to get the CRC over the FourCC and the extra 4 for the added FrameSequenceCount.
+					GraFlicEncoder.writeUint32(upd8,GraFlicEncoder.getCRC32(upd8,upd8_pos+4,upd8_pos+8+chunkLen),upd8_pos+12+chunkLen,false);//Must expand range to get the CRC over the FourCC and the extra 4 for the added FrameSequenceCount.
 					this.frameSequenceCount++;
 					upd8_pos += chunkLen+16;//must be 4 longer here to hold the FrameSequenceCount
 				}else{
@@ -2113,7 +2116,7 @@ Transparent can be copied from none, but with the region covered by this frame c
 		setTimeout(function(){this_this.packAnimatedFile();},100);
 	}
 };
-GraFlicExport.prototype.saveAnimatedFile = function(){
+GraFlicEncoder.prototype.saveAnimatedFile = function(){
 	if(this.onProgress){this.onProgress(0);}//Make sure any progress displays are starting at 0%.
 	this.outputString = '';//(deprecated)intermediate state before base64 conversion can be done.
 	this.payloads = [];
@@ -2269,7 +2272,7 @@ GraFlicExport.prototype.saveAnimatedFile = function(){
 	setTimeout(function(){this_this.procFrame();}, 100);//begin the save process.
 };
 
-GraFlicExport.prototype.packAnimatedFile = function(){
+GraFlicEncoder.prototype.packAnimatedFile = function(){
 	var outputLen = 0;
 	var out8;
 	var i, key, meta;
@@ -2302,28 +2305,28 @@ GraFlicExport.prototype.packAnimatedFile = function(){
 		//alert('creating target octet with size: '+outputLen);
 		out8 = new Uint8Array(new ArrayBuffer(outputLen));
 		
-		GraFlicExport.writeFourCC(out8,'RIFF',0);
-		GraFlicExport.writeUint32(out8,outputLen-8,4,true);
-		GraFlicExport.writeFourCC(out8,'WEBP',8);
+		GraFlicEncoder.writeFourCC(out8,'RIFF',0);
+		GraFlicEncoder.writeUint32(out8,outputLen-8,4,true);
+		GraFlicEncoder.writeFourCC(out8,'WEBP',8);
 		
-		GraFlicExport.writeFourCC(out8,'VP8X',12);
-		GraFlicExport.writeUint32(out8,10,16,true);//length of contents (not including VP8X & length)
+		GraFlicEncoder.writeFourCC(out8,'VP8X',12);
+		GraFlicEncoder.writeUint32(out8,10,16,true);//length of contents (not including VP8X & length)
 		//out8[20] = 0x00;//testing VP8X without animation
 		if(this.frames.length > 1){//If Animated WEBP
 			out8[20] = 0x02;//packed field, just set animation bit on, alpha bit is hint only and alpha not currently working in canvas.toDataURL('image/webp') as of early 2016 anyways
 		}else{//if single frame WEBP
 			out8[20] = 0x00;
 		}
-		GraFlicExport.writeUint24(out8,0,21,true);//reserved bits that should be 0
-		GraFlicExport.writeUint24(out8,this.outputWidth-1,24,true);//width-1
-		GraFlicExport.writeUint24(out8,this.outputHeight-1,27,true);//height-1
+		GraFlicEncoder.writeUint24(out8,0,21,true);//reserved bits that should be 0
+		GraFlicEncoder.writeUint24(out8,this.outputWidth-1,24,true);//width-1
+		GraFlicEncoder.writeUint24(out8,this.outputHeight-1,27,true);//height-1
 		writePos += 30;
 		
 		if(this.frames.length > 1){//A single frame WEBP with animation chunks could cause breakage and the chunks are not needed in that case
-			GraFlicExport.writeFourCC(out8, 'ANIM', writePos + 0);
-			GraFlicExport.writeUint32(out8, 6, writePos + 4, true);//length of contents (not including ANIM & length)
-			GraFlicExport.writeUint32(out8, 0x00000000, writePos + 8, true);//BGColor RGBA, just setting to 0x00000000, the viewer can and does seem to ignore this.
-			GraFlicExport.writeUint16(out8, this.loops, writePos + 12, true);
+			GraFlicEncoder.writeFourCC(out8, 'ANIM', writePos + 0);
+			GraFlicEncoder.writeUint32(out8, 6, writePos + 4, true);//length of contents (not including ANIM & length)
+			GraFlicEncoder.writeUint32(out8, 0x00000000, writePos + 8, true);//BGColor RGBA, just setting to 0x00000000, the viewer can and does seem to ignore this.
+			GraFlicEncoder.writeUint16(out8, this.loops, writePos + 12, true);
 			writePos += 14;
 		}
 		//writePos = 30;
@@ -2332,15 +2335,15 @@ GraFlicExport.prototype.packAnimatedFile = function(){
 		for(i=0;i<this.payloads.length;i++){
 			payload = this.payloads[i];
 			if(this.frames.length > 1){//A single frame WEBP with animation chunks could cause breakage and the chunks are not needed in that case
-				GraFlicExport.writeFourCC(out8,'ANMF',writePos);
-				GraFlicExport.writeUint32(out8,16+payload.length,writePos+4,true);//length of ANMF (which INCLUDES a VP8/VP8L chunk at the end of it contained within the ANMF)
-				GraFlicExport.writeUint24(out8,0,writePos+8,true);//x
-				GraFlicExport.writeUint24(out8,0,writePos+11,true);//y
-				GraFlicExport.writeUint24(out8,this.outputWidth-1,writePos+14,true);//width-1
-				GraFlicExport.writeUint24(out8,this.outputHeight-1,writePos+17,true);//height-1
-				frameDelay = this.delay;//delay in milliseconds
-				if(this.frames[i].hasCustomDelay){frameDelay=this.frames[i].delay;}//use frame-specific delay if set.
-				GraFlicExport.writeUint24(out8,frameDelay,writePos+20,true);//duration (milliseconds)
+				GraFlicEncoder.writeFourCC(out8,'ANMF',writePos);
+				GraFlicEncoder.writeUint32(out8,16+payload.length,writePos+4,true);//length of ANMF (which INCLUDES a VP8/VP8L chunk at the end of it contained within the ANMF)
+				GraFlicEncoder.writeUint24(out8,0,writePos+8,true);//x
+				GraFlicEncoder.writeUint24(out8,0,writePos+11,true);//y
+				GraFlicEncoder.writeUint24(out8,this.outputWidth-1,writePos+14,true);//width-1
+				GraFlicEncoder.writeUint24(out8,this.outputHeight-1,writePos+17,true);//height-1
+				frameDelay = this.delay;//delay in milliseconds (remember 0 is valid)
+				if(this.frames[i].delay !== undefined){frameDelay=this.frames[i].delay;}//use frame-specific delay if set.
+				GraFlicEncoder.writeUint24(out8,frameDelay,writePos+20,true);//duration (milliseconds)
 				out8[writePos+23]= 0x00;//1 byte here can be skipped (left all 0)
 					//6 reserved bits and alphablend/dispose which are not usable with the only option of full frame updates (no way of giving frame back references in toDataURL)
 				writePos += 24;
@@ -2385,7 +2388,7 @@ GraFlicExport.prototype.packAnimatedFile = function(){
 				}
 			}
 			if(!meta.Software){//Default Software string if not overridden.
-				meta.Software = " AnimatedPNGs.com GraFlicExport.js ";
+				meta.Software = " GraFlic.com AnimatedPNGs.com ";
 			}
 			if(!meta['Creation Time']){
 				meta['Creation Time'] = new Date().toUTCString();//Method most likely to get recommended RFC 1123 string for PNG.
@@ -2425,7 +2428,7 @@ GraFlicExport.prototype.packAnimatedFile = function(){
 						//NULL(sep)
 						meta[tempKey] += String.fromCharCode(0, 0) + meta[key];
 					}
-					meta[tempKey] = GraFlicExport.stringToBytesUTF8(meta[tempKey]);
+					meta[tempKey] = GraFlicEncoder.stringToBytesUTF8(meta[tempKey]);
 					meta[tempKey].nonASCII = nonASCII;
 					outputLen += 12 + meta[tempKey].length;
 				}
@@ -2453,10 +2456,10 @@ GraFlicExport.prototype.packAnimatedFile = function(){
 		out8[6] = 0x1A;//End of File
 		out8[7] = 0x0A;//Unix LF
 		//IHDR Header Chunk
-		GraFlicExport.writeUint32(out8,13,8,false);//IHDR length (Counts data only, not FourCC or CRC)
-		GraFlicExport.writeFourCC(out8,'IHDR',12);
-		GraFlicExport.writeUint32(out8,this.outputWidth,16,false);//width
-		GraFlicExport.writeUint32(out8,this.outputHeight,20,false);//height
+		GraFlicEncoder.writeUint32(out8,13,8,false);//IHDR length (Counts data only, not FourCC or CRC)
+		GraFlicEncoder.writeFourCC(out8,'IHDR',12);
+		GraFlicEncoder.writeUint32(out8,this.outputWidth,16,false);//width
+		GraFlicEncoder.writeUint32(out8,this.outputHeight,20,false);//height
 		out8[24] = 0x08;//bit depth, 8 bits per color channel.
 		if(this.palette){
 			out8[25] = 0x03;//Packed field. color(0x2) and palette(0x1) bits set, 00000011
@@ -2470,8 +2473,8 @@ GraFlicExport.prototype.packAnimatedFile = function(){
 		out8[26] = 0x00;//Compression Mode, 0=DEFLATE, the only defined type
 		out8[27] = 0x00;//Filter Mode, 0=Adaptive, the only defined type
 		out8[28] = 0x00;//Interlace Method, 0=No interlacing.
-		crc32 = GraFlicExport.getCRC32(out8,12,29);
-		GraFlicExport.writeUint32(out8,crc32,29,false);//CRC calculated over Data AND FourCC.
+		crc32 = GraFlicEncoder.getCRC32(out8,12,29);
+		GraFlicEncoder.writeUint32(out8,crc32,29,false);//CRC calculated over Data AND FourCC.
 		
 		writePos += 33;
 		
@@ -2486,12 +2489,12 @@ GraFlicExport.prototype.packAnimatedFile = function(){
 				var inch2Meter = 1 / 0.0254
 				ppm = this.ppi * inch2Meter;
 			}
-			GraFlicExport.writeUint32(out8, 9, writePos,false);
-			GraFlicExport.writeFourCC(out8, 'pHYs', writePos + 4);
-			GraFlicExport.writeUint32(out8, ppm, writePos + 8, false);//X pixels per unit
-			GraFlicExport.writeUint32(out8, ppm, writePos + 12, false);//Y pixels per unit
+			GraFlicEncoder.writeUint32(out8, 9, writePos,false);
+			GraFlicEncoder.writeFourCC(out8, 'pHYs', writePos + 4);
+			GraFlicEncoder.writeUint32(out8, ppm, writePos + 8, false);//X pixels per unit
+			GraFlicEncoder.writeUint32(out8, ppm, writePos + 12, false);//Y pixels per unit
 			out8[writePos + 16] = 0x01;//Unit type 1 for meter, 0 for unknown.
-			GraFlicExport.writeUint32(out8, GraFlicExport.getCRC32(out8, writePos + 4, writePos + 17), writePos + 17,false);
+			GraFlicEncoder.writeUint32(out8, GraFlicEncoder.getCRC32(out8, writePos + 4, writePos + 17), writePos + 17,false);
 			writePos += 21;
 		}//end if has pHYs
 
@@ -2502,14 +2505,14 @@ GraFlicExport.prototype.packAnimatedFile = function(){
 				if((typeof mItem) == 'string'){//checking the original meta entry, not the temp_ with the BytesUTF8 conversion done.
 					//The whole tEXt/iTXt payload has bee pre-escaped into %XX for ALL chars.
 					tempKey = 'temp_' + key;
-					GraFlicExport.writeUint32(out8,
+					GraFlicEncoder.writeUint32(out8,
 						meta[tempKey].length,
 						writePos, false);
 					//iTXt needed for char ranges > 0x7F
-					GraFlicExport.writeFourCC(out8, meta[tempKey].nonASCII ? 'iTXt' : 'tEXt', writePos + 4);
+					GraFlicEncoder.writeFourCC(out8, meta[tempKey].nonASCII ? 'iTXt' : 'tEXt', writePos + 4);
 					savePos = writePos + 4;//needed for CRC
 					writePos += 8;
-					GraFlicExport.writeUbytes(out8, meta[tempKey], writePos);
+					GraFlicEncoder.writeUbytes(out8, meta[tempKey], writePos);
 					writePos += meta[tempKey].length
 					/*var strOctets = meta['temp_' + key].substring(1).split('%');//2-char hex strings
 					for(i = 0;i < strOctets.length;i++){//Write text string
@@ -2518,7 +2521,7 @@ GraFlicExport.prototype.packAnimatedFile = function(){
 						out8[writePos] = parseInt(strOctets[i], 16);
 						writePos++;
 					}*/
-					GraFlicExport.writeUint32(out8, GraFlicExport.getCRC32(out8, savePos, writePos), writePos, false);
+					GraFlicEncoder.writeUint32(out8, GraFlicEncoder.getCRC32(out8, savePos, writePos), writePos, false);
 					writePos += 4;
 					delete meta[tempKey];
 				}
@@ -2526,8 +2529,8 @@ GraFlicExport.prototype.packAnimatedFile = function(){
 		}
 
 		if(this.palette){
-			GraFlicExport.writeUint32(out8, this.palette.length * 3, writePos, false);
-			GraFlicExport.writeFourCC(out8, 'PLTE', writePos + 4);
+			GraFlicEncoder.writeUint32(out8, this.palette.length * 3, writePos, false);
+			GraFlicEncoder.writeFourCC(out8, 'PLTE', writePos + 4);
 			savePos = writePos + 4;
 			writePos += 8;
 			for(i = 0;i < this.palette.length;i++){
@@ -2536,26 +2539,26 @@ GraFlicExport.prototype.packAnimatedFile = function(){
 				out8[writePos + 2] = this.palette[i] & 0xFF;
 				writePos += 3;
 			}
-			GraFlicExport.writeUint32(out8, GraFlicExport.getCRC32(out8, savePos, writePos), writePos,false);
+			GraFlicEncoder.writeUint32(out8, GraFlicEncoder.getCRC32(out8, savePos, writePos), writePos,false);
 			writePos += 4;
 			
 			//Now write tRNS, which must be after PLTE and come before IDAT.
-			GraFlicExport.writeUint32(out8, this.palette.length, writePos,false);
-			GraFlicExport.writeFourCC(out8, 'tRNS', writePos + 4);
+			GraFlicEncoder.writeUint32(out8, this.palette.length, writePos,false);
+			GraFlicEncoder.writeFourCC(out8, 'tRNS', writePos + 4);
 			savePos = writePos + 4;
 			writePos += 8;
 			for(i = 0;i < this.palette.length;i++){
 				out8[writePos] = this.palette[i] >> 24 & 0xFF;
 				writePos ++;
 			}
-			GraFlicExport.writeUint32(out8, GraFlicExport.getCRC32(out8, savePos, writePos), writePos, false);
+			GraFlicEncoder.writeUint32(out8, GraFlicEncoder.getCRC32(out8, savePos, writePos), writePos, false);
 			writePos += 4;
 		}
 		if((this.hasTransparency || this.frames.length > 1) && this.byteStreamMode == 3){//Will need transparent for recycling if multi-frame.
 			//Now write tRNS, which must come before IDAT.
 			//For 24-bit RGB, it is a different format. Write the R,G,B values reserved as the transparent color as 16-bit unsigned integers.
-			GraFlicExport.writeUint32(out8, 6, writePos,false);
-			GraFlicExport.writeFourCC(out8, 'tRNS', writePos + 4);
+			GraFlicEncoder.writeUint32(out8, 6, writePos,false);
+			GraFlicEncoder.writeFourCC(out8, 'tRNS', writePos + 4);
 			savePos = writePos + 4;
 			writePos += 8;
 			out8[writePos]     = 0;//Big-Endian, 2 bytes per channel RGB to be able to hold deep color (Though only 1-byte channel RGB is used).
@@ -2565,18 +2568,18 @@ GraFlicExport.prototype.packAnimatedFile = function(){
 			out8[writePos + 4] = 0;
 			out8[writePos + 5] = this.reservedTransColor[2];
 			writePos += 6;
-			GraFlicExport.writeUint32(out8, GraFlicExport.getCRC32(out8, savePos, writePos), writePos,false);
+			GraFlicEncoder.writeUint32(out8, GraFlicEncoder.getCRC32(out8, savePos, writePos), writePos,false);
 			writePos += 4;
 		}
 		
 		if(this.payloads.length > 1){//At least one frame to be an Animated PNG
 			//do not output Animated PNG chunks if not needed.
 			//writePos = 33;//would be 33 with no acTL
-			GraFlicExport.writeUint32(out8, 8, writePos, false);
-			GraFlicExport.writeFourCC(out8, 'acTL', writePos + 4);
-			GraFlicExport.writeUint32(out8, this.payloads.length, writePos + 8, false);//Number of frames.
-			GraFlicExport.writeUint32(out8, this.loops, writePos + 12, false);//Loops. 0 for infinite.
-			GraFlicExport.writeUint32(out8, GraFlicExport.getCRC32(out8, writePos + 4, writePos + 16), writePos + 16, false);
+			GraFlicEncoder.writeUint32(out8, 8, writePos, false);
+			GraFlicEncoder.writeFourCC(out8, 'acTL', writePos + 4);
+			GraFlicEncoder.writeUint32(out8, this.payloads.length, writePos + 8, false);//Number of frames.
+			GraFlicEncoder.writeUint32(out8, this.loops, writePos + 12, false);//Loops. 0 for infinite.
+			GraFlicEncoder.writeUint32(out8, GraFlicEncoder.getCRC32(out8, writePos + 4, writePos + 16), writePos + 16, false);
 		
 			writePos += 20;
 		}//end is more than one frame
@@ -2591,10 +2594,10 @@ GraFlicExport.prototype.packAnimatedFile = function(){
 		}
 		
 		//now close the image with the IEND chunk.
-		GraFlicExport.writeUint32(out8, 0, writePos, false);//IEND is empty
-		GraFlicExport.writeFourCC(out8, 'IEND', writePos + 4);
-		crc32 = GraFlicExport.getCRC32(out8, writePos + 4, writePos + 8);
-		GraFlicExport.writeUint32(out8, crc32, writePos + 8, false);
+		GraFlicEncoder.writeUint32(out8, 0, writePos, false);//IEND is empty
+		GraFlicEncoder.writeFourCC(out8, 'IEND', writePos + 4);
+		crc32 = GraFlicEncoder.getCRC32(out8, writePos + 4, writePos + 8);
+		GraFlicEncoder.writeUint32(out8, crc32, writePos + 8, false);
 	}
 	//alert('before outputOctetStream set');
 	this.outputOctetStream = out8;
@@ -2614,7 +2617,7 @@ GraFlicExport.prototype.packAnimatedFile = function(){
 	}
 	
 };
-GraFlicExport.prototype.packChunk = function(){
+GraFlicEncoder.prototype.packChunk = function(){
 	if(this.chunkPackI<this.outputOctetStream.length){
 		this.outputString += String.fromCharCode.apply(null,this.outputOctetStream.subarray(this.chunkPackI,Math.min(this.outputOctetStream.length,this.chunkPackI+2048)));
 		this.chunkPackI += 2048;
@@ -2640,7 +2643,7 @@ GraFlicExport.prototype.packChunk = function(){
 		}
 	}
 };
-GraFlicExport.prototype.string2uint8 = function(str){
+GraFlicEncoder.prototype.string2uint8 = function(str){
 	//Note: this function may be flawed. It does not account for high-range UTF cases.
 	//It is currently mostly used for converting base64 URL to bytes and does not seem to run into any issues there probably since base64 is encoding a sequence of octets...
 	var u8 = new Uint8Array(new ArrayBuffer(str.length));
@@ -2649,19 +2652,19 @@ GraFlicExport.prototype.string2uint8 = function(str){
 	}
 	return u8;
 };
-GraFlicExport.writeFourCC = function(out8,chunkSig,pos){
+GraFlicEncoder.writeFourCC = function(out8,chunkSig,pos){
 	out8[pos+0] = chunkSig.charCodeAt(0);
 	out8[pos+1] = chunkSig.charCodeAt(1);
 	out8[pos+2] = chunkSig.charCodeAt(2);
 	out8[pos+3] = chunkSig.charCodeAt(3);
 };
-GraFlicExport.readFourCC = function(in8, pos){
+GraFlicEncoder.readFourCC = function(in8, pos){
 	return String.fromCharCode(in8[pos + 0])
 	     + String.fromCharCode(in8[pos + 1])
 	     + String.fromCharCode(in8[pos + 2])
 	     + String.fromCharCode(in8[pos + 3]);
 };
-GraFlicExport.writeUint32 = function(out8,u32,pos,isLittleEndian){
+GraFlicEncoder.writeUint32 = function(out8,u32,pos,isLittleEndian){
 	if(isLittleEndian){
 		out8[pos+0] = u32&0xFF;
 		out8[pos+1] = u32>>8&0xFF;
@@ -2674,7 +2677,7 @@ GraFlicExport.writeUint32 = function(out8,u32,pos,isLittleEndian){
 		out8[pos+3] = u32&0xFF;
 	}
 };
-GraFlicExport.readUint32 = function(in8, pos, isLittleEndian){
+GraFlicEncoder.readUint32 = function(in8, pos, isLittleEndian){
 	//These can be static functions they don't need the object ref.
 	if(isLittleEndian){
 		return in8[pos + 0] | in8[pos + 1] << 8 | in8[pos + 2] << 16 | in8[pos + 3] << 24;
@@ -2682,7 +2685,7 @@ GraFlicExport.readUint32 = function(in8, pos, isLittleEndian){
 		return in8[pos + 0] << 24 | in8[pos + 1] << 16 | in8[pos + 2] << 8 | in8[pos + 3];
 	}
 };
-GraFlicExport.writeUint24 = function(out8,u24,pos,isLittleEndian){
+GraFlicEncoder.writeUint24 = function(out8,u24,pos,isLittleEndian){
 	if(isLittleEndian){
 		out8[pos+0] = u24&0xFF;
 		out8[pos+1] = u24>>8&0xFF;
@@ -2693,7 +2696,7 @@ GraFlicExport.writeUint24 = function(out8,u24,pos,isLittleEndian){
 		out8[pos+2] = u24&0xFF;
 	}
 };
-GraFlicExport.writeUint16 = function(out8, u16, pos, isLittleEndian){
+GraFlicEncoder.writeUint16 = function(out8, u16, pos, isLittleEndian){
 	if(isLittleEndian){
 		out8[pos+0] = u16&0xFF;
 		out8[pos+1] = u16>>8&0xFF;
@@ -2702,15 +2705,15 @@ GraFlicExport.writeUint16 = function(out8, u16, pos, isLittleEndian){
 		out8[pos+1] = u16&0xFF;
 	}
 };
-GraFlicExport.readUint16 = function(out8, pos, isLittleEndian){
+GraFlicEncoder.readUint16 = function(out8, pos, isLittleEndian){
 	if(isLittleEndian){
 		return out8[pos] | out8[pos + 1] << 8;
 	}else{
 		return out8[pos] << 8 | out8[pos + 1];
 	}
 };
-GraFlicExport.initCRCTable = function(){
-	GraFlicExport.crcTable = new Uint32Array(256);//this broke when using ArrayBuffer(256), not sure why
+GraFlicEncoder.initCRCTable = function(){
+	GraFlicEncoder.crcTable = new Uint32Array(256);//this broke when using ArrayBuffer(256), not sure why
 	var calc;
 	var i;
 	var i2;
@@ -2724,16 +2727,16 @@ GraFlicExport.initCRCTable = function(){
 				calc = (calc >>> 1);
 			}
 		}
-		GraFlicExport.crcTable[i] = calc;
+		GraFlicEncoder.crcTable[i] = calc;
 		//testStr += '\r\n'+calc.toString(16);
 	}
-	//alert('table at 127: '+GraFlicExport.crcTable[127]);
+	//alert('table at 127: '+GraFlicEncoder.crcTable[127]);
 	//alert('crcTable: '+testStr);
 };
-GraFlicExport.getCRC32 = function(u8,startIndex,endIndex){
+GraFlicEncoder.getCRC32 = function(u8,startIndex,endIndex){
 	//if the CRC table has not been initialized, set it up.
-	if(!GraFlicExport.crcTable){
-		GraFlicExport.initCRCTable();
+	if(!GraFlicEncoder.crcTable){
+		GraFlicEncoder.initCRCTable();
 	}
 	var i;
 	var crc = 0xFFFFFFFF;
@@ -2742,7 +2745,7 @@ GraFlicExport.getCRC32 = function(u8,startIndex,endIndex){
 	//index read (like array loop length logic)
 	for(i=startIndex;i<endIndex;i++){
 		cIndex = ((crc^(u8[i]))&(0xFF));
-		crc = GraFlicExport.crcTable[cIndex] ^ (crc>>>8) ;
+		crc = GraFlicEncoder.crcTable[cIndex] ^ (crc>>>8) ;
 	}
 	//Note that Javascript converts numbers to SIGNED 32 bit ints before
 	//doing most bitwise operations.
@@ -2753,13 +2756,13 @@ GraFlicExport.getCRC32 = function(u8,startIndex,endIndex){
 	//(whether signed or unsigned it is still a row of 32 bits)
 	return crc ^ 0xFFFFFFFF;
 };
-GraFlicExport.getStringByteLength = function(mbStr){
+GraFlicEncoder.getStringByteLength = function(mbStr){
 	//Get the length of a string in bytes, which can be different than number of chars.
 	//DEPRECATED. This wastes processing by doing the whole escapeAll process just to return a lenght.
 	//Just get the string from escapeAll, divide the length by 3 and compare it to the JS16 string length to see if it has multibyte UTF-8 characters and would need more handling than ASCII.
-	return GraFlicExport.escapeAll(mbStr).length / 3;//count the '%20' '%AF' etc
+	return GraFlicEncoder.escapeAll(mbStr).length / 3;//count the '%20' '%AF' etc
 };
-GraFlicExport.escapeAll = function(mbStr){//TODO: If needed allow params for other styles of escaping?
+GraFlicEncoder.escapeAll = function(mbStr){//TODO: If needed allow params for other styles of escaping?
 	//%XX encodes ALL characters, even ASCII/URL-reserved and '%'
 	mbStr = mbStr.split('');//make character array
 	var mbChar, mbRes = '', accumNonASCII = '';
@@ -2799,9 +2802,9 @@ GraFlicExport.escapeAll = function(mbStr){//TODO: If needed allow params for oth
 	}
 	return mbRes;
 };
-GraFlicExport.stringToBytesUTF8 = function(str){
+GraFlicEncoder.stringToBytesUTF8 = function(str){
 	//Converts a string to a Uint8Array that is UTF-8 format and suitable for writing into binary and files.
-	str = GraFlicExport.escapeAll(str);
+	str = GraFlicEncoder.escapeAll(str);
 	//(first remove first '%' and split to get the UTF-8 octet hex codes in an array)
 	str = str.substring(1).split('%');
 	var strBytesUTF8 = new Uint8Array(new ArrayBuffer(str.length));
@@ -2810,7 +2813,7 @@ GraFlicExport.stringToBytesUTF8 = function(str){
 	}
 	return strBytesUTF8;
 };
-GraFlicExport.writeUbytes = function(out8, bytesU8, pos){
+GraFlicEncoder.writeUbytes = function(out8, bytesU8, pos){
 	//Writes unsigned bytes to a octet stream (Uint8Array)
 	//This can be used to write a UTF8 String into a file.
 	//To do this, first call stringToBytesUTF8 to get the bytes to send here.
@@ -2820,7 +2823,7 @@ GraFlicExport.writeUbytes = function(out8, bytesU8, pos){
 		out8[pos + i] = bytesU8[i];
 	}
 };
-GraFlicExport.readStringUTF8 = function(out8, pos, sLen){
+GraFlicEncoder.readStringUTF8 = function(out8, pos, sLen){
 	//This will read a string out of an octet stream (Uint8Array) at the position for the given length.
 	//It will return a String in standard JS format (UTF-16)
 	//TODO: Maybe look at future JS String/Encoding classes/support to simplify UTF-8/JS UTF-16 conversion code if they ever become finished and standard.
@@ -2842,7 +2845,7 @@ GraFlicExport.readStringUTF8 = function(out8, pos, sLen){
 	strJS16 = decodeURI(strJS16);
 	return strJS16;
 };
-GraFlicExport.prototype.buildDithMasks = function(){
+GraFlicEncoder.prototype.buildDithMasks = function(){
 	var maskSize = this.outputWidth*this.outputHeight*4;
 	if(this.outputWidth==this.ditherWidth&&this.outputHeight==this.ditherHeight){return;}//do not need to remake it if it was already done on the same dimensions
 	this.ditherWidth = this.outputWidth;//must check these rather than maskSize because 10x20 or 20x10 could be the same maskSize
@@ -2880,7 +2883,7 @@ GraFlicExport.prototype.buildDithMasks = function(){
 		}
 	}
 };
-GraFlicExport.prototype.buildDithMasksV2 = function(){
+GraFlicEncoder.prototype.buildDithMasksV2 = function(){
 	if(this.dithMask){return;}
 	//Each greater number represents a value of true for the next level of
 	//more sparse dithering. Patterns should always line up with eachother
@@ -2899,7 +2902,7 @@ GraFlicExport.prototype.buildDithMasksV2 = function(){
 		[0, 1, 0, 1, 0, 1, 0, 1]
 	];
 };
-GraFlicExport.prototype.quant8Octets = function(octets){
+GraFlicEncoder.prototype.quant8Octets = function(octets){
 		var quant8 = 0;//full quality. no quantization or dithering.
 		if(this.quality < 1){
 			quant8 = 1;//Not usually much savings, but hard to tell the difference from the full quality.
@@ -3005,7 +3008,7 @@ GraFlicExport.prototype.quant8Octets = function(octets){
 	}
 };
 
-GraFlicExport.prototype.initColorCounting = function(){
+GraFlicEncoder.prototype.initColorCounting = function(){
 	this.colorLookup = [];
 	//for(var i = 0;i < 256;i++){//create an array for each potential level of opacity.
 	//	this.colorLookup.push([]);
@@ -3021,7 +3024,7 @@ GraFlicExport.prototype.initColorCounting = function(){
 	this.significantThresh = Math.max(8,Math.round(this.outputWidth * this.outputHeight * this.frames.length * 0.0004));
 };
 
-GraFlicExport.prototype.incrementColorCount = function(red, green, blue, alpha){
+GraFlicEncoder.prototype.incrementColorCount = function(red, green, blue, alpha){
 	//var rgb = red << 16 | green << 8 | blue;
 	if(!alpha){
 		//Force all fully transparent entries to be exactly the same, causing duplicates to be eliminated.
@@ -3066,7 +3069,7 @@ GraFlicExport.prototype.incrementColorCount = function(red, green, blue, alpha){
 		this.sigColorLookup[sigIndex] = 1;
 	}
 };
-GraFlicExport.prototype.getColorCount = function(red, green, blue, alpha){
+GraFlicEncoder.prototype.getColorCount = function(red, green, blue, alpha){
 	//var rgb = red << 16 | green << 8 | blue;
 	//Remember, undefined will evaluate as false.
 	if(   this.colorLookup[alpha]
@@ -3078,7 +3081,7 @@ GraFlicExport.prototype.getColorCount = function(red, green, blue, alpha){
 	}
 	return 0;//otherwise, return 0.
 };
-GraFlicExport.prototype.getPaletteIndex = function(fData, qData, i, dithW, dithH){
+GraFlicEncoder.prototype.getPaletteIndex = function(fData, qData, i, dithW, dithH){
 	var red   = fData[i], 
 	    green = fData[i + 1],
 	    blue  = fData[i + 2],
@@ -3179,7 +3182,7 @@ GraFlicExport.prototype.getPaletteIndex = function(fData, qData, i, dithW, dithH
 	
 	return closestColor;
 };
-GraFlicExport.prototype.getClosestColor = function(red, green, blue, alpha){
+GraFlicEncoder.prototype.getClosestColor = function(red, green, blue, alpha){
 	var colorDif;
 	var closestColorDif = 0x7FFFFFFF;//Don't go full value, remember JS numbers are 2's complement signed.
 	var closestColor = 0;
@@ -3206,7 +3209,7 @@ GraFlicExport.prototype.getClosestColor = function(red, green, blue, alpha){
 	//Returns an array with the closest color and additional values for the color channels to save from having to recalculate them.
 	return [closestColor, closeR, closeG, closeB, closeA];
 };
-GraFlicExport.prototype.distQuant = function(qError, qData, i, dithW, dithH, cOffset){
+GraFlicEncoder.prototype.distQuant = function(qError, qData, i, dithW, dithH, cOffset){
 	//qData is used to track the errors.
 	//This is used because some pixels (like exact match with palette)
 	//should not accept the quantization error that may have been generated
@@ -3258,7 +3261,7 @@ GraFlicExport.prototype.distQuant = function(qError, qData, i, dithW, dithH, cOf
 		}
 	}
 };
-GraFlicExport.prototype.filterBytePNG = function(buf, i, fMode, x, y, minX, minY, scanWidth){
+GraFlicEncoder.prototype.filterBytePNG = function(buf, i, fMode, x, y, minX, minY, scanWidth){
 	//x, y, w, h are the x, y, width and height in pixels regardless of number of bytes per pixel.
 	//scanWidth is the width of the full image bounds times the bytes per pixel.
 	//(Remember, it is reading from the full-dimensions buffer. And must offset by the full width to get the Up position for example.)
@@ -3315,7 +3318,7 @@ GraFlicExport.prototype.filterBytePNG = function(buf, i, fMode, x, y, minX, minY
 		return curByte;
 	}
 };
-GraFlicExport.prototype.initBuffersPNG = function(){
+GraFlicEncoder.prototype.initBuffersPNG = function(){
 				var byteBufLength = this.outputWidth * this.outputHeight * this.byteStreamMode;
 				this.bufNO = new Uint8Array(new ArrayBuffer(byteBufLength));//None-Over...
 				this.bufPO = new Uint8Array(new ArrayBuffer(byteBufLength));
@@ -3431,14 +3434,14 @@ function GraFlicImport_sourceLoaded(adEvent){
 		var metaChunks = ['tRNS', 'PLTE', 'sRGB', 'gAMA', 'bKGD', 'sBIT', 'hIST', 'cHRM'];//Meta chunks that need to (our ought to) be preserved if present so image data can be drawn correctly.
 		//var acTLSeen = false;//To be APNG acTL must be before IDAT.
 		//All image types have width/height.
-		this.width = GraFlicExport.readUint32(oct, 16, false);
-		this.height = GraFlicExport.readUint32(oct, 20, false);
+		this.width = GraFlicEncoder.readUint32(oct, 16, false);
+		this.height = GraFlicEncoder.readUint32(oct, 20, false);
 		this.png.bitDepth = oct[24];
 		this.png.colorFlags = oct[25];
 		this.png.interlace = oct[28];
 		pos = 33;
 		//this.png.hasDefaultImage = false;//set to true if no fcTL before IDAT
-		chunkSig = GraFlicExport.readFourCC(oct, pos + 4);
+		chunkSig = GraFlicEncoder.readFourCC(oct, pos + 4);
 		var animFrame = -1;//set to 0 when past the default image if present and the first fcTL is encountered. Increment each fcTL
 		//The animation has not started until an fcTL has been seen.
 		//The IDAT is not part of the animation and is the default image if fcTL is not before it.
@@ -3446,11 +3449,11 @@ function GraFlicImport_sourceLoaded(adEvent){
 		//Get the frame count by counting each frame entry seen that is part of the animation rather than going by the count in acTL.
 		//Some browsers may ignore the frame count value and just look at this, meaning some images may be out there with an inaccurate value in frameCount.
 		while(chunkSig != 'IEND'){//!fcTLSeen || (chunkSig != 'IDAT' && chunkSig != 'fdAT')){
-			chunkLen = GraFlicExport.readUint32(oct, pos, false);
+			chunkLen = GraFlicEncoder.readUint32(oct, pos, false);
 			if(chunkSig == 'acTL'){
 				//acTL is not in metaChunks it is not used to reconstruct as extracted still frames.
-				//this.frameCount = GraFlicExport.readUint32(oct, pos + 8, false);//Get this by counting actual frames seen instead.
-				this.loops = GraFlicExport.readUint32(oct, pos + 12, false);
+				//this.frameCount = GraFlicEncoder.readUint32(oct, pos + 8, false);//Get this by counting actual frames seen instead.
+				this.loops = GraFlicEncoder.readUint32(oct, pos + 12, false);
 			}
 			if(chunkSig == 'IEND'){
 				break;
@@ -3492,18 +3495,18 @@ function GraFlicImport_sourceLoaded(adEvent){
 				this.copyFrames.push(cFrame);
 				cFrame.start = pos + chunkLen + 12;//Start reading after the fcTL in new GraFlicImportFrame().
 				cFrame.len = 12 + headLen;//shared head + IEND
-				cFrame.width = GraFlicExport.readUint32(oct, pos + 12, false);
-				cFrame.height = GraFlicExport.readUint32(oct, pos + 16, false);
-				cFrame.x = GraFlicExport.readUint32(oct, pos + 20, false);
-				cFrame.y = GraFlicExport.readUint32(oct, pos + 24, false);
-				cFrame.ms = ( GraFlicExport.readUint16(oct, pos + 28, false) / GraFlicExport.readUint16(oct, pos + 30, false) ) * 1000;//milliseconds
+				cFrame.width = GraFlicEncoder.readUint32(oct, pos + 12, false);
+				cFrame.height = GraFlicEncoder.readUint32(oct, pos + 16, false);
+				cFrame.x = GraFlicEncoder.readUint32(oct, pos + 20, false);
+				cFrame.y = GraFlicEncoder.readUint32(oct, pos + 24, false);
+				cFrame.ms = ( GraFlicEncoder.readUint16(oct, pos + 28, false) / GraFlicEncoder.readUint16(oct, pos + 30, false) ) * 1000;//milliseconds
 				cFrame.disposal = oct[pos + 32];
 				cFrame.blending = oct[pos + 33];
 				this.ms += cFrame.ms;
 			}
 			
 			pos += chunkLen + 12;
-			chunkSig = GraFlicExport.readFourCC(oct, pos + 4);
+			chunkSig = GraFlicEncoder.readFourCC(oct, pos + 4);
 		}
 		/*if(animFrame == -1){
 			//if(this.onError){
@@ -3529,8 +3532,8 @@ function GraFlicImport_sourceLoaded(adEvent){
 		this.format = 'gif';
 		this.gif = {};
 		//read logical screen descriptor
-		this.width = GraFlicExport.readUint16(oct, 6, true);
-		this.height = GraFlicExport.readUint16(oct, 8, true);
+		this.width = GraFlicEncoder.readUint16(oct, 6, true);
+		this.height = GraFlicEncoder.readUint16(oct, 8, true);
 		//alert('GIF h/w ' + this.width + ' x ' + this.height);
 		//[10] is a packed field
 		//alert('logdesc packed field ' + oct[10].toString(16));
@@ -3562,10 +3565,10 @@ function GraFlicImport_sourceLoaded(adEvent){
 			//alert('GIF chunk: ' + chunkSig.toString(16));
 			//GIF chunks have a series of blocks with 1 byte lengths
 			if(chunkSig == 0x2C){//image descriptor
-				cFrame.x = GraFlicExport.readUint16(oct, pos, true);
-				cFrame.y = GraFlicExport.readUint16(oct, pos + 2, true);
-				cFrame.width = GraFlicExport.readUint16(oct, pos + 4, true);
-				cFrame.height = GraFlicExport.readUint16(oct, pos + 6, true);
+				cFrame.x = GraFlicEncoder.readUint16(oct, pos, true);
+				cFrame.y = GraFlicEncoder.readUint16(oct, pos + 2, true);
+				cFrame.width = GraFlicEncoder.readUint16(oct, pos + 4, true);
+				cFrame.height = GraFlicEncoder.readUint16(oct, pos + 6, true);
 				//+8 is packed field: global_color_table(1) / interlace(1) / sort(1) / reserved(2) / size_of_local_color_table(3)
 				pos += 8;
 				cFrame.gif.localColorTable = (oct[pos] & 0x80) > 0;
@@ -3617,7 +3620,7 @@ function GraFlicImport_sourceLoaded(adEvent){
 						//this makes it consistent with the Animated PNG codes
 					cFrame.blending = 1;//use over blending, GIF does not have blending modes, only disposal logic
 					//alert('disposal ' + cFrame.disposal);
-					cFrame.ms = GraFlicExport.readUint16(oct, pos + 2, true) * 10;//100ths of a second
+					cFrame.ms = GraFlicEncoder.readUint16(oct, pos + 2, true) * 10;//100ths of a second
 					//if(cFrame.ms < 100){cFrame.ms = 100;}//GIF images get capped at 10 FPS by most browsers/viewers, this keeps them consistent with how they are seen??
 					//alert('delay extracted ' + cFrame.ms);
 					this.ms += cFrame.ms;
@@ -3717,17 +3720,17 @@ function GraFlicImportFrame(aeImg){
 	
 		rPos = this.start;
 		var crc32, crcStart;
-		GraFlicExport.writeUint32(oct, this.width, 16, false);//local region for frame
-		GraFlicExport.writeUint32(oct, this.height, 20, false);
+		GraFlicEncoder.writeUint32(oct, this.width, 16, false);//local region for frame
+		GraFlicEncoder.writeUint32(oct, this.height, 20, false);
 		//rememeber to recalc CRC when width and height changed in head IHDR(remember IHDR MUST be first.)
-		crc32 = GraFlicExport.getCRC32(oct, 12, 29);
-		GraFlicExport.writeUint32(oct, crc32, 29, false);
+		crc32 = GraFlicEncoder.getCRC32(oct, 12, 29);
+		GraFlicEncoder.writeUint32(oct, crc32, 29, false);
 		
-		chunkSig = GraFlicExport.readFourCC(aeImg.inputOctetStream, rPos + 4);
+		chunkSig = GraFlicEncoder.readFourCC(aeImg.inputOctetStream, rPos + 4);
 		while(chunkSig == 'IDAT' || chunkSig == 'fdAT'){
-			chunkLen = GraFlicExport.readUint32(aeImg.inputOctetStream, rPos, false);
-			GraFlicExport.writeUint32(oct, chunkSig == 'fdAT'?chunkLen - 4:chunkLen, pos, false);
-			GraFlicExport.writeFourCC(oct, 'IDAT', pos + 4, false);//Always IDAT never fdAT for non-animated single frame.
+			chunkLen = GraFlicEncoder.readUint32(aeImg.inputOctetStream, rPos, false);
+			GraFlicEncoder.writeUint32(oct, chunkSig == 'fdAT'?chunkLen - 4:chunkLen, pos, false);
+			GraFlicEncoder.writeFourCC(oct, 'IDAT', pos + 4, false);//Always IDAT never fdAT for non-animated single frame.
 			pos += 8;
 			rPos += 8;
 			crcStart = pos - 4;//the start where it is being WRITTEN into(-4 to CRC over FourCC)
@@ -3738,23 +3741,23 @@ function GraFlicImportFrame(aeImg){
 				pos++;
 			}
 			//Recalculate CRC. It will be different without frameSequenceCount;
-			crc32 = GraFlicExport.getCRC32(oct, crcStart, pos);
-			GraFlicExport.writeUint32(oct, crc32, pos, false);
+			crc32 = GraFlicEncoder.getCRC32(oct, crcStart, pos);
+			GraFlicEncoder.writeUint32(oct, crc32, pos, false);
 			pos += 4;
 			rPos += 4;//skip CRC
-			chunkSig = GraFlicExport.readFourCC(aeImg.inputOctetStream, rPos + 4);
+			chunkSig = GraFlicEncoder.readFourCC(aeImg.inputOctetStream, rPos + 4);
 		}
 		
-		GraFlicExport.writeUint32(oct, 0, pos, false);//IEND is empty
-		GraFlicExport.writeFourCC(oct, 'IEND', pos + 4);
-		crc32 = GraFlicExport.getCRC32(oct, pos + 4, pos + 8);
-		GraFlicExport.writeUint32(oct, crc32, pos + 8, false);
+		GraFlicEncoder.writeUint32(oct, 0, pos, false);//IEND is empty
+		GraFlicEncoder.writeFourCC(oct, 'IEND', pos + 4);
+		crc32 = GraFlicEncoder.getCRC32(oct, pos + 4, pos + 8);
+		GraFlicEncoder.writeUint32(oct, crc32, pos + 8, false);
 		this.payloadBlob = new Blob([oct], {'type':'image/png'});
 		this.payloadBlobURL = URL.createObjectURL(this.payloadBlob);
 	}else if(aeImg.gif){//end is PNG
 		//alert('a');
-		GraFlicExport.writeUint16(oct, this.width, 6, true);//local region
-		GraFlicExport.writeUint16(oct, this.height, 8, true);
+		GraFlicEncoder.writeUint16(oct, this.width, 6, true);//local region
+		GraFlicEncoder.writeUint16(oct, this.height, 8, true);
 		pos = 13;
 		var colorTable = this.gif.localColorTable? this.gif.localColorTable : aeImg.gif.globalColorTable;//use local color table if present
 		for(i = 0;i < colorTable.length;i++){
@@ -3777,10 +3780,10 @@ function GraFlicImportFrame(aeImg){
 		oct[pos] = 0x2C;//Image Descriptor
 		pos++;
 		
-		GraFlicExport.writeUint16(oct, 0, pos + 0, true);
-		GraFlicExport.writeUint16(oct, 0, pos + 2, true);
-		GraFlicExport.writeUint16(oct, this.width, pos + 4, true);
-		GraFlicExport.writeUint16(oct, this.height, pos + 6, true);
+		GraFlicEncoder.writeUint16(oct, 0, pos + 0, true);
+		GraFlicEncoder.writeUint16(oct, 0, pos + 2, true);
+		GraFlicEncoder.writeUint16(oct, this.width, pos + 4, true);
+		GraFlicEncoder.writeUint16(oct, this.height, pos + 6, true);
 		var packedField = 0;
 		if(this.gif.interlaced){packedField &= 0x40;}
 		oct[pos + 8] = packedField;

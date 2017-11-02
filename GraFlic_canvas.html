@@ -6,7 +6,7 @@
 <link rel="icon" type="image/png" href="favicon.png"/>
 <script src="GraFlic/GraFlicImage.js"></script>
 <script src="GraFlic/GraFlicUtil.js"></script>
-<script src="GraFlic/GraFlicExport.js"></script>
+<script src="GraFlic/GraFlicEncoder.js"></script>
 <script src="pako/pako.min.js"></script>
 <script src="Zopfli/zopfli.min.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -69,7 +69,7 @@ This is an early version of the format, and is very subject to change. <a href="
 <tr>
 <td>
 <input type="checkbox" id="GraFlicC_onion_skin_chk"/>
-<label for="GraFlicC_onion_skin_chk" class="GraFlic_j">👻</label>
+<label for="GraFlicC_onion_skin_chk" class="GraFlic_j">🍃</label>
 <input type="checkbox" id="GraFlicC_onion_skin_stain_glass_chk"/>
 <label for="GraFlicC_onion_skin_stain_glass_chk" class="GraFlic_j">💎</label>
 <input type="range" id="GraFlicC_zoom_rng" value="50" min="20" max="500" step="5" style="float:right;width:60%;"/>
@@ -143,7 +143,7 @@ x
 <a id="GraFlicC_download_work_link" target="_blank" href="#"></a>
 </td>
 <td rowspan="2" style="text-align:center;vertical-align:middle;">
-<img id="GraFlicC_project_thumb" src="favicon.png" alt="Thumb" style="max-width:48;max-height:48;"/>
+<img id="GraFlicC_project_thumb" src="favicon.png" alt="Thumb" style="max-width:48px;max-height:48px;"/>
 </td>
 </tr>
 
@@ -351,14 +351,14 @@ var v_palSel;//Palette HTML Select input
 
 function f_newPaletteColor(){
 	v_curGraFlic.newPaletteColorRGBA(0.5, 0.5, 0.5, 1, '🎨');//palette graphic char
-	f_paletteColorChange(v_curGraFlic.config.palette.length - 1);//Select the new color so it can be edited.
+	f_paletteColorChange(v_curGraFlic.a.j.save.palette.length - 1);//Select the new color so it can be edited.
 	f_rebuildPaletteEditorUI();
 }
 function f_revertPaletteEdit(){
 	//If not happy with the change, set it back to the saved copy of what it was before,
 	//then make a new copy so that other changes can be tried and it can be reverted again.
 	v_curGraFlic.curPaletteColor = v_paletteRevertCol;
-	v_curGraFlic.config.palette[v_curGraFlic.config.selected_palette_index] = v_curGraFlic.curPaletteColor;//Make sure it is linked correctly in the JSON
+	v_curGraFlic.a.j.save.palette[v_curGraFlic.a.j.save.selected_palette_index] = v_curGraFlic.curPaletteColor;//Make sure it is linked correctly in the JSON
 	v_paletteRevertCol = GraFlicImage.makeCopyOfJSON(v_curGraFlic.curPaletteColor);
 	f_rebuildPaletteEditorUI();
 	f_requestRedraw();
@@ -367,12 +367,12 @@ function f_rebuildPaletteSelectUI(){
 	while(v_palSel.firstChild){
 		v_palSel.removeChild(v_palSel.firstChild);
 	}
-	for(var v_i = 0;v_i < v_curGraFlic.config.palette.length;v_i++){
-		var v_palColor = v_curGraFlic.config.palette[v_i];
+	for(var v_i = 0;v_i < v_curGraFlic.a.j.save.palette.length;v_i++){
+		var v_palColor = v_curGraFlic.a.j.save.palette[v_i];
 		var v_palOpt = document.createElement('option');
 		v_palOpt.innerHTML = '[' + v_i + '] ' + v_palColor.title;
 		v_palOpt.value = v_i;
-		if(v_i == v_curGraFlic.config.selected_palette_index){
+		if(v_i == v_curGraFlic.a.j.save.selected_palette_index){
 			v_palOpt.selected = true;
 		}
 		v_palSel.appendChild(v_palOpt);
@@ -382,14 +382,14 @@ function f_rebuildPaletteSelectUI(){
 function f_paletteColorChange(v_evt){
 	if(typeof v_evt === 'number'){
 		//can be called with a palette index instead of an event if being set by another function.
-		v_curGraFlic.config.selected_palette_index = v_evt;
+		v_curGraFlic.a.j.save.selected_palette_index = v_evt;
 	}else{
-		v_curGraFlic.config.selected_palette_index = parseInt(v_evt.target.value);
+		v_curGraFlic.a.j.save.selected_palette_index = parseInt(v_evt.target.value);
 	}
-	v_curGraFlic.curPaletteColor = v_curGraFlic.config.palette[v_curGraFlic.config.selected_palette_index];
+	v_curGraFlic.curPaletteColor = v_curGraFlic.a.j.save.palette[v_curGraFlic.a.j.save.selected_palette_index];
 	v_paletteRevertCol = GraFlicImage.makeCopyOfJSON(v_curGraFlic.curPaletteColor);
 	//Palette [0] is reserved for transparent.
-	var v_palLocked = v_curGraFlic.config.selected_palette_index == 0;
+	var v_palLocked = v_curGraFlic.a.j.save.selected_palette_index == 0;
 	GraFlicC_palette_alpha_rng.disabled = v_palLocked;
 	GraFlicC_palette_alpha_txt.disabled = v_palLocked;
 	GraFlicC_palette_red_rng.disabled = v_palLocked;
@@ -504,7 +504,7 @@ function f_frameEditMS(v_evt){
 function f_frameEditGlobalMS(v_evt){
 	var v_msCheck = parseInt(GraFlicC_frame_global_ms_txt.value);
 	if(isNaN(v_msCheck) || v_msCheck < 0){return;}
-	v_curGraFlic.config.global_delay = v_msCheck;
+	v_curGraFlic.a.j.save.global_delay = v_msCheck;
 	f_rebuildBitmapAndFrameUI();
 }
 function f_rebuildPaletteEditorUI(){
@@ -536,14 +536,14 @@ function f_rebuildBitmapAndFrameUI(){
 	var v_i;
 	var v_i2;
 	var v_selObj;
-	/*for(v_i = 0;v_i < v_curGraFlic.bitmaps.length;v_i++){
-		v_procBMP = v_curGraFlic.bitmaps[v_i];
+	/*for(v_i = 0;v_i < v_curGraFlic.a.j.bitmaps.length;v_i++){
+		v_procBMP = v_curGraFlic.a.j.bitmaps[v_i];
 		for(var v_i2 = 0;v_i2 < v_procBMP.plays_on_frames.length;v_i2++){
 			//Find the latest frame that any layer is to be played on
 			v_totalFrames = Math.max(v_totalFrames, v_procBMP.plays_on_frames[v_i2] + 1);//+1 since zero-based.
 		}
 	}*/
-	GraFlicC_frame_global_ms_txt.value = v_curGraFlic.config.global_delay.toString();
+	GraFlicC_frame_global_ms_txt.value = v_curGraFlic.a.j.save.global_delay.toString();
 	GraFlicC_frame_ms_txt.placeholder = GraFlicC_frame_global_ms_txt.value;//what to show if no frame-specific milliseconds set.
 	if(v_curGraFlic.curFrame.delay === undefined){//undefined for use global frame milliseconds
 		GraFlicC_frame_ms_txt.value = '';//With blank value, it will show placeholder
@@ -555,18 +555,18 @@ function f_rebuildBitmapAndFrameUI(){
 	GraFlicC_frame_title_txt.value = v_curGraFlic.curFrame.title;
 	while(v_layerSel.firstChild){v_layerSel.removeChild(v_layerSel.firstChild);}
 	while(v_frameSel.firstChild){v_frameSel.removeChild(v_frameSel.firstChild);}
-	for(v_i = 0;v_i < v_curGraFlic.bitmaps.length;v_i++){
+	for(v_i = 0;v_i < v_curGraFlic.a.j.bitmaps.length;v_i++){
 		v_selObj = document.createElement('option');
 		v_selObj.value = v_i;
-		v_selObj.innerHTML = '[' + v_i + '] ' + v_curGraFlic.bitmaps[v_i].title;
-		if(v_curGraFlic.bitmaps[v_i] == v_curGraFlic.curBitmap){v_selObj.selected = true;}
+		v_selObj.innerHTML = '[' + v_i + '] ' + v_curGraFlic.a.j.bitmaps[v_i].title;
+		if(v_curGraFlic.a.j.bitmaps[v_i] == v_curGraFlic.curBitmap){v_selObj.selected = true;}
 		v_layerSel.appendChild(v_selObj);
 	}
-	for(v_i = 0;v_i < v_curGraFlic.config.frames.length;v_i++){
+	for(v_i = 0;v_i < v_curGraFlic.a.j.save.frames.length;v_i++){
 		v_selObj = document.createElement('option');
 		v_selObj.value = v_i;
-		v_selObj.innerHTML = '[' + v_i + '] ' + v_curGraFlic.config.frames[v_i].title;
-		if(v_i == v_curGraFlic.config.selected_frame_index){v_selObj.selected = true;}
+		v_selObj.innerHTML = '[' + v_i + '] ' + v_curGraFlic.a.j.save.frames[v_i].title;
+		if(v_i == v_curGraFlic.a.j.save.selected_frame_index){v_selObj.selected = true;}
 		v_frameSel.appendChild(v_selObj);
 	}
 	f_rebuildPlaysOnFramesUI();
@@ -583,10 +583,10 @@ function f_rebuildPlaysOnFramesUI(){
 		v_selObj.selected = true;
 	}
 	v_playsOnFramesSel.appendChild(v_selObj);
-	for(v_i = 0;v_i < v_curGraFlic.config.frames.length;v_i++){
+	for(v_i = 0;v_i < v_curGraFlic.a.j.save.frames.length;v_i++){
 		v_selObj = document.createElement('option');
 		v_selObj.value = v_i;
-		v_selObj.innerHTML = '[' + v_i + '] ' + v_curGraFlic.config.frames[v_i].title;
+		v_selObj.innerHTML = '[' + v_i + '] ' + v_curGraFlic.a.j.save.frames[v_i].title;
 		for(v_i2 = 0;v_i2 < v_curGraFlic.curBitmap.plays_on_frames.length;v_i2++){
 			if(v_curGraFlic.curBitmap.plays_on_frames[v_i2] == v_i){
 				v_selObj.selected = true;
@@ -607,15 +607,15 @@ function f_frameNew(v_evt){
 }
 function f_layerSelect(v_evt){
 	//.selectedIndex standard yet?
-	v_curGraFlic.curBitmap = v_curGraFlic.bitmaps[v_layerSel.selectedIndex];
+	v_curGraFlic.curBitmap = v_curGraFlic.a.j.bitmaps[v_layerSel.selectedIndex];
 	f_rebuildBitmapAndFrameUI();
 	f_rebuildPlaysOnFramesUI();//update this UI to have the frames the the current bitmap plays on selected.
 	f_requestRedraw();
 }
 function f_frameSelect(v_evt){
 	//.selectedIndex standard yet?
-	v_curGraFlic.config.selected_frame_index = v_frameSel.selectedIndex;
-	v_curGraFlic.curFrame = v_curGraFlic.config.frames[v_curGraFlic.config.selected_frame_index];
+	v_curGraFlic.a.j.save.selected_frame_index = v_frameSel.selectedIndex;
+	v_curGraFlic.curFrame = v_curGraFlic.a.j.save.frames[v_curGraFlic.a.j.save.selected_frame_index];
 	f_rebuildBitmapAndFrameUI();
 	f_requestRedraw();
 }
@@ -635,16 +635,16 @@ function f_playsOnFramesSelect(v_evt){
 	f_requestRedraw();
 }
 function f_toggleOnionSkin(v_evt){
-	v_curGraFlic.config.onion_skin_on = v_onionSkinChk.checked;
+	v_curGraFlic.a.j.save.onion_skin_on = v_onionSkinChk.checked;
 	f_requestRedraw();
 }
 function f_toggleOnionStainGlass(v_evt){
-	v_curGraFlic.config.stain_glass_on = GraFlicC_onion_skin_stain_glass_chk.checked;
+	v_curGraFlic.a.j.save.stain_glass_on = GraFlicC_onion_skin_stain_glass_chk.checked;
 	f_requestRedraw();
 }
 function f_scaleDownAdjust(v_evt){
-	v_curGraFlic.config.save_scale = parseFloat(document.getElementById('GraFlicC_scale_down_rng').value);
-	document.getElementById('GraFlicC_scale_down_percent_spn').innerHTML = Math.round(v_curGraFlic.config.save_scale * 100).toString();
+	v_curGraFlic.a.j.save.save_scale = parseFloat(document.getElementById('GraFlicC_scale_down_rng').value);
+	document.getElementById('GraFlicC_scale_down_percent_spn').innerHTML = Math.round(v_curGraFlic.a.j.save.save_scale * 100).toString();
 }
 function f_canvasSizeClick(v_evt){
 	var v_newW = parseInt(document.getElementById('GraFlicC_canvas_size_w_txt').value);
@@ -686,8 +686,8 @@ function f_metadataRefreshUI(v_evt){
 	//update the textarea to match what is in the selected metadata
 	//(Can be called with no parameter to just refresh whatever is selected.)
 	var v_metaKey = GraFlicC_metadata_sel.value.replace(/^meta_/, '');
-	if(v_curGraFlic.metadata.general[v_metaKey]){
-		GraFlicC_metadata_txt.value = v_curGraFlic.metadata.general[v_metaKey];
+	if(v_curGraFlic.a.j.metadata.general[v_metaKey]){
+		GraFlicC_metadata_txt.value = v_curGraFlic.a.j.metadata.general[v_metaKey];
 	}else{
 		GraFlicC_metadata_txt.value = '';
 	}
@@ -696,11 +696,11 @@ function f_metadataInput(v_evt){
 	var v_metaKey = GraFlicC_metadata_sel.value.replace(/^meta_/, '');
 	var v_inputStr = v_evt.target.value;
 	if(!v_inputStr.length){//If the text is fully erased, make sure the metadata value is deleted if present
-		if(v_curGraFlic.metadata.general[v_metaKey]){
-			delete v_curGraFlic.metadata.general[v_metaKey];
+		if(v_curGraFlic.a.j.metadata.general[v_metaKey]){
+			delete v_curGraFlic.a.j.metadata.general[v_metaKey];
 		}
 	}else{
-		v_curGraFlic.metadata.general[v_metaKey] = v_inputStr;
+		v_curGraFlic.a.j.metadata.general[v_metaKey] = v_inputStr;
 	}
 }
 
@@ -727,7 +727,7 @@ function f_kUp(v_evt){
 		case 55:
 		case 56:
 		case 57:
-			v_curGraFlic.config.selected_palette_index = Math.min(v_evt.keyCode - 48, v_curGraFlic.config.palette.length - 1);
+			v_curGraFlic.a.j.save.selected_palette_index = Math.min(v_evt.keyCode - 48, v_curGraFlic.a.j.save.palette.length - 1);
 			break;
 		case 80://(P)en
 			v_curGraFlic.curTool = 1;
@@ -807,14 +807,14 @@ function f_qualityChange(v_evt){
 		GraFlicC_export_quality_txt.value = v_qPercent.toString();
 	}
 	v_qPercent /= 100;
-	v_curGraFlic.config.export.quality = v_qPercent;
+	v_curGraFlic.a.j.save.export.quality = v_qPercent;
 }
 function f_bruteForceToggle(v_evt){
 	GraFlicC_brute_force_iter_txt.disabled = !v_evt.target.checked;
 	if(v_evt.target.checked){
 		f_bruteForceIterChange();//Set the iterations based on the text input if brute force enabled.
 	}else{//Otherwise, clear the value if disabled.
-		delete v_curGraFlic.config.export.png.brute;
+		delete v_curGraFlic.a.j.save.export.png.brute;
 	}
 }
 function f_bruteForceIterChange(v_evt){
@@ -826,7 +826,7 @@ function f_bruteForceIterChange(v_evt){
 				v_bIter = 30;
 				alert('Brute force compression capped at 30 to prevent n00bs from crashing the browser. Anything higher is very diminishing returns…');
 			}
-			v_curGraFlic.config.export.png.brute = v_bIter;
+			v_curGraFlic.a.j.save.export.png.brute = v_bIter;
 		}
 	}
 }
@@ -849,7 +849,7 @@ function f_onExported(v_aeRes){
 function f_onArchived(v_arcRes){
 	GraFlicC_download_work_link.download = f_makeFilename() + '.graflic';
 	GraFlicC_download_work_link.innerHTML = GraFlicC_download_work_link.download;
-	GraFlicC_download_work_link.href = v_arcRes.blob;
+	GraFlicC_download_work_link.href = v_arcRes.b;
 	GraFlicC_project_thumb.src = v_curGraFlic.encoder.output;
 	f_requestRedraw();
 }
@@ -860,10 +860,10 @@ function f_makeFilename(){
 	//v_hostname = v_hostname.replace(/anim/gi, 'Anim');
 	//v_hostname = v_hostname.replace(/png/gi, 'PNG');
 	//v_hostname = v_hostname.replace(/apng/gi, 'APNG');
-	if(!v_curGraFlic.metadata.general.Title){
-		v_filename = Date.now();//v_hostname + '_' + Date.now();
+	if(!v_curGraFlic.a.j.metadata.general.Title){
+		v_filename = Date.now().toString();//v_hostname + '_' + Date.now();
 	}else{
-		v_filename = GraFlicUtil.filenameSafe(v_curGraFlic.metadata.general.Title);// + '_' + v_hostname;
+		v_filename = GraFlicUtil.filenameSafe(v_curGraFlic.a.j.metadata.general.Title);// + '_' + v_hostname;
 	}
 	return v_filename;
 }
@@ -953,8 +953,8 @@ function f_init(){
 	v_paletteRevertCol = GraFlicImage.makeCopyOfJSON(v_curGraFlic.curPaletteColor);
 	
 	//v_uiState.onion_skin_on = v_onionSkinChk.checked;//in the future, another var may adjust onion skin opacity or viewing mode.
-	v_onionSkinChk.checked = v_curGraFlic.config.onion_skin_on ? true : false;//handle undefined
-	GraFlicC_onion_skin_stain_glass_chk.checked =  v_curGraFlic.config.stain_glass_on ? true : false;
+	v_onionSkinChk.checked = v_curGraFlic.a.j.save.onion_skin_on ? true : false;//handle undefined
+	GraFlicC_onion_skin_stain_glass_chk.checked =  v_curGraFlic.a.j.save.stain_glass_on ? true : false;
 	
 	
 	
@@ -988,8 +988,8 @@ function f_onLoaded(v_zRes){
 	//TODO: May want to make a system where the JSON vars init with default values, then the values from the save cascade over it.
 	//That way vars added in the future will not be undefined causing potential bugs.
 	//Otherwise, there may be in some cases checks to see if later added things are defined.
-	if(v_zRes.files['thumbs/thumb_256.png']){
-		GraFlicC_project_thumb.src = v_zRes.files['thumbs/thumb_256.png'].blob;
+	if(v_zRes.f['thumbs/thumb_256.png']){
+		GraFlicC_project_thumb.src = v_zRes.f['thumbs/thumb_256.png'].b;
 	}
 }
 
@@ -1030,8 +1030,8 @@ function f_onRedrawn(){
 <tr><td class="GraFlic_j">🎞</td><td>Frame. Represents an animation frame that plays for a moment of time. Bitmaps can configure what frames they appear on.</td></tr>
 <tr><td class="GraFlic_j">🕴</td><td>Z-Index. Higher value bitmaps are drawn on top of lower value bitmaps. This number can be negative.</td></tr>
 <tr><td class="GraFlic_j">🌊</td><td>Flood-fill color.</td></tr>
-<tr><td class="GraFlic_j">👻</td><td>Ghosting. Show other frames in translucent mode to help as a drawing guide. Also a symbol for palette level of opacity.</td></tr>
-<tr><td class="GraFlic_j">💎</td><td>Gem view. Show fill sections with less opacity than line sections to aid asa drawing guide.</td></tr>
+<tr><td class="GraFlic_j">🍃</td><td>Breeze. Show other frames in translucent mode to help as a drawing guide.</td></tr>
+<tr><td class="GraFlic_j">💎</td><td>Stained glass. Show fill sections with less opacity than line sections to aid as a drawing guide.</td></tr>
 <tr><td class="GraFlic_j">❌</td><td>Erase mode. Erases things instead of drawing.</td></tr>
 <tr><td>.graflic</td><td>This is the file format for saving/restoring a project.</td></tr>
 </tbody>
