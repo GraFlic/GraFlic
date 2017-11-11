@@ -158,6 +158,7 @@ function GraFlicArchive(zipDataUint8, paramz){
 		console.log('Local File Header sizes: payload: ' + v_payloadSize + ' filename: ' + v_filenameSize + ' extra: ' + v_extraFieldSize);
 		console.log('bit flags: 0x' + v_bitFlags.toString(16));
 		v_decompressor = GraFlicUtil.noCompression;//default to 0, no compression
+		console.log('compression mode: ' + v_payloadCompression);
 		if(v_payloadCompression == 8){//DEFLATE
 			v_decompressor = window.pako.inflateRaw;
 		}
@@ -184,7 +185,7 @@ function GraFlicArchive(zipDataUint8, paramz){
 				//then set the decompressor to ungzip because .gz has internal compression of its own.
 				v_extractedBytes = v_decompressor(v_extractedBytes);
 				v_decompressor = window.pako.ungzip;
-				console.log('.gz file, setting decompression to GZip');
+				console.log('.gz file, setting decompression to GZip, gz payload size: ' + v_extractedBytes.length);
 			}
 			//JSON and text will not have .d (data) populated since it is pretty useless in most cases and would waste resources.
 			if(v_filename.match(/\.json(\.gz)?$/i)){
@@ -200,7 +201,7 @@ function GraFlicArchive(zipDataUint8, paramz){
 			}else{
 				xFile.d = v_decompressor(v_extractedBytes);
 				//Some browser may truncate the array text when tracing to debug and look like all zeroes.
-				//console.log('extracted U8Array(' + v_filename + '): ' + xFile);
+				console.log('extracted U8Array(' + v_filename + '): ' + xFile + ' size: ' + xFile.d.length);
 			}
 			}catch(fileError){
 				console.log('error reconstituting ' + v_filename + ', it may be a junk or auto-generated file.');
@@ -216,6 +217,7 @@ function GraFlicArchive(zipDataUint8, paramz){
 			xFile.d = v_decompressor(v_extractedBytes);
 			this.fileToBLOB(xFile);
 			this.f[v_filename] = xFile;//if completed with no errors, include it in the files object
+			console.log('----------------------');
 		}
 		v_filesRead++;
 	}//end while
@@ -231,7 +233,13 @@ GraFlicArchive.prototype.addFile = function(v_fileAdded){
 		//In many cases there is temp data needed to function at run time but not needed in the save.
 		//Setting these things up with separate logic can cause bloat and lots of redundant code in some cases.
 		//For the sake of consistency and keeping the code trimmed down, adding it to the archive but setting .temp may be better.
-	
+	if(v_fileAdded.p.match(/\/[^\/]+$/)){//If a file, ensure the containing directory exists.
+		var v_contDir = {};
+		v_contDir.p = v_fileAdded.p.match(/^(.+\/)[^\/]/)[1];
+		if(!this.f[v_contDir.p]){//If the folder already exists, leave it as it is. It may have properties like .temp set that should not be overwritten.
+			this.addFile(v_contDir);//(If the containing folder is in a folder, this will be done again in the recursive call.)
+		}
+	}
 	if(this.f[v_fileAdded.p] && this.f[v_fileAdded.p].b){
 		//If overwriting the file, first destroy the previous blob
 		URL.revokeObjectURL(this.f[v_fileAdded.p].b);
@@ -254,23 +262,42 @@ GraFlicArchive.prototype.deleteFile = function(v_fPath){
 		}
 		//TODO: would a this.t for quick .txt access be useful?
 		delete this.f[v_fPath];
+	}else{
+		console.log('deleteFile(): ' + v_fPath + ' does not exist.');
 	}
 };
 GraFlicArchive.prototype.fileToBLOB = function(v_srcFile){
-	if(v_srcFile.d){//BLOB creation may not be possible if .d (data) not set. BLOBs are mainly needed for things like images, which will have that
+	if(v_srcFile.d && v_srcFile.d.length){//BLOB creation may not be possible if .d (data) not set. BLOBs are mainly needed for things like images, which will have that
+			//Folders may extract as a 0 length octet stream and do not need a BLOB.
 		var objParamz = {};
 		objParamz.type = 'application/octet-stream';
 		//.gz will be auto decompressed on load, and auto-compressed internally on save (before being stored in the ZIP with method 0 no compression)
-		if(v_srcFile.p.match(/\.a*png(\.gz)?$/i)){objParamz.type = 'image/png';}
-		if(v_srcFile.p.match(/\.jpe*g(\.gz)?$/i)){objParamz.type = 'image/jpeg';}
-		if(v_srcFile.p.match(/\.giff*(\.gz)?$/i)){objParamz.type = 'image/gif';}
-		if(v_srcFile.p.match(/\.webp(\.gz)?$/i)){objParamz.type = 'image/webp';}
+		var v_isImg = false;
+		if(v_srcFile.p.match(/\.a*png(\.gz)?$/i)){objParamz.type = 'image/png';v_isImg = true;}
+		if(v_srcFile.p.match(/\.jpe*g(\.gz)?$/i)){objParamz.type = 'image/jpeg';v_isImg = true;}
+		if(v_srcFile.p.match(/\.giff*(\.gz)?$/i)){objParamz.type = 'image/gif';v_isImg = true;}
+		if(v_srcFile.p.match(/\.webp(\.gz)?$/i)){objParamz.type = 'image/webp';v_isImg = true;}
 		if(v_srcFile.p.match(/\.txt(\.gz)?$/i)){objParamz.type = 'text/plain';}
 		if(v_srcFile.p.match(/\.json(\.gz)?$/i)){objParamz.type = 'application/json';}
 		
 		v_srcFile.b = URL.createObjectURL(  new Blob([v_srcFile.d], objParamz)  );
+		if(v_isImg){//Create drawable image objects for images. The point of embedding images in web-app saves is to draw them!
+			v_srcFile.i = new Image();
+			v_srcFile.i.src = v_srcFile.b;
+			v_srcFile.i.alt = v_srcFile.p;
+		}
 	}
 };//end .fileToBLOB()
+GraFlicArchive.prototype.listDir = function(v_dir){
+	//Returns an array of files that are in the directory.
+	var ls = [];
+	for(var k in this.f){
+		if(this.f[k].p.indexOf(v_dir) == 0 && this.f[k].p != v_dir){//The dir path is at the start of the file path
+			ls.push(this.f[k]);
+		}
+	}
+	return ls;
+};
 GraFlicUtil.noCompression = function(fBytes, fParamZ){return fBytes;};//Do nothing with compression type 0, none.
 /*
 .saveToZIP()
@@ -715,5 +742,13 @@ GraFlicUtil.absorbJSON = function(jPrim, jSec, paramz){
 		}
 	}
 	return jPrim;
+}
+GraFlicUtil.makeCopyOfJSON = function(v_sourceObj){//static
+	//Currently used to copy a palette object, may be useful for other things later too.
+	var v_copyObj = {};
+	for(var v_key in v_sourceObj){
+		v_copyObj[v_key] = v_sourceObj[v_key];
+	}
+	return v_copyObj;
 }
 

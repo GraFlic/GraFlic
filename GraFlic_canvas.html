@@ -43,7 +43,7 @@ SOFTWARE.
 
 <tr>
 <td colspan="2">
-<div style="display:inline-block;width:75vw;height:50vh;overflow:scroll;">
+<div style="display:inline-block;width:75vw;height:75vh;overflow:scroll;">
 <!--It is important to have the style border, since part of the canvas in DOM it keeps the events handled when drawing over the edge of the image.-->
 <!--Currently, padding seems to throw off the coords on Firefox, border throws it off on Safari.-->
 <canvas id="GraFlicC_main_canvas" style="border: 0px solid rgba(0, 0, 0, 0.25);box-shadow: 5px 5px 5px #AFAFAF, 7px 7px 7px #FFFFFF;">
@@ -62,7 +62,7 @@ SOFTWARE.
 
 <tr>
 <td colspan="2" class="GraFlic_x">
-This is an early version of the format, and is very subject to change. <a href="#About_saves">Saves may not load in future versions without workarounds.</a> 
+Visit <a href="http://AnimatedPNGs.com" target="_blank">AnimatedPNGs.com</a> for more info on the Animated PNG export format. This is an early version of the editor, and is very subject to change. <a href="#About_saves">Saves may not load in future versions without workarounds.</a> 
 </td>
 </tr>
 
@@ -87,11 +87,11 @@ This is an early version of the format, and is very subject to change. <a href="
 &nbsp;<input type="checkbox" id="GraFlicC_tool_erase_chk"/>
 <label for="GraFlicC_tool_erase_chk" class="GraFlic_j">❌</label>
 &nbsp;<input type="radio" name="GraFlicC_tool_rad" value="1" id="GraFlicC_tool_pen_rad" checked/>
-<label for="GraFlicC_tool_pen_rad" class="GraFlic_j">🖊</label>
+<label for="GraFlicC_tool_pen_rad" class="GraFlic_j">✍️</label>
 &nbsp;<input type="radio" name="GraFlicC_tool_rad" value="2" id="GraFlicC_tool_fill_bucket_rad"/>
-<label for="GraFlicC_tool_fill_bucket_rad" class="GraFlic_j">🌊</label>
+<label for="GraFlicC_tool_fill_bucket_rad" class="GraFlic_j">🛢🌊</label>
 &nbsp;<input type="radio" name="GraFlicC_tool_rad" value="3" id="GraFlicC_tool_line_bucket_rad"/>
-<label for="GraFlicC_tool_line_bucket_rad" class="GraFlic_j">🖊🌊</label>
+<label for="GraFlicC_tool_line_bucket_rad" class="GraFlic_j">✍️🌊</label>
 &nbsp;<input type="radio" name="GraFlicC_tool_rad" value="300" id="GraFlicC_tool_lasso_rad"/>
 <label for="GraFlicC_tool_lasso_rad" class="GraFlic_j">✂</label>
 </td>
@@ -135,10 +135,11 @@ x
 
 <tr>
 <td>
-<button id="GraFlicC_save_Animated_PNG_btn" class="GraFlic_j">💾🎬<br/><span style="font-size:0.6em;">.PNG</span></button>
-<input type="range" id="GraFlicC_scale_down_rng" value="0.5" min="0.1" max="1" step="0.01"/><span>Scale down to </span><span id="GraFlicC_scale_down_percent_spn">50</span><span>%</span><br/>
+<button id="GraFlicC_save_Animated_PNG_btn" class="GraFlic_j">💾🎬</button>
+<input type="range" id="GraFlicC_scale_down_rng" value="0.5" min="0.1" max="1" step="0.01"/><span>Scale down to </span><span id="GraFlicC_scale_down_percent_spn">50</span><span>%</span>
 <a id="GraFlicC_download_image_link" target="_blank" href="#"></a>
-<button id="GraFlicC_save_work_btn" class="GraFlic_j">💾🗂<br/><span style="font-size:0.6em;">.GraFlic</span></button>
+<br/>
+<button id="GraFlicC_save_work_btn" class="GraFlic_j">💾🗂</button>
 <input type="file" id="GraFlicC_load_work_btn" accept=".graflic,.zip,image/graflic,application/zip"/>
 <a id="GraFlicC_download_work_link" target="_blank" href="#"></a>
 </td>
@@ -261,7 +262,8 @@ x
 </tbody>
 </table>
 
-<br/><table class="GraFlic_t">
+<br/>
+<table class="GraFlic_t">
 <thead>
 <tr><th colspan="4">Export Options</th></tr>
 </thead>
@@ -304,6 +306,22 @@ x
 </tbody>
 </table>
 
+<br/>
+<table class="GraFlic_t">
+<thead>
+<tr><th>Embed images</tr></th>
+</thead>
+<tbody>
+<tr><td>
+<input type="file" id="GraFlicC_embed_file" accept="image/*"/>
+<button id="GraFlicC_new_image_embed_btn">➕🖼</button>
+</td></tr>
+<tr><td>
+<select id="GraFlicC_embed_sel">
+</select>
+</td></tr>
+</tbody>
+</table>
 
 <script>
 'use strict';
@@ -351,15 +369,15 @@ var v_palSel;//Palette HTML Select input
 
 function f_newPaletteColor(){
 	v_curGraFlic.newPaletteColorRGBA(0.5, 0.5, 0.5, 1, '🎨');//palette graphic char
-	f_paletteColorChange(v_curGraFlic.a.j.save.palette.length - 1);//Select the new color so it can be edited.
+	f_paletteColorChange(v_curGraFlic.curPalette.colors.length - 1);//Select the new color so it can be edited.
 	f_rebuildPaletteEditorUI();
 }
 function f_revertPaletteEdit(){
 	//If not happy with the change, set it back to the saved copy of what it was before,
 	//then make a new copy so that other changes can be tried and it can be reverted again.
 	v_curGraFlic.curPaletteColor = v_paletteRevertCol;
-	v_curGraFlic.a.j.save.palette[v_curGraFlic.a.j.save.selected_palette_index] = v_curGraFlic.curPaletteColor;//Make sure it is linked correctly in the JSON
-	v_paletteRevertCol = GraFlicImage.makeCopyOfJSON(v_curGraFlic.curPaletteColor);
+	v_curGraFlic.curPalette.colors[v_curGraFlic.a.j.save.selected_color_index] = v_curGraFlic.curPaletteColor;//Make sure it is linked correctly in the JSON
+	v_paletteRevertCol = GraFlicUtil.makeCopyOfJSON(v_curGraFlic.curPaletteColor);
 	f_rebuildPaletteEditorUI();
 	f_requestRedraw();
 }
@@ -367,12 +385,12 @@ function f_rebuildPaletteSelectUI(){
 	while(v_palSel.firstChild){
 		v_palSel.removeChild(v_palSel.firstChild);
 	}
-	for(var v_i = 0;v_i < v_curGraFlic.a.j.save.palette.length;v_i++){
-		var v_palColor = v_curGraFlic.a.j.save.palette[v_i];
+	for(var v_i = 0;v_i < v_curGraFlic.curPalette.colors.length;v_i++){
+		var v_palColor = v_curGraFlic.curPalette.colors[v_i];
 		var v_palOpt = document.createElement('option');
 		v_palOpt.innerHTML = '[' + v_i + '] ' + v_palColor.title;
 		v_palOpt.value = v_i;
-		if(v_i == v_curGraFlic.a.j.save.selected_palette_index){
+		if(v_i == v_curGraFlic.a.j.save.selected_color_index){
 			v_palOpt.selected = true;
 		}
 		v_palSel.appendChild(v_palOpt);
@@ -382,14 +400,14 @@ function f_rebuildPaletteSelectUI(){
 function f_paletteColorChange(v_evt){
 	if(typeof v_evt === 'number'){
 		//can be called with a palette index instead of an event if being set by another function.
-		v_curGraFlic.a.j.save.selected_palette_index = v_evt;
+		v_curGraFlic.a.j.save.selected_color_index = v_evt;
 	}else{
-		v_curGraFlic.a.j.save.selected_palette_index = parseInt(v_evt.target.value);
+		v_curGraFlic.a.j.save.selected_color_index = parseInt(v_evt.target.value);
 	}
-	v_curGraFlic.curPaletteColor = v_curGraFlic.a.j.save.palette[v_curGraFlic.a.j.save.selected_palette_index];
-	v_paletteRevertCol = GraFlicImage.makeCopyOfJSON(v_curGraFlic.curPaletteColor);
+	v_curGraFlic.curPaletteColor = v_curGraFlic.curPalette.colors[v_curGraFlic.a.j.save.selected_color_index];
+	v_paletteRevertCol = GraFlicUtil.makeCopyOfJSON(v_curGraFlic.curPaletteColor);
 	//Palette [0] is reserved for transparent.
-	var v_palLocked = v_curGraFlic.a.j.save.selected_palette_index == 0;
+	var v_palLocked = v_curGraFlic.a.j.save.selected_color_index == 0;
 	GraFlicC_palette_alpha_rng.disabled = v_palLocked;
 	GraFlicC_palette_alpha_txt.disabled = v_palLocked;
 	GraFlicC_palette_red_rng.disabled = v_palLocked;
@@ -461,13 +479,23 @@ function f_palFloatValid(v_chanVal){
 	//See if this is valid input for adjusting the color. If not the calling function can exit and leave it as is.
 	return !isNaN(v_chanVal) && v_chanVal >= 0 && v_chanVal <= 1;
 }
-
+function f_rebuildEmbedListUI(){
+	while(GraFlicC_embed_sel.firstChild){GraFlicC_embed_sel.removeChild(GraFlicC_embed_sel.firstChild);}
+	var eFiles = v_curGraFlic.a.listDir('embeds/');
+	for(var i = 0;i < eFiles.length;i++){
+		var selObj = document.createElement('option');
+		selObj.value = eFiles[i].p;
+		selObj.innerHTML = eFiles[i].p;
+		//if(v_curGraFlic.a.j.save.images[v_i] == v_curGraFlic.curImage){v_selObj.selected = true;}
+		GraFlicC_embed_sel.appendChild(selObj);
+	}
+}
 function f_paletteChangeTitle(v_evt){
 	v_curGraFlic.curPaletteColor.title = GraFlicC_palette_color_title_txt.value;
 	f_rebuildPaletteSelectUI();//Update so the color title is different now
 }
 function f_bitmapChangeTitle(v_evt){
-	v_curGraFlic.curBitmap.title = GraFlicC_bitmap_title_txt.value;
+	v_curGraFlic.curImage.title = GraFlicC_bitmap_title_txt.value;
 	f_rebuildBitmapAndFrameUI();
 }
 function f_bitmapEditZIndex(v_evt){
@@ -476,7 +504,7 @@ function f_bitmapEditZIndex(v_evt){
 	if(v_zCheck.match(/\.$/)){v_zCheck += '0';}//If partially typed, but the number after the decimal point not put yet.
 	v_zCheck = parseFloat(v_zCheck);
 	if(isNaN(v_zCheck)){return;}
-	v_curGraFlic.curBitmap.z_index = v_zCheck;
+	v_curGraFlic.curImage.z_index = v_zCheck;
 	f_requestRedraw();//z-index may change what is drawn on top of what.
 }
 function f_togglePlayPause(v_evt){
@@ -536,11 +564,11 @@ function f_rebuildBitmapAndFrameUI(){
 	var v_i;
 	var v_i2;
 	var v_selObj;
-	/*for(v_i = 0;v_i < v_curGraFlic.a.j.bitmaps.length;v_i++){
-		v_procBMP = v_curGraFlic.a.j.bitmaps[v_i];
+	/*for(v_i = 0;v_i < v_curGraFlic.a.j.save.images.length;v_i++){
+		v_procBMP = v_curGraFlic.a.j.save.images[v_i];
 		for(var v_i2 = 0;v_i2 < v_procBMP.plays_on_frames.length;v_i2++){
 			//Find the latest frame that any layer is to be played on
-			v_totalFrames = Math.max(v_totalFrames, v_procBMP.plays_on_frames[v_i2] + 1);//+1 since zero-based.
+			v_totalFrames = Math.max(v_totalFrames, v_curGraFlic.a.j.save.frames[v_procBMP.plays_on_frames[v_i2] + 1].id);//+1 since zero-based.
 		}
 	}*/
 	GraFlicC_frame_global_ms_txt.value = v_curGraFlic.a.j.save.global_delay.toString();
@@ -550,16 +578,16 @@ function f_rebuildBitmapAndFrameUI(){
 	}else{
 		GraFlicC_frame_ms_txt.value = v_curGraFlic.curFrame.delay.toString();
 	}
-	GraFlicC_bitmap_title_txt.value = v_curGraFlic.curBitmap.title;
-	GraFlicC_bitmap_z_index_txt.value = v_curGraFlic.curBitmap.z_index.toString();
+	GraFlicC_bitmap_title_txt.value = v_curGraFlic.curImage.title;
+	GraFlicC_bitmap_z_index_txt.value = v_curGraFlic.curImage.z_index.toString();
 	GraFlicC_frame_title_txt.value = v_curGraFlic.curFrame.title;
 	while(v_layerSel.firstChild){v_layerSel.removeChild(v_layerSel.firstChild);}
 	while(v_frameSel.firstChild){v_frameSel.removeChild(v_frameSel.firstChild);}
-	for(v_i = 0;v_i < v_curGraFlic.a.j.bitmaps.length;v_i++){
+	for(v_i = 0;v_i < v_curGraFlic.a.j.save.images.length;v_i++){
 		v_selObj = document.createElement('option');
 		v_selObj.value = v_i;
-		v_selObj.innerHTML = '[' + v_i + '] ' + v_curGraFlic.a.j.bitmaps[v_i].title;
-		if(v_curGraFlic.a.j.bitmaps[v_i] == v_curGraFlic.curBitmap){v_selObj.selected = true;}
+		v_selObj.innerHTML = '[' + v_i + '] ' + v_curGraFlic.a.j.save.images[v_i].title;
+		if(v_curGraFlic.a.j.save.images[v_i] == v_curGraFlic.curImage){v_selObj.selected = true;}
 		v_layerSel.appendChild(v_selObj);
 	}
 	for(v_i = 0;v_i < v_curGraFlic.a.j.save.frames.length;v_i++){
@@ -579,7 +607,7 @@ function f_rebuildPlaysOnFramesUI(){
 	v_selObj = document.createElement('option');
 	v_selObj.value = -1;
 	v_selObj.innerHTML = '&#x1F30E;&#x1F39E;';//globe and movie frame chars
-	if(v_curGraFlic.curBitmap.plays_on_all_frames){
+	if(v_curGraFlic.curImage.plays_on_all_frames){
 		v_selObj.selected = true;
 	}
 	v_playsOnFramesSel.appendChild(v_selObj);
@@ -587,8 +615,8 @@ function f_rebuildPlaysOnFramesUI(){
 		v_selObj = document.createElement('option');
 		v_selObj.value = v_i;
 		v_selObj.innerHTML = '[' + v_i + '] ' + v_curGraFlic.a.j.save.frames[v_i].title;
-		for(v_i2 = 0;v_i2 < v_curGraFlic.curBitmap.plays_on_frames.length;v_i2++){
-			if(v_curGraFlic.curBitmap.plays_on_frames[v_i2] == v_i){
+		for(v_i2 = 0;v_i2 < v_curGraFlic.curImage.plays_on_frames.length;v_i2++){
+			if(v_curGraFlic.curImage.plays_on_frames[v_i2] == v_curGraFlic.a.j.save.frames[v_i].id){
 				v_selObj.selected = true;
 			}
 		}
@@ -600,6 +628,11 @@ function f_bitmapNew(v_evt){
 	f_rebuildBitmapAndFrameUI();
 	f_rebuildPlaysOnFramesUI();
 }
+function f_embedNew(v_evt){
+	v_curGraFlic.addEmbed(GraFlicC_embed_sel.value);
+	f_rebuildBitmapAndFrameUI();
+	f_rebuildPlaysOnFramesUI();
+}
 function f_frameNew(v_evt){
 	v_curGraFlic.addFrame();
 	f_rebuildBitmapAndFrameUI();
@@ -607,7 +640,7 @@ function f_frameNew(v_evt){
 }
 function f_layerSelect(v_evt){
 	//.selectedIndex standard yet?
-	v_curGraFlic.curBitmap = v_curGraFlic.a.j.bitmaps[v_layerSel.selectedIndex];
+	v_curGraFlic.curImage = v_curGraFlic.a.j.save.images[v_layerSel.selectedIndex];
 	f_rebuildBitmapAndFrameUI();
 	f_rebuildPlaysOnFramesUI();//update this UI to have the frames the the current bitmap plays on selected.
 	f_requestRedraw();
@@ -620,17 +653,17 @@ function f_frameSelect(v_evt){
 	f_requestRedraw();
 }
 function f_playsOnFramesSelect(v_evt){
-	v_curGraFlic.curBitmap.plays_on_frames = [];
+	v_curGraFlic.curImage.plays_on_frames = [];
 	//var v_objSel;
-	v_curGraFlic.curBitmap.plays_on_all_frames = v_playsOnFramesSel.childNodes[0].selected;
+	v_curGraFlic.curImage.plays_on_all_frames = v_playsOnFramesSel.childNodes[0].selected;
 	for(var v_i = 1;v_i < v_playsOnFramesSel.childNodes.length;v_i++){
 		//v_objSel = v_fames;
 		//alert(v_playsOnFramesSel.childNodes[v_i].selected);
 		if(v_playsOnFramesSel.childNodes[v_i].selected){
-			v_curGraFlic.curBitmap.plays_on_frames.push(parseInt(v_playsOnFramesSel.childNodes[v_i].value));
+			v_curGraFlic.curImage.plays_on_frames.push(v_curGraFlic.a.j.save.frames[parseInt(v_playsOnFramesSel.childNodes[v_i].value)].id);
 			//alert('sel ' + v_i);
 		}
-		//alert(v_curGraFlic.curBitmap.plays_on_frames);
+		//alert(v_curGraFlic.curImage.plays_on_frames);
 	}
 	f_requestRedraw();
 }
@@ -686,8 +719,8 @@ function f_metadataRefreshUI(v_evt){
 	//update the textarea to match what is in the selected metadata
 	//(Can be called with no parameter to just refresh whatever is selected.)
 	var v_metaKey = GraFlicC_metadata_sel.value.replace(/^meta_/, '');
-	if(v_curGraFlic.a.j.metadata.general[v_metaKey]){
-		GraFlicC_metadata_txt.value = v_curGraFlic.a.j.metadata.general[v_metaKey];
+	if(v_curGraFlic.a.j.meta.general[v_metaKey]){
+		GraFlicC_metadata_txt.value = v_curGraFlic.a.j.meta.general[v_metaKey];
 	}else{
 		GraFlicC_metadata_txt.value = '';
 	}
@@ -696,11 +729,11 @@ function f_metadataInput(v_evt){
 	var v_metaKey = GraFlicC_metadata_sel.value.replace(/^meta_/, '');
 	var v_inputStr = v_evt.target.value;
 	if(!v_inputStr.length){//If the text is fully erased, make sure the metadata value is deleted if present
-		if(v_curGraFlic.a.j.metadata.general[v_metaKey]){
-			delete v_curGraFlic.a.j.metadata.general[v_metaKey];
+		if(v_curGraFlic.a.j.meta.general[v_metaKey]){
+			delete v_curGraFlic.a.j.meta.general[v_metaKey];
 		}
 	}else{
-		v_curGraFlic.a.j.metadata.general[v_metaKey] = v_inputStr;
+		v_curGraFlic.a.j.meta.general[v_metaKey] = v_inputStr;
 	}
 }
 
@@ -727,7 +760,7 @@ function f_kUp(v_evt){
 		case 55:
 		case 56:
 		case 57:
-			v_curGraFlic.a.j.save.selected_palette_index = Math.min(v_evt.keyCode - 48, v_curGraFlic.a.j.save.palette.length - 1);
+			v_curGraFlic.a.j.save.selected_color_index = Math.min(v_evt.keyCode - 48, v_curGraFlic.curPalette.colors.length - 1);
 			break;
 		case 80://(P)en
 			v_curGraFlic.curTool = 1;
@@ -831,6 +864,20 @@ function f_bruteForceIterChange(v_evt){
 	}
 }
 
+var v_fileToEmbed;
+function f_embedFile(v_evt){
+	v_fileToEmbed = v_evt.target.files[0];
+	var v_fr = new FileReader();
+	v_fr.addEventListener('load', f_embedFileLoaded);
+	v_fr.readAsArrayBuffer(v_fileToEmbed);
+}
+function f_embedFileLoaded(v_evt){
+	var v_fe = {};
+	v_fe.d = new Uint8Array(v_evt.target.result);
+	v_fe.p = 'embeds/' + v_fileToEmbed.name;
+	v_curGraFlic.a.addFile(v_fe);
+	f_rebuildEmbedListUI();
+}
 
 
 function f_saveAnimatedPNGNormal(){
@@ -860,10 +907,10 @@ function f_makeFilename(){
 	//v_hostname = v_hostname.replace(/anim/gi, 'Anim');
 	//v_hostname = v_hostname.replace(/png/gi, 'PNG');
 	//v_hostname = v_hostname.replace(/apng/gi, 'APNG');
-	if(!v_curGraFlic.a.j.metadata.general.Title){
+	if(!v_curGraFlic.a.j.meta.general.Title){
 		v_filename = Date.now().toString();//v_hostname + '_' + Date.now();
 	}else{
-		v_filename = GraFlicUtil.filenameSafe(v_curGraFlic.a.j.metadata.general.Title);// + '_' + v_hostname;
+		v_filename = GraFlicUtil.filenameSafe(v_curGraFlic.a.j.meta.general.Title);// + '_' + v_hostname;
 	}
 	return v_filename;
 }
@@ -936,6 +983,9 @@ function f_init(){
 	GraFlicC_export_quality_txt.addEventListener('input', f_qualityChange);
 	GraFlicC_brute_force_chk.addEventListener('change', f_bruteForceToggle);
 	GraFlicC_brute_force_iter_txt.addEventListener('input', f_bruteForceIterChange);
+	
+	GraFlicC_embed_file.addEventListener('change', f_embedFile);
+	GraFlicC_new_image_embed_btn.addEventListener('click', f_embedNew);
 	//----------------------------------------------
 	
 	//################### now do stuff that resets when a new image is started ##############
@@ -950,7 +1000,7 @@ function f_init(){
 	v_curGraFlic.onLoaded = f_onLoaded;
 	GraFlicC_load_work_btn.addEventListener('change', v_curGraFlic.fileSelectLoader);
 	//this.cutBitmap = null;//Initially nothing cut.
-	v_paletteRevertCol = GraFlicImage.makeCopyOfJSON(v_curGraFlic.curPaletteColor);
+	v_paletteRevertCol = GraFlicUtil.makeCopyOfJSON(v_curGraFlic.curPaletteColor);
 	
 	//v_uiState.onion_skin_on = v_onionSkinChk.checked;//in the future, another var may adjust onion skin opacity or viewing mode.
 	v_onionSkinChk.checked = v_curGraFlic.a.j.save.onion_skin_on ? true : false;//handle undefined
@@ -981,6 +1031,7 @@ function f_onLoaded(v_zRes){
 	f_rebuildPaletteEditorUI();
 	f_rebuildBitmapAndFrameUI();
 	f_rebuildPlaysOnFramesUI();
+	f_rebuildEmbedListUI();
 	f_metadataRefreshUI();
 	f_adjustCanvasUI();
 	f_zoomChange();
