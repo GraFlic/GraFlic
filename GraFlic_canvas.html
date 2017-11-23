@@ -1,0 +1,1110 @@
+<!doctype html><html>
+<head>
+<meta charset="UTF-8"/>
+<title>GraFlic™ Animated PNG Drawing Tool &mdash; AnimatedPNGs.com | GraFlic.com</title>
+<link rel="stylesheet" href="GraFlic.css"/>
+<link rel="icon" type="image/png" href="favicon.png"/>
+<script src="GraFlic/GraFlicImage.js"></script>
+<script src="GraFlic/GraFlicUtil.js"></script>
+<script src="GraFlic/GraFlicEncoder.js"></script>
+<script src="pako/pako.min.js"></script>
+<script src="Zopfli/zopfli.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="description" content="GraFlic™ Animated PNG Drawing Tool"/>
+<meta name="keywords" content="APNG,APNGs,PNG,PNGs,Animated PNG,Animated PNGs,GIF,GIFs,animation,format,GraFlic" />
+</head>
+<!--
+The MIT License (MIT)
+
+Copyright (c) 2017 Compukaze LLC
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+-->
+<body>
+
+<table class="GraFlic_t">
+<tbody>
+
+<tr>
+<td colspan="2">
+<div style="display:inline-block;width:75vw;height:75vh;overflow:scroll;">
+<!--It is important to have the style border, since part of the canvas in DOM it keeps the events handled when drawing over the edge of the image.-->
+<!--Currently, padding seems to throw off the coords on Firefox, border throws it off on Safari.-->
+<canvas id="GraFlicC_main_canvas" style="border: 0px solid rgba(0, 0, 0, 0.25);box-shadow: 5px 5px 5px #AFAFAF, 7px 7px 7px #FFFFFF;">
+</canvas>
+</div>
+<div style="display:inline-block;overflow:hidden;width:15vw;height:50vh;">
+<div style="height:50%;overflow:hidden;">
+<canvas id="GraFlicC_mini_editing_canvas" width="200" height="400" style="width:100%;"></canvas>
+</div>
+<div style="height:50%;overflow:hidden;">
+<canvas id="GraFlicC_mini_canvas" width="200" height="400" style="width:100%;"></canvas>
+</div>
+</div>
+</td>
+</tr>
+
+<tr>
+<td colspan="2" class="GraFlic_x">
+Visit <a href="http://AnimatedPNGs.com" target="_blank">AnimatedPNGs.com</a> for more info on the Animated PNG export format. This is an early version of the editor, and is very subject to change. <a href="#About_saves">Saves may not load in future versions without workarounds.</a> 
+</td>
+</tr>
+
+<tr>
+<td>
+<input type="checkbox" id="GraFlicC_onion_skin_chk"/>
+<label for="GraFlicC_onion_skin_chk" class="GraFlic_j">🍃</label>
+<input type="checkbox" id="GraFlicC_onion_skin_stain_glass_chk"/>
+<label for="GraFlicC_onion_skin_stain_glass_chk" class="GraFlic_j">💎</label>
+<input type="range" id="GraFlicC_zoom_rng" value="50" min="20" max="500" step="5" style="float:right;width:60%;"/>
+</td>
+<td style="min-width:6em;">
+<input type="text" id="GraFlicC_zoom_txt" value="50" style="width:4em;"/><span class="GraFlic_j">🔍</span>
+</td>
+</tr>
+
+<tr>
+<td>
+<span id="GraFlicC_palette_color_clr" style="font-family:'Courier New',courier,monospace;background-color:black;border:2px solid #7F7F7F;padding:2px;" class="GraFlic_j">🎨</span>
+<select id="palette_color_sel">
+</select>
+&nbsp;<input type="checkbox" id="GraFlicC_tool_erase_chk"/>
+<label for="GraFlicC_tool_erase_chk" class="GraFlic_j">❌</label>
+&nbsp;<input type="radio" name="GraFlicC_tool_rad" value="1" id="GraFlicC_tool_pen_rad" checked/>
+<label for="GraFlicC_tool_pen_rad" class="GraFlic_j">✍️</label>
+&nbsp;<input type="radio" name="GraFlicC_tool_rad" value="2" id="GraFlicC_tool_fill_bucket_rad"/>
+<label for="GraFlicC_tool_fill_bucket_rad" class="GraFlic_j">🕳🌊</label>
+&nbsp;<input type="radio" name="GraFlicC_tool_rad" value="3" id="GraFlicC_tool_line_bucket_rad"/>
+<label for="GraFlicC_tool_line_bucket_rad" class="GraFlic_j">✍️🌊</label>
+&nbsp;<input type="radio" name="GraFlicC_tool_rad" value="300" id="GraFlicC_tool_lasso_rad"/>
+<label for="GraFlicC_tool_lasso_rad" class="GraFlic_j">✂</label>
+</td>
+
+<td>
+x
+</td>
+</tr>
+
+<tr>
+<td class="GraFlic_e">
+<input id="GraFlicC_pen_width_rng" type="range" value="2.5" min="0.1" max="10" step="0.1"/>
+</td>
+<td><input type="text" id="GraFlicC_pen_width_txt" value="2.5" style="width:4em;"/><span class="GraFlic_j">🖊</span></td>
+</tr>
+
+
+<tr>
+<td>
+<span class="GraFlic_j">📝🖼</span><select id="GraFlicC_bitmap_sel"></select>
+<button id="GraFlicC_new_bitmap_btn">➕🖼</button>
+<input type="text" id="GraFlicC_bitmap_title_txt" value="🖼" style="width:16em;"/>
+&nbsp;<input type="text" id="GraFlicC_bitmap_z_index_txt" value="0" style="width:5em;"/><span class="GraFlic_j">🕴</span>
+</td>
+<td rowspan="2">
+<select id="GraFlicC_plays_on_frames_sel" multiple>
+</select>
+</td>
+</tr>
+
+<tr>
+<td>
+<span class="GraFlic_j">👁🎞</span><select id="GraFlicC_frame_sel"></select>
+<button id="GraFlicC_new_frame_btn">➕🎞</button>
+<input type="text" id="GraFlicC_frame_title_txt" value="🎞" style="width:8em;"/>
+&nbsp;<input type="text" id="GraFlicC_frame_ms_txt" value="" style="width:5em;"/><span class="GraFlic_j">⏳</span>
+&nbsp;<input type="text" id="GraFlicC_frame_global_ms_txt" value="200" style="width:5em;"/><span class="GraFlic_j">🌎⏳</span>
+<button id="GraFlicC_play_pause_btn" class="GraFlic_j">⏯</button>
+</td>
+</tr>
+
+<tr>
+<td>
+<button id="GraFlicC_save_Animated_PNG_btn" class="GraFlic_j">💾🎬</button>
+<input type="range" id="GraFlicC_scale_down_rng" value="0.5" min="0.1" max="1" step="0.01"/><span>Scale down to </span><span id="GraFlicC_scale_down_percent_spn">50</span><span>%</span>
+<a id="GraFlicC_download_image_link" target="_blank" href="#"></a>
+<br/>
+<button id="GraFlicC_save_work_btn" class="GraFlic_j">💾🗂</button>
+<input type="file" id="GraFlicC_load_work_btn" accept=".graflic,.zip,image/graflic,application/zip"/>
+<a id="GraFlicC_download_work_link" target="_blank" href="#"></a>
+</td>
+<td rowspan="2" style="text-align:center;vertical-align:middle;">
+<img id="GraFlicC_project_thumb" src="favicon.png" alt="Thumb" style="max-width:48px;max-height:48px;"/>
+</td>
+</tr>
+
+<tr>
+<td>
+<input type="text" id="GraFlicC_canvas_size_w_txt" value="512" style="width:7em;"/>
+x
+<input type="text" id="GraFlicC_canvas_size_h_txt" value="512" style="width:7em;"/>
+ Crop to 
+<input type="text" id="GraFlicC_canvas_size_crop_x_txt" value="0" style="width:7em;"/>
+,
+<input type="text" id="GraFlicC_canvas_size_crop_y_txt" value="0" style="width:7em;"/>
+<button id="GraFlicC_canvas_size_btn">Change Canvas Size</button>
+</td>
+</tr>
+
+</tbody>
+</table>
+
+
+<br/><table class="GraFlic_t">
+<thead>
+<tr>
+<th id="GraFlicC_palette_color_preview" style="background-color:black;" class="GraFlic_j">
+🎨 
+</th>
+<th class="GraFlic_e" colspan="2"><input type="text" id="GraFlicC_palette_color_title_txt" value="True Black"/></th>
+</tr>
+</thead>
+<tbody>
+
+<tr>
+<th class="GraFlic_j"><span style="background-color:red;">🖌</span></th>
+<td class="GraFlic_e">
+<input type="range" id="GraFlicC_palette_red_rng" min="0" max="1" step="0.00001" value="0"/>
+</td>
+<td>
+<input type="text" id="GraFlicC_palette_red_txt" value="0" style="width:7em;"/>
+</td>
+</tr>
+
+<tr>
+<th class="GraFlic_j"><span style="background-color:green;">🖌</span></th>
+<td class="GraFlic_e">
+<input type="range" id="GraFlicC_palette_green_rng" min="0" max="1" step="0.00001" value="0"/>
+</td>
+<td>
+<input type="text" id="GraFlicC_palette_green_txt" value="0" style="width:7em;"/>
+</td>
+</tr>
+
+<tr>
+<th class="GraFlic_j"><span style="background-color:blue;">🖌</span></th>
+<td class="GraFlic_e">
+<input type="range" id="GraFlicC_palette_blue_rng" min="0" max="1" step="0.00001" value="0"/>
+</td>
+<td>
+<input type="text" id="GraFlicC_palette_blue_txt" value="0" style="width:7em;"/>
+</td>
+</tr>
+
+<tr>
+<th class="GraFlic_j">&#x1F47B;</th>
+<td class="GraFlic_e">
+<input type="range" id="GraFlicC_palette_alpha_rng" min="0" max="1" step="0.00001" value="1"/>
+</td>
+<td>
+<input type="text" id="GraFlicC_palette_alpha_txt" value="1" style="width:7em;"/>
+</td>
+</tr>
+
+<tr>
+<th class="GraFlic_j">🌈</th>
+<td class="GraFlic_e">
+<input type="range" id="GraFlicC_palette_hue_rng" min="0" max="1" step="0.00001" value="0"/>
+</td>
+<td>
+<input type="text" id="GraFlicC_palette_hue_txt" value="0" style="width:7em;"/>
+</td>
+</tr>
+
+<tr>
+<th class="GraFlic_j"><span style="background-image: repeating-linear-gradient(
+		90deg,
+		#AFAFAF,
+		#AFAFAF 15%,
+		#FF00FF 85%,
+		#FF00FF 100%
+	);">&#x1F4A6;</span></th>
+<td class="GraFlic_e">
+<input type="range" id="GraFlicC_palette_sat_rng" min="0" max="1" step="0.00001" value="0"/>
+</td>
+<td>
+<input type="text" id="GraFlicC_palette_sat_txt" value="0" style="width:7em;"/>
+</td>
+</tr>
+
+<tr>
+<th class="GraFlic_j">🌔</th>
+<td class="GraFlic_e">
+<input type="range" id="GraFlicC_palette_lum_rng" min="0" max="1" step="0.00001" value="0"/>
+</td>
+<td>
+<input type="text" id="GraFlicC_palette_lum_txt" value="0" style="width:7em;"/>
+</td>
+</tr>
+
+<tr>
+<td colspan="3">
+<button id="GraFlicC_palette_revert_btn">&#x21A9;</button>
+<button id="GraFlicC_palette_new_color_btn">&#x2795;&#x1F3A8;</button>
+</td>
+</tr>
+
+</tbody>
+</table>
+
+<br/>
+<table class="GraFlic_t">
+<thead>
+<tr><th colspan="4">Export Options</th></tr>
+</thead>
+<tbody>
+
+<tr>
+<td>
+<select id="GraFlicC_metadata_sel" style="vertical-align:top;">
+<option value="meta_Title">Title</option>
+<option value="meta_Author">Author</option>
+<option value="meta_Copyright">Copyright</option>
+<option value="meta_Description">Description</option>
+<option value="meta_Warning">Warning</option>
+<option value="meta_Disclaimer">Disclaimer</option>
+<option value="meta_Comment">Comment</option>
+</select>
+</td>
+<td colspan="3" class="GraFlic_e">
+<textarea id="GraFlicC_metadata_txt" rows="2" placeholder="Omitted"></textarea>
+</td>
+</tr>
+
+<tr>
+<td class="GraFlic_j" style="text-align:right;">🗜</td>
+<td class="GraFlic_e">
+<input type="range" id="GraFlicC_export_quality_rng" min="0" max="100" step="5" value="75"/>
+</td>
+<td class="GraFlic_j">🌸</td>
+<td><input type="text" id="GraFlicC_export_quality_txt" value="75" style="width:3em;"/></td>
+</tr>
+
+<tr>
+<td colspan="4">
+<input type="checkbox" id="GraFlicC_brute_force_chk"/>
+<label for="GraFlicC_brute_force_chk" class="GraFlic_j">🔨</label>
+ x <input type="text" id="GraFlicC_brute_force_iter_txt" value="15" style="width:4em;" disabled/> <span>Brute force compression is very processor intensive to shave more bytes off of the filesize.</span>
+</td>
+</tr>
+
+</tbody>
+</table>
+
+<br/>
+<table class="GraFlic_t">
+<thead>
+<tr><th>Embed images</tr></th>
+</thead>
+<tbody>
+<tr><td>
+<input type="file" id="GraFlicC_embed_file" accept="image/*"/>
+<button id="GraFlicC_new_image_embed_btn">➕🖼</button>
+</td></tr>
+<tr><td>
+<select id="GraFlicC_embed_sel">
+</select>
+</td></tr>
+</tbody>
+</table>
+
+<script>
+'use strict';
+
+//var v_ jsv;//JSON savable data. anything that can be stringified into JSON and is part of the image should be stored here for easy load/save
+//var this.metadata;//JSON data for the metadata of the project(Title, Author, Description, etc).
+
+
+
+function f_requestRedraw(){
+	v_curGraFlic.requestRedraw();
+}
+
+
+
+
+
+
+
+var v_paletteRevertCol;//A palette color object that is a saved copy of the color being edited. The color being edited is kept live so changes take effect immediately. However, this saves a copy of how it was before being edited, so that it can be reverted to if the change did not work out. In the future may edit a component, like part of a gradient.
+//If a non-flat color like a gradient is selected, this should be filled with a color component from the gradient. There should then be a selector to switch to a differtent component. That functionality could be added in the future. If it is, there may be other logic needed in the commit/revert color change code. A gradient would need to have a fixed start and end point and each instance would need to be on its own channel or color index. The flood fill code is very slow and not suited to calculating continuous areas and making the gradient effect in them. Another non-flat color index type to add in the future may be a texture.
+
+function f_changeCanvasSize(v_csW, v_csH, v_csCropMode, v_startX, v_startY){
+	v_curGraFlic.changeCanvasSize(v_csW, v_csH, v_csCropMode, v_startX, v_startY);
+	//After the adjustments are made and the old size is not need for conversion, set it to what the size is now.
+	f_adjustCanvasUI();
+	f_requestRedraw();
+	f_zoomChange();//Have it zoomed to match the zoom range slider current state.
+}
+function f_adjustCanvasUI(){
+}
+
+
+var v_curGraFlic;
+
+//var v_ bitmaps;//array of all bitmaps for various frames/etc
+
+//Animation frames:
+//var v_ curFrame;
+//var v_ curFrameIndex;
+
+
+
+var v_palSel;//Palette HTML Select input
+
+function f_newPaletteColor(){
+	v_curGraFlic.newPaletteColorRGBA(0.5, 0.5, 0.5, 1, '🎨');//palette graphic char
+	f_paletteColorChange(v_curGraFlic.curPalette.colors.length - 1);//Select the new color so it can be edited.
+	f_rebuildPaletteEditorUI();
+}
+function f_revertPaletteEdit(){
+	//If not happy with the change, set it back to the saved copy of what it was before,
+	//then make a new copy so that other changes can be tried and it can be reverted again.
+	v_curGraFlic.curPaletteColor = v_paletteRevertCol;
+	v_curGraFlic.curPalette.colors[v_curGraFlic.a.j.save.selected_color_index] = v_curGraFlic.curPaletteColor;//Make sure it is linked correctly in the JSON
+	v_paletteRevertCol = GraFlicUtil.makeCopyOfJSON(v_curGraFlic.curPaletteColor);
+	f_rebuildPaletteEditorUI();
+	f_requestRedraw();
+}
+function f_rebuildPaletteSelectUI(){
+	while(v_palSel.firstChild){
+		v_palSel.removeChild(v_palSel.firstChild);
+	}
+	for(var v_i = 0;v_i < v_curGraFlic.curPalette.colors.length;v_i++){
+		var v_palColor = v_curGraFlic.curPalette.colors[v_i];
+		var v_palOpt = document.createElement('option');
+		v_palOpt.innerHTML = '[' + v_i + '] ' + v_palColor.title;
+		v_palOpt.value = v_i;
+		if(v_i == v_curGraFlic.a.j.save.selected_color_index){
+			v_palOpt.selected = true;
+		}
+		v_palSel.appendChild(v_palOpt);
+	}
+	GraFlicC_palette_color_clr.style.backgroundColor = GraFlicImage.getPaletteCSSRGBA(v_curGraFlic.curPaletteColor);
+}
+function f_paletteColorChange(v_evt){
+	if(typeof v_evt === 'number'){
+		//can be called with a palette index instead of an event if being set by another function.
+		v_curGraFlic.a.j.save.selected_color_index = v_evt;
+	}else{
+		v_curGraFlic.a.j.save.selected_color_index = parseInt(v_evt.target.value);
+	}
+	v_curGraFlic.curPaletteColor = v_curGraFlic.curPalette.colors[v_curGraFlic.a.j.save.selected_color_index];
+	v_paletteRevertCol = GraFlicUtil.makeCopyOfJSON(v_curGraFlic.curPaletteColor);
+	//Palette [0] is reserved for transparent.
+	var v_palLocked = v_curGraFlic.a.j.save.selected_color_index == 0;
+	GraFlicC_palette_alpha_rng.disabled = v_palLocked;
+	GraFlicC_palette_alpha_txt.disabled = v_palLocked;
+	GraFlicC_palette_red_rng.disabled = v_palLocked;
+	GraFlicC_palette_green_rng.disabled = v_palLocked;
+	GraFlicC_palette_blue_rng.disabled = v_palLocked;
+	GraFlicC_palette_red_txt.disabled = v_palLocked;
+	GraFlicC_palette_green_txt.disabled = v_palLocked;
+	GraFlicC_palette_blue_txt.disabled = v_palLocked;
+	GraFlicC_palette_hue_rng.disabled = v_palLocked;
+	GraFlicC_palette_sat_rng.disabled = v_palLocked;
+	GraFlicC_palette_lum_rng.disabled = v_palLocked;
+	GraFlicC_palette_hue_txt.disabled = v_palLocked;
+	GraFlicC_palette_sat_txt.disabled = v_palLocked;
+	GraFlicC_palette_lum_txt.disabled = v_palLocked;
+	GraFlicC_palette_color_title_txt.disabled = v_palLocked;
+	f_rebuildPaletteEditorUI();
+	f_rebuildPaletteSelectUI();
+}
+function f_paletteAdjustRGB(v_evt){
+	//these use the input event instead of change, because they may be changed by code and that would make these events loop
+	var v_isRange = v_evt.target.type == 'range';
+	if(!v_isRange && !v_evt.target.value.match(/[0-9].[0-9]+/)){return;}//If in the process of typing incomplete ('0.' about to type '0.1')
+	var v_rIn = parseFloat((v_isRange ? GraFlicC_palette_red_rng : GraFlicC_palette_red_txt).value);
+	var v_gIn = parseFloat((v_isRange ? GraFlicC_palette_green_rng : GraFlicC_palette_green_txt).value);
+	var v_bIn = parseFloat((v_isRange ? GraFlicC_palette_blue_rng : GraFlicC_palette_blue_txt).value);
+	if( !( f_palFloatValid(v_rIn) && f_palFloatValid(v_gIn) && f_palFloatValid(v_bIn) ) ){return;}
+	v_curGraFlic.curPaletteColor.r = v_rIn;
+	v_curGraFlic.curPaletteColor.g = v_gIn;
+	v_curGraFlic.curPaletteColor.b = v_bIn;
+	var v_palHSL = GraFlicUtil.RGB2HSL(v_curGraFlic.curPaletteColor.r, v_curGraFlic.curPaletteColor.g, v_curGraFlic.curPaletteColor.b);
+	v_curGraFlic.curPaletteColor.h = v_palHSL[0];
+	v_curGraFlic.curPaletteColor.s = v_palHSL[1];
+	v_curGraFlic.curPaletteColor.l = v_palHSL[2];
+	GraFlicImage.calcRGBAForBitDepth(v_curGraFlic.curPaletteColor);
+	f_rebuildPaletteEditorUI();
+	f_requestRedraw();//Update to see the changes in the image. The revert button can be used to revert these changes.
+}
+function f_paletteAdjustHSL(v_evt){
+	//HSL is 0.0 - 1.0, not 0-255.
+	var v_isRange = v_evt.target.type == 'range';
+	if(!v_isRange && !v_evt.target.value.match(/[0-9].?[0-9]+/)){return;}//If in the process of typing incomplete ('0.' about to type '0.1')
+	var v_hIn = parseFloat((v_isRange ? GraFlicC_palette_hue_rng : GraFlicC_palette_hue_txt).value);
+	var v_sIn = parseFloat((v_isRange ? GraFlicC_palette_sat_rng : GraFlicC_palette_sat_txt).value);
+	var v_lIn = parseFloat((v_isRange ? GraFlicC_palette_lum_rng : GraFlicC_palette_lum_txt).value);
+	if( !( f_palFloatValid(v_hIn) || f_palFloatValid(v_sIn) || f_palFloatValid(v_lIn) ) ){return;}
+	v_curGraFlic.curPaletteColor.h = v_hIn;
+	v_curGraFlic.curPaletteColor.s = v_sIn;
+	v_curGraFlic.curPaletteColor.l = v_lIn;
+	var v_palRGB = GraFlicUtil.HSL2RGB(v_curGraFlic.curPaletteColor.h, v_curGraFlic.curPaletteColor.s, v_curGraFlic.curPaletteColor.l);
+	v_curGraFlic.curPaletteColor.r = v_palRGB[0];
+	v_curGraFlic.curPaletteColor.g = v_palRGB[1];
+	v_curGraFlic.curPaletteColor.b = v_palRGB[2];
+	GraFlicImage.calcRGBAForBitDepth(v_curGraFlic.curPaletteColor);
+	f_rebuildPaletteEditorUI();
+	f_requestRedraw();
+}
+function f_paletteAdjustAlpha(v_evt){
+	//The alpha is independent of the colorspace whether it be RGB or HSL...
+	var v_isRange = v_evt.target.type == 'range';
+	if(!v_isRange && !v_evt.target.value.match(/[0-9].?[0-9]+/)){return;}//If in the process of typing incomplete ('0.' about to type '0.1')
+	var v_aIn = parseFloat((v_isRange ? GraFlicC_palette_alpha_rng : GraFlicC_palette_alpha_txt).value);
+	if(!f_palFloatValid(v_aIn)){return;}
+	v_curGraFlic.curPaletteColor.a = v_aIn;
+	GraFlicImage.calcRGBAForBitDepth(v_curGraFlic.curPaletteColor);
+	f_rebuildPaletteEditorUI();
+	f_requestRedraw();
+}
+function f_palFloatValid(v_chanVal){
+	//See if this is valid input for adjusting the color. If not the calling function can exit and leave it as is.
+	return !isNaN(v_chanVal) && v_chanVal >= 0 && v_chanVal <= 1;
+}
+function f_rebuildEmbedListUI(){
+	while(GraFlicC_embed_sel.firstChild){GraFlicC_embed_sel.removeChild(GraFlicC_embed_sel.firstChild);}
+	var eFiles = v_curGraFlic.a.listDir('e/');
+	for(var i = 0;i < eFiles.length;i++){
+		var selObj = document.createElement('option');
+		selObj.value = eFiles[i].p;
+		selObj.innerHTML = eFiles[i].p;
+		//if(v_curGraFlic.a.j.save.images[v_i] == v_curGraFlic.curImage){v_selObj.selected = true;}
+		GraFlicC_embed_sel.appendChild(selObj);
+	}
+}
+function f_paletteChangeTitle(v_evt){
+	v_curGraFlic.curPaletteColor.title = GraFlicC_palette_color_title_txt.value;
+	f_rebuildPaletteSelectUI();//Update so the color title is different now
+}
+function f_bitmapChangeTitle(v_evt){
+	v_curGraFlic.curImage.title = GraFlicC_bitmap_title_txt.value;
+	f_rebuildBitmapAndFrameUI();
+}
+function f_bitmapEditZIndex(v_evt){
+	//Let z-index be a float, enabling more spots to squeeze things between stuff if needed without having to adjust every other frame.
+	var v_zCheck = GraFlicC_bitmap_z_index_txt.value;
+	if(v_zCheck.match(/\.$/)){v_zCheck += '0';}//If partially typed, but the number after the decimal point not put yet.
+	v_zCheck = parseFloat(v_zCheck);
+	if(isNaN(v_zCheck)){return;}
+	v_curGraFlic.curImage.z_index = v_zCheck;
+	f_requestRedraw();//z-index may change what is drawn on top of what.
+}
+function f_togglePlayPause(v_evt){
+	v_curGraFlic.togglePlay();
+}
+function f_frameChangeTitle(v_evt){
+	v_curGraFlic.curFrame.title = GraFlicC_frame_title_txt.value;
+	f_rebuildBitmapAndFrameUI();
+}
+function f_frameEditMS(v_evt){
+	var v_msCheck;
+	if(GraFlicC_frame_ms_txt.value.length){//if not empty
+		v_msCheck = parseInt(GraFlicC_frame_ms_txt.value);
+	}else{//if erased to empty, set to -1 to use global MS
+		v_msCheck = -1;
+	}
+	if(isNaN(v_msCheck) || v_msCheck < -1){return;}//-1 is a valid value that says to use global MS
+		//0 may also be a valid value to apply changes to different regions at the same time, though this is not commonly used.
+	v_curGraFlic.curFrame.delay = v_msCheck;
+	if(v_msCheck == -1){
+		delete v_curGraFlic.curFrame.delay;//undefined for not defined, use global
+	}
+	f_rebuildBitmapAndFrameUI();
+}
+function f_frameEditGlobalMS(v_evt){
+	var v_msCheck = parseInt(GraFlicC_frame_global_ms_txt.value);
+	if(isNaN(v_msCheck) || v_msCheck < 0){return;}
+	v_curGraFlic.a.j.save.global_delay = v_msCheck;
+	f_rebuildBitmapAndFrameUI();
+}
+function f_rebuildPaletteEditorUI(){
+	//This will also call to rebuild the palette select UI
+	//TODO: swap v_curGraFlic.curPaletteColor fora another var? in the future there may be cascaded override colors that can get edited.
+	//Different from the plain palette UI for selecting a palette from what is already built.
+	GraFlicC_palette_red_rng.value = v_curGraFlic.curPaletteColor.r;
+	GraFlicC_palette_green_rng.value = v_curGraFlic.curPaletteColor.g;
+	GraFlicC_palette_blue_rng.value = v_curGraFlic.curPaletteColor.b;
+	GraFlicC_palette_alpha_rng.value = v_curGraFlic.curPaletteColor.a;
+	GraFlicC_palette_red_txt.value = v_curGraFlic.curPaletteColor.r.toString();
+	GraFlicC_palette_green_txt.value = v_curGraFlic.curPaletteColor.g.toString();
+	GraFlicC_palette_blue_txt.value = v_curGraFlic.curPaletteColor.b.toString();
+	GraFlicC_palette_alpha_txt.value = v_curGraFlic.curPaletteColor.a.toString();
+	GraFlicC_palette_hue_rng.value = v_curGraFlic.curPaletteColor.h;
+	GraFlicC_palette_sat_rng.value = v_curGraFlic.curPaletteColor.s;
+	GraFlicC_palette_lum_rng.value = v_curGraFlic.curPaletteColor.l;
+	GraFlicC_palette_hue_txt.value = v_curGraFlic.curPaletteColor.h.toString();
+	GraFlicC_palette_sat_txt.value = v_curGraFlic.curPaletteColor.s.toString();
+	GraFlicC_palette_lum_txt.value = v_curGraFlic.curPaletteColor.l.toString();
+	GraFlicC_palette_color_preview.style.backgroundColor = GraFlicImage.getPaletteCSSRGBA(v_curGraFlic.curPaletteColor);
+	GraFlicC_palette_color_title_txt.value = v_curGraFlic.curPaletteColor.title;
+	f_rebuildPaletteSelectUI();//update this when the editor edits a palette color, DO NOT updated editor after switching colors from those already built, or it will loop.
+}
+
+function f_rebuildBitmapAndFrameUI(){
+	//var v_totalFrames = 1;
+	//var v_procBMP;
+	var v_i;
+	var v_i2;
+	var v_selObj;
+	/*for(v_i = 0;v_i < v_curGraFlic.a.j.save.images.length;v_i++){
+		v_procBMP = v_curGraFlic.a.j.save.images[v_i];
+		for(var v_i2 = 0;v_i2 < v_procBMP.plays_on_frames.length;v_i2++){
+			//Find the latest frame that any layer is to be played on
+			v_totalFrames = Math.max(v_totalFrames, v_curGraFlic.a.j.save.frames[v_procBMP.plays_on_frames[v_i2] + 1].id);//+1 since zero-based.
+		}
+	}*/
+	GraFlicC_frame_global_ms_txt.value = v_curGraFlic.a.j.save.global_delay.toString();
+	GraFlicC_frame_ms_txt.placeholder = GraFlicC_frame_global_ms_txt.value;//what to show if no frame-specific milliseconds set.
+	if(v_curGraFlic.curFrame.delay === undefined){//undefined for use global frame milliseconds
+		GraFlicC_frame_ms_txt.value = '';//With blank value, it will show placeholder
+	}else{
+		GraFlicC_frame_ms_txt.value = v_curGraFlic.curFrame.delay.toString();
+	}
+	GraFlicC_bitmap_title_txt.value = v_curGraFlic.curImage.title;
+	GraFlicC_bitmap_z_index_txt.value = v_curGraFlic.curImage.z_index.toString();
+	GraFlicC_frame_title_txt.value = v_curGraFlic.curFrame.title;
+	while(v_layerSel.firstChild){v_layerSel.removeChild(v_layerSel.firstChild);}
+	while(v_frameSel.firstChild){v_frameSel.removeChild(v_frameSel.firstChild);}
+	for(v_i = 0;v_i < v_curGraFlic.a.j.save.images.length;v_i++){
+		v_selObj = document.createElement('option');
+		v_selObj.value = v_i;
+		v_selObj.innerHTML = '[' + v_i + '] ' + v_curGraFlic.a.j.save.images[v_i].title;
+		if(v_curGraFlic.a.j.save.images[v_i] == v_curGraFlic.curImage){v_selObj.selected = true;}
+		v_layerSel.appendChild(v_selObj);
+	}
+	for(v_i = 0;v_i < v_curGraFlic.a.j.save.frames.length;v_i++){
+		v_selObj = document.createElement('option');
+		v_selObj.value = v_i;
+		v_selObj.innerHTML = '[' + v_i + '] ' + v_curGraFlic.a.j.save.frames[v_i].title;
+		if(v_i == v_curGraFlic.a.j.save.selected_frame_index){v_selObj.selected = true;}
+		v_frameSel.appendChild(v_selObj);
+	}
+	f_rebuildPlaysOnFramesUI();
+}
+function f_rebuildPlaysOnFramesUI(){
+	while(v_playsOnFramesSel.firstChild){v_playsOnFramesSel.removeChild(v_playsOnFramesSel.firstChild);}
+	var v_selObj;
+	var v_i;
+	var v_i2;
+	v_selObj = document.createElement('option');
+	v_selObj.value = -1;
+	v_selObj.innerHTML = '&#x1F30E;&#x1F39E;';//globe and movie frame chars
+	if(v_curGraFlic.curImage.plays_on_all_frames){
+		v_selObj.selected = true;
+	}
+	v_playsOnFramesSel.appendChild(v_selObj);
+	for(v_i = 0;v_i < v_curGraFlic.a.j.save.frames.length;v_i++){
+		v_selObj = document.createElement('option');
+		v_selObj.value = v_i;
+		v_selObj.innerHTML = '[' + v_i + '] ' + v_curGraFlic.a.j.save.frames[v_i].title;
+		for(v_i2 = 0;v_i2 < v_curGraFlic.curImage.plays_on_frames.length;v_i2++){
+			if(v_curGraFlic.curImage.plays_on_frames[v_i2] == v_curGraFlic.a.j.save.frames[v_i].id){
+				v_selObj.selected = true;
+			}
+		}
+		v_playsOnFramesSel.appendChild(v_selObj);
+	}
+}
+function f_bitmapNew(v_evt){
+	v_curGraFlic.addBitmap();
+	f_rebuildBitmapAndFrameUI();
+	f_rebuildPlaysOnFramesUI();
+}
+function f_embedNew(v_evt){
+	v_curGraFlic.addEmbed(GraFlicC_embed_sel.value);
+	f_rebuildBitmapAndFrameUI();
+	f_rebuildPlaysOnFramesUI();
+}
+function f_frameNew(v_evt){
+	v_curGraFlic.addFrame();
+	f_rebuildBitmapAndFrameUI();
+	f_rebuildPlaysOnFramesUI();
+}
+function f_layerSelect(v_evt){
+	//.selectedIndex standard yet?
+	v_curGraFlic.curImage = v_curGraFlic.a.j.save.images[v_layerSel.selectedIndex];
+	f_rebuildBitmapAndFrameUI();
+	f_rebuildPlaysOnFramesUI();//update this UI to have the frames the the current bitmap plays on selected.
+	f_requestRedraw();
+}
+function f_frameSelect(v_evt){
+	//.selectedIndex standard yet?
+	v_curGraFlic.a.j.save.selected_frame_index = v_frameSel.selectedIndex;
+	v_curGraFlic.curFrame = v_curGraFlic.a.j.save.frames[v_curGraFlic.a.j.save.selected_frame_index];
+	f_rebuildBitmapAndFrameUI();
+	f_requestRedraw();
+}
+function f_playsOnFramesSelect(v_evt){
+	v_curGraFlic.curImage.plays_on_frames = [];
+	//var v_objSel;
+	v_curGraFlic.curImage.plays_on_all_frames = v_playsOnFramesSel.childNodes[0].selected;
+	for(var v_i = 1;v_i < v_playsOnFramesSel.childNodes.length;v_i++){
+		//v_objSel = v_fames;
+		//alert(v_playsOnFramesSel.childNodes[v_i].selected);
+		if(v_playsOnFramesSel.childNodes[v_i].selected){
+			v_curGraFlic.curImage.plays_on_frames.push(v_curGraFlic.a.j.save.frames[parseInt(v_playsOnFramesSel.childNodes[v_i].value)].id);
+			//alert('sel ' + v_i);
+		}
+		//alert(v_curGraFlic.curImage.plays_on_frames);
+	}
+	f_requestRedraw();
+}
+function f_toggleOnionSkin(v_evt){
+	v_curGraFlic.a.j.save.onion_skin_on = v_onionSkinChk.checked;
+	f_requestRedraw();
+}
+function f_toggleOnionStainGlass(v_evt){
+	v_curGraFlic.a.j.save.stain_glass_on = GraFlicC_onion_skin_stain_glass_chk.checked;
+	f_requestRedraw();
+}
+function f_scaleDownAdjust(v_evt){
+	v_curGraFlic.a.j.save.save_scale = parseFloat(document.getElementById('GraFlicC_scale_down_rng').value);
+	document.getElementById('GraFlicC_scale_down_percent_spn').innerHTML = Math.round(v_curGraFlic.a.j.save.save_scale * 100).toString();
+}
+function f_canvasSizeClick(v_evt){
+	var v_newW = parseInt(document.getElementById('GraFlicC_canvas_size_w_txt').value);
+	var v_newH = parseInt(document.getElementById('GraFlicC_canvas_size_h_txt').value);
+	//8192 current max canvas size in HTML5.
+	if(v_newW < 1 || v_newW > 8192 || isNaN(v_newW)){
+		console.log("Error: Width out of range.");
+		return;
+	}
+	if(v_newH < 1 || v_newH > 8192 || isNaN(v_newH)){
+		console.log("Error: Height out of range.");
+		return;
+	}
+	var v_cropX = parseInt(document.getElementById('GraFlicC_canvas_size_crop_x_txt').value);
+	var v_cropY = parseInt(document.getElementById('GraFlicC_canvas_size_crop_y_txt').value);
+	if(isNaN(v_cropX)){
+		console.log("Crop X invalid.");
+		return;
+	}
+	if(isNaN(v_cropY)){
+		console.log("Crop Y invalid.");
+		return;
+	}
+	f_changeCanvasSize( v_newW, v_newH, 0, v_cropX, v_cropY);
+	f_requestRedraw();
+}
+function f_toolSelect(v_evt){
+	v_curGraFlic.curTool = parseInt(v_evt.target.value);
+	if(v_curGraFlic.cutBitmap != null){
+		//When switching tools after moving by cutting, commit to where it is moved, delete the cut bitmap, and merge it to current bitmap.
+		//Also if clicking the cut option again it may commit the cut move.
+		v_curGraFlic.commitCutMove();
+	}
+}
+function f_toolEraseSelect(v_evt){
+	v_curGraFlic.curDrawMode = v_evt.target.checked ? 0 : 1;//parseInt(v_evt.target.value);
+}
+function f_metadataRefreshUI(v_evt){
+	//update the textarea to match what is in the selected metadata
+	//(Can be called with no parameter to just refresh whatever is selected.)
+	var v_metaKey = GraFlicC_metadata_sel.value.replace(/^meta_/, '');
+	if(v_curGraFlic.a.j.meta.general[v_metaKey]){
+		GraFlicC_metadata_txt.value = v_curGraFlic.a.j.meta.general[v_metaKey];
+	}else{
+		GraFlicC_metadata_txt.value = '';
+	}
+}
+function f_metadataInput(v_evt){
+	var v_metaKey = GraFlicC_metadata_sel.value.replace(/^meta_/, '');
+	var v_inputStr = v_evt.target.value;
+	if(!v_inputStr.length){//If the text is fully erased, make sure the metadata value is deleted if present
+		if(v_curGraFlic.a.j.meta.general[v_metaKey]){
+			delete v_curGraFlic.a.j.meta.general[v_metaKey];
+		}
+	}else{
+		v_curGraFlic.a.j.meta.general[v_metaKey] = v_inputStr;
+	}
+}
+
+
+
+
+function f_kUp(v_evt){
+	if(document.activeElement && (document.activeElement.type && document.activeElement.type.match(/TEXT/i)
+			|| document.activeElement.tagName.match(/TEXT/i))
+		){
+		//handle both text elements and input elements with type text.
+		return;//Keys would collide with typing if a text input is selected.
+	}
+	//alert(v_evt.keyCode);//find out what the code is for char.
+	switch(v_evt.keyCode){
+		//For keys 0-9 (key code 48 - 57) quick change the palette index
+		case 48:
+		case 49:
+		case 50:
+		case 51:
+		case 52:
+		case 53:
+		case 54:
+		case 55:
+		case 56:
+		case 57:
+			v_curGraFlic.a.j.save.selected_color_index = Math.min(v_evt.keyCode - 48, v_curGraFlic.curPalette.colors.length - 1);
+			break;
+		case 80://(P)en
+			v_curGraFlic.curTool = 1;
+			v_curGraFlic.curToolState = 0;//inactive, not started drawing yet
+			//v_toolSel.selectedIndex = 1;
+			break;
+		case 66://(B)ucket
+			v_curGraFlic.curTool = 2;
+			v_curGraFlic.curToolState = 0;//inactive, not started drawing yet
+			//v_toolSel.innerHTML = "Bucket";
+			break;
+		case 89://(Y) Redo
+			f_redo();
+			break;
+		case 90://(Z) Undoo
+			f_undo();
+			break;
+	}//end switch
+}
+function f_redo(){
+	v_curGraFlic.redo();
+	f_requestRedraw();
+}
+function f_undo(){
+	v_curGraFlic.undo();
+	f_requestRedraw();
+}
+function f_addToUndoStack(){
+	//Call this before committing a change to the current bitmap.
+	v_curGraFlic.pushUndoStack();
+	f_requestRedraw();
+}
+var v_penWidthRng;//range input for pen width
+var v_penWidthTxt;//text input for pen width
+var v_layerSel;
+var v_frameSel;
+var v_playsOnFramesSel;
+var v_onionSkinChk;
+function f_zoomChange(v_evt){
+	var v_zoomPercent;
+	if(v_evt){//input may be text input or range input
+		v_zoomPercent = parseFloat(v_evt.target.value);
+	}else{//if called with no event, just check what is in the range.
+		v_zoomPercent = GraFlicC_zoom_rng.value;
+	}
+	if(isNaN(v_zoomPercent) || v_zoomPercent < 1){
+		v_zoomPercent = 50;
+	}else{
+		GraFlicC_zoom_rng.value = v_zoomPercent;
+		GraFlicC_zoom_txt.value = v_zoomPercent.toString();
+	}
+	v_zoomPercent /= 100;
+	GraFlicC_main_canvas.style.width = (GraFlicC_main_canvas.width * v_zoomPercent) + 'px';
+	GraFlicC_main_canvas.style.height = (GraFlicC_main_canvas.height * v_zoomPercent) + 'px';
+}
+function f_penWidthChange(v_evt){
+	v_curGraFlic.penWidth = parseFloat(v_evt.target.value);
+	if(isNaN(v_curGraFlic.penWidth) || v_curGraFlic.penWidth < 0.1){
+		//Invalid / Out of Range, default to 2.5
+		v_curGraFlic.penWidth = 2.5;
+	}
+	v_curGraFlic.cxP.lineWidth = v_curGraFlic.penWidth;
+	v_penWidthRng.value = v_curGraFlic.penWidth;
+	v_penWidthTxt.value = v_curGraFlic.penWidth.toString();
+}
+function f_qualityChange(v_evt){
+	var v_qPercent;
+	if(v_evt){//input may be text input or range input
+		v_qPercent = parseFloat(v_evt.target.value);
+	}else{//if called with no event, just check what is in the range.
+		v_qPercent = GraFlicC_export_quality_rng.value;
+	}
+	if(isNaN(v_qPercent) || v_qPercent < 0){
+		v_qPercent = 75;
+	}else{
+		GraFlicC_export_quality_rng.value = v_qPercent;
+		GraFlicC_export_quality_txt.value = v_qPercent.toString();
+	}
+	v_qPercent /= 100;
+	v_curGraFlic.a.j.save.export.quality = v_qPercent;
+}
+function f_bruteForceToggle(v_evt){
+	GraFlicC_brute_force_iter_txt.disabled = !v_evt.target.checked;
+	if(v_evt.target.checked){
+		f_bruteForceIterChange();//Set the iterations based on the text input if brute force enabled.
+	}else{//Otherwise, clear the value if disabled.
+		delete v_curGraFlic.a.j.save.export.png.brute;
+	}
+}
+function f_bruteForceIterChange(v_evt){
+	//may be called without an event by toggle to get the set iterations.
+	var v_bIter = parseInt(GraFlicC_brute_force_iter_txt.value);
+	if(!isNaN(v_bIter)){
+		if(v_bIter > 0){
+			if(v_bIter > 30){
+				v_bIter = 30;
+				alert('Brute force compression capped at 30 to prevent n00bs from crashing the browser. Anything higher is very diminishing returns…');
+			}
+			v_curGraFlic.a.j.save.export.png.brute = v_bIter;
+		}
+	}
+}
+
+var v_fileToEmbed;
+function f_embedFile(v_evt){
+	v_fileToEmbed = v_evt.target.files[0];
+	var v_fr = new FileReader();
+	v_fr.addEventListener('load', f_embedFileLoaded);
+	v_fr.readAsArrayBuffer(v_fileToEmbed);
+}
+function f_embedFileLoaded(v_evt){
+	var v_fe = {};
+	v_fe.d = new Uint8Array(v_evt.target.result);
+	v_fe.p = 'e/' + v_fileToEmbed.name;
+	v_curGraFlic.a.addFile(v_fe);
+	f_rebuildEmbedListUI();
+}
+
+
+function f_saveAnimatedPNGNormal(){
+	//f_saveAnimatedPNG(1);//mode 1 normal
+	v_curGraFlic.export(1);
+}
+
+function f_onExported(v_aeRes){
+	GraFlicC_download_image_link.href = v_aeRes.output;
+	GraFlicC_download_image_link.download = f_makeFilename() + '.png';
+	GraFlicC_download_image_link.innerHTML = GraFlicC_download_image_link.download;
+	GraFlicC_project_thumb.src = v_curGraFlic.encoder.output;
+	f_requestRedraw();//redraw in regular viewing state after save operation is done.
+	//alert('PNG saved!');
+}
+function f_onArchived(v_arcRes){
+	GraFlicC_download_work_link.download = f_makeFilename() + '.graflic';
+	GraFlicC_download_work_link.innerHTML = GraFlicC_download_work_link.download;
+	GraFlicC_download_work_link.href = v_arcRes.b;
+	GraFlicC_project_thumb.src = v_curGraFlic.encoder.output;
+	f_requestRedraw();
+}
+function f_makeFilename(){
+	var v_filename;
+	//var v_hostname = 'AnimatedPNGs.com';
+	//if(window.location.hostname && window.location.hostname.length){v_hostname = window.location.hostname;}//may be blank if local file
+	//v_hostname = v_hostname.replace(/anim/gi, 'Anim');
+	//v_hostname = v_hostname.replace(/png/gi, 'PNG');
+	//v_hostname = v_hostname.replace(/apng/gi, 'APNG');
+	if(!v_curGraFlic.a.j.meta.general.Title){
+		v_filename = Date.now().toString();//v_hostname + '_' + Date.now();
+	}else{
+		v_filename = GraFlicUtil.filenameSafe(v_curGraFlic.a.j.meta.general.Title);// + '_' + v_hostname;
+	}
+	return v_filename;
+}
+function f_init(){
+	//============ set global constant variables ============
+	v_palSel = document.getElementById('palette_color_sel');
+	v_penWidthRng = document.getElementById('GraFlicC_pen_width_rng');
+	v_penWidthTxt = document.getElementById('GraFlicC_pen_width_txt');
+	v_layerSel = document.getElementById('GraFlicC_bitmap_sel');
+	v_frameSel = document.getElementById('GraFlicC_frame_sel');
+	v_playsOnFramesSel = document.getElementById('GraFlicC_plays_on_frames_sel');
+	v_onionSkinChk = document.getElementById('GraFlicC_onion_skin_chk');
+	//----------------------------------------------
+
+	//================ Hook up events. =============
+	window.addEventListener('keyup', f_kUp);
+	//use input event rather than change, because values may be changed programmatically and that should not launch an event.
+	GraFlicC_play_pause_btn.addEventListener('click', f_togglePlayPause);
+	GraFlicC_zoom_rng.addEventListener('input', f_zoomChange);
+	GraFlicC_zoom_txt.addEventListener('input', f_zoomChange);
+	v_penWidthRng.addEventListener('input', f_penWidthChange);
+	v_penWidthTxt.addEventListener('input', f_penWidthChange);
+	v_palSel.addEventListener('input', f_paletteColorChange);
+	
+	//radio/checkbox has issues with 'input' event in some browsers. Make it 'change' to ensure event is going after the input changed it.
+	GraFlicC_tool_pen_rad.addEventListener('change', f_toolSelect);
+	GraFlicC_tool_fill_bucket_rad.addEventListener('change', f_toolSelect);
+	GraFlicC_tool_line_bucket_rad.addEventListener('change', f_toolSelect);
+	GraFlicC_tool_lasso_rad.addEventListener('change', f_toolSelect);
+	GraFlicC_tool_erase_chk.addEventListener('change', f_toolEraseSelect);
+	
+	v_layerSel.addEventListener('input', f_layerSelect);
+	v_frameSel.addEventListener('input', f_frameSelect);
+	v_playsOnFramesSel.addEventListener('input', f_playsOnFramesSelect);
+	GraFlicC_new_bitmap_btn.addEventListener('click', f_bitmapNew);
+	GraFlicC_new_frame_btn.addEventListener('click', f_frameNew);
+	GraFlicC_bitmap_title_txt.addEventListener('input', f_bitmapChangeTitle);
+	GraFlicC_bitmap_z_index_txt.addEventListener('input', f_bitmapEditZIndex);
+	GraFlicC_frame_title_txt.addEventListener('input', f_frameChangeTitle);
+	GraFlicC_frame_ms_txt.addEventListener('input', f_frameEditMS);
+	GraFlicC_frame_global_ms_txt.addEventListener('input', f_frameEditGlobalMS);
+	v_onionSkinChk.addEventListener('change', f_toggleOnionSkin);
+	GraFlicC_onion_skin_stain_glass_chk.addEventListener('change', f_toggleOnionStainGlass);
+	GraFlicC_canvas_size_btn.addEventListener('click', f_canvasSizeClick);
+	GraFlicC_save_Animated_PNG_btn.addEventListener('click', f_saveAnimatedPNGNormal);
+	GraFlicC_save_work_btn.addEventListener('click', f_saveWorkWithThumb);
+	GraFlicC_scale_down_rng.addEventListener('input', f_scaleDownAdjust);
+	GraFlicC_palette_red_rng.addEventListener('input', f_paletteAdjustRGB);
+	GraFlicC_palette_green_rng.addEventListener('input', f_paletteAdjustRGB);
+	GraFlicC_palette_blue_rng.addEventListener('input', f_paletteAdjustRGB);
+	GraFlicC_palette_red_txt.addEventListener('input', f_paletteAdjustRGB);
+	GraFlicC_palette_green_txt.addEventListener('input', f_paletteAdjustRGB);
+	GraFlicC_palette_blue_txt.addEventListener('input', f_paletteAdjustRGB);
+	GraFlicC_palette_hue_rng.addEventListener('input', f_paletteAdjustHSL);
+	GraFlicC_palette_sat_rng.addEventListener('input', f_paletteAdjustHSL);
+	GraFlicC_palette_lum_rng.addEventListener('input', f_paletteAdjustHSL);
+	GraFlicC_palette_hue_txt.addEventListener('input', f_paletteAdjustHSL);
+	GraFlicC_palette_sat_txt.addEventListener('input', f_paletteAdjustHSL);
+	GraFlicC_palette_lum_txt.addEventListener('input', f_paletteAdjustHSL);
+	GraFlicC_palette_alpha_rng.addEventListener('input', f_paletteAdjustAlpha);
+	GraFlicC_palette_alpha_txt.addEventListener('input', f_paletteAdjustAlpha);
+	GraFlicC_palette_color_title_txt.addEventListener('input', f_paletteChangeTitle);
+	GraFlicC_palette_revert_btn.addEventListener('click', f_revertPaletteEdit);
+	GraFlicC_palette_new_color_btn.addEventListener('click', f_newPaletteColor);
+	
+	GraFlicC_metadata_sel.addEventListener('input', f_metadataRefreshUI);
+	GraFlicC_metadata_txt.addEventListener('input', f_metadataInput);
+
+	GraFlicC_export_quality_rng.addEventListener('input', f_qualityChange);
+	GraFlicC_export_quality_txt.addEventListener('input', f_qualityChange);
+	GraFlicC_brute_force_chk.addEventListener('change', f_bruteForceToggle);
+	GraFlicC_brute_force_iter_txt.addEventListener('input', f_bruteForceIterChange);
+	
+	GraFlicC_embed_file.addEventListener('change', f_embedFile);
+	GraFlicC_new_image_embed_btn.addEventListener('click', f_embedNew);
+	//----------------------------------------------
+	
+	//################### now do stuff that resets when a new image is started ##############
+	var v_params = {};
+	v_params.canvasPlayback = GraFlicC_main_canvas;
+	v_params.canvasPreviewFrame = GraFlicC_mini_canvas;
+	v_params.canvasPreviewBitmap = GraFlicC_mini_editing_canvas;
+	v_curGraFlic = new GraFlicImage(undefined, v_params);
+	v_curGraFlic.onExported = f_onExported;
+	v_curGraFlic.onArchived = f_onArchived;
+	v_curGraFlic.onRedrawn = f_onRedrawn;
+	v_curGraFlic.onLoaded = f_onLoaded;
+	GraFlicC_load_work_btn.addEventListener('change', v_curGraFlic.fileSelectLoader);
+	//this.cutBitmap = null;//Initially nothing cut.
+	v_paletteRevertCol = GraFlicUtil.makeCopyOfJSON(v_curGraFlic.curPaletteColor);
+	
+	//v_uiState.onion_skin_on = v_onionSkinChk.checked;//in the future, another var may adjust onion skin opacity or viewing mode.
+	v_onionSkinChk.checked = v_curGraFlic.a.j.save.onion_skin_on ? true : false;//handle undefined
+	GraFlicC_onion_skin_stain_glass_chk.checked =  v_curGraFlic.a.j.save.stain_glass_on ? true : false;
+	
+	
+	
+	f_adjustCanvasUI();
+	f_zoomChange();
+	f_rebuildPaletteSelectUI();
+	f_rebuildBitmapAndFrameUI();
+}
+f_init();
+
+function f_saveWorkWithThumb(){
+	//with mode 2 it will call f_saveWork once the thumbnail is ready.
+	//f_saveAnimatedPNG(2);//mode 2 thumbnail
+	v_curGraFlic.saveArchive();
+}
+
+
+
+function f_onLoaded(v_zRes){
+	f_rebuildPaletteSelectUI();
+	f_rebuildPaletteEditorUI();
+	f_rebuildBitmapAndFrameUI();
+	f_rebuildPlaysOnFramesUI();
+	f_rebuildEmbedListUI();
+	f_metadataRefreshUI();
+	f_adjustCanvasUI();
+	f_zoomChange();
+	f_requestRedraw();
+	//TODO: May want to make a system where the JSON vars init with default values, then the values from the save cascade over it.
+	//That way vars added in the future will not be undefined causing potential bugs.
+	//Otherwise, there may be in some cases checks to see if later added things are defined.
+	if(v_zRes.f['t/t256.png']){
+		GraFlicC_project_thumb.src = v_zRes.f['t/t256.png'].b;
+	}
+}
+
+function f_onRedrawn(){
+	/*
+	//when the canvas is redrawn, update the small previews
+	//Now draw a smaller version onto the mini preview canvas. This is useful to see what is being drawn in relation to positioning with things around it but outside of the main viewer area.
+	var v_miniCX = GraFlicC_mini_canvas.getContext('2d');
+	v_miniCX.clearRect(0, 0, GraFlicC_mini_canvas.width, GraFlicC_mini_canvas.height);
+	var v_miniScale = GraFlicC_mini_canvas.width / this.cvM.width;
+	v_miniCX.drawImage(GraFlicC_main_canvas, 0, 0, GraFlicC_main_canvas.width, GraFlicC_main_canvas.height, 0, 0, GraFlicC_main_canvas.width * v_miniScale, GraFlicC_main_canvas.height * v_miniScale);
+	//now draw a mini preview of the bitmap layer being edited. That is a good reminder of what layer user is editing so they do not draw on the wrong one!
+
+
+
+//This draws a warning if the current bitmap being edited is not visible. If it is visible, then this draw will be overwritten with the preview of the bitmap being drawn on.
+	if(!this.isPlaying){//disable this behavior while playing preview, to avoid ugly flashes
+		v_miniCX = GraFlicC_mini_editing_canvas.getContext('2d');
+		v_miniCX.clearRect(0, 0, GraFlicC_mini_editing_canvas.width, GraFlicC_mini_editing_canvas.height);
+		v_miniCX.save();
+		v_miniCX.fillStyle = 'rgba(255, 0, 0, 0.5)';
+		v_miniCX.fillRect(0, 0, GraFlicC_mini_editing_canvas.width, GraFlicC_mini_editing_canvas.height);
+		v_miniCX.restore();
+	}*/
+}
+
+
+</script>
+
+
+
+<br/><table class="GraFlic_t">
+<thead>
+<tr><th>Key</th><th>About</th></tr>
+</thead>
+<tbody>
+<tr><td class="GraFlic_j">🖼</td><td>Bitmap. A bitmap is a graphic image. Multiple bitmaps are used to create an animated image.</td></tr>
+<tr><td class="GraFlic_j">🎞</td><td>Frame. Represents an animation frame that plays for a moment of time. Bitmaps can configure what frames they appear on.</td></tr>
+<tr><td class="GraFlic_j">🕴</td><td>Z-Index. Higher value bitmaps are drawn on top of lower value bitmaps. This number can be negative.</td></tr>
+<tr><td class="GraFlic_j">🌊</td><td>Flood-fill color.</td></tr>
+<tr><td class="GraFlic_j">🍃</td><td>Breeze. Show other frames in translucent mode to help as a drawing guide.</td></tr>
+<tr><td class="GraFlic_j">💎</td><td>Stained glass. Show fill sections with less opacity than line sections to aid as a drawing guide.</td></tr>
+<tr><td class="GraFlic_j">❌</td><td>Erase mode. Erases things instead of drawing.</td></tr>
+<tr><td>.graflic</td><td>This is the file format for saving/restoring a project.</td></tr>
+</tbody>
+</table>
+<p id="About_saves">
+<b>About saves:</b> This is an early version of the format and many things are not set in stone. Things may change under the hood and files made now might not load in later versions. In some cases it could be manually reconfigured to later version formatting by renaming the .graflic to .zip, repairing JSON files and re-packaging it to a ZIP.
+</p>
+<div class="GraFlic_f">
+<small>Copyright 2017, Compukaze LLC. <a href="https://github.com/GraFlic/GraFlic">GraFlic™ libraries and tools are available under the MIT license.</a> GraFlic™ and Compukaze™ are trademarks of Compukaze LLC</small>
+</div>
+
+<div style="text-align:center;">
+<p style="display:inline-block;background-color:#0000FF;color:#FFFFFF;font-family:'Courier New', courier, monospace, serif;">
+░░░░░░░░░░░░░<br/>
+░░╔═══════╗░░<br/>
+░░║░<b>&bsol;</b>░░░<b>&sol;</b>░║░░<br/>
+░░║░<b>O</b>░<b>&quot;</b>░<b>O</b>░║░░<br/>
+░░╚═══╦═══╝░░<br/>
+░░░░╘═╩═╛░░░░<br/>
+░░<b>Compukaze™</b>░<br/>
+░░░░░░░░░░░░░<br/>
+▒▒▒▒▒▒▒▒▒▒▒▒▒<br/>
+▓▓▓▓▓▓▓▓▓▓▓▓▓
+</p>
+</div>
+
+</body>
+</html>

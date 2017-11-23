@@ -1,0 +1,12 @@
+#Exclude DEFLATE libraries pako and Zopfli. They have their own projects,
+#and are maintained by their own authors. You can obtain them at:
+# https://github.com/nodeca/pako/ (MIT License)
+# https://github.com/imaya/zopfli.js (The Apache License 2.0)
+# ( ported from https://github.com/google/zopfli ) (The Apache License 2.0)
+/pako*
+/Pako*
+/Zopfli*
+/zopfli*
+
+#Differnt folks have their own favicon and should put a custom favicon.png
+/favicon.*

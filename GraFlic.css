@@ -1,0 +1,296 @@
+/*
+This CSS follows a minimalist philosophy that allows focus on content, rather than UI hacks and tinkering. The content simply flows with the CSS layout engine.
+*/
+
+body{
+	color: #000000;
+	font-family: arial, sans-serif;
+	background-color: #F0F0F0;
+	padding:0px;
+	margin:8px;
+	margin-top:3px;
+
+	-moz-text-size-adjust:none;
+	-webkit-text-size-adjust:none;
+	-ms-text-size-adjust:none;
+}
+
+body, td, th, div, pre, p{
+	font-family: arial, sans-serif;
+	font-size: 12px;
+}
+
+
+a, .GraFlic_i div span{
+	border-style: none;
+	font-weight: bold;
+	color: #707070;
+}
+a:link {
+	text-decoration: none;
+}
+a:visited {
+}
+a:hover, .GraFlic_i div span:hover{
+	text-decoration: underline;
+}
+a:active {
+}
+
+h1, h2, h3, h4, h5, h6{
+	margin-left: 0px;
+	margin-right: 0px;
+	margin-top: 7px;
+	margin-bottom: 7px;	
+}
+
+table{
+	border-collapse: collapse;
+}
+/*
+anti-collision prefix: GraFlic_ may swap prefix for other things.
+*/
+td, th, p, .GraFlic_h, .GraFlic_R{
+	margin: 0px;
+	padding: 5px;
+	text-align: left;
+}
+td, th{
+	vertical-align: top;
+}
+
+.GraFlic_n{
+	text-align: center;
+	padding: 0px;
+	padding-top: 4px;
+	margin: 0px;
+	margin-bottom: 4px;
+}
+.GraFlic_n li{
+	list-style: none;
+	display: inline-block;
+	vertical-align: middle;
+	margin-left: 4px;
+	margin-right: 4px;
+	padding: 4px;
+	padding-top: 0px;
+	font-weight: bold;
+}
+
+.GraFlic_t, .GraFlic_g{/*grid is checkerboard-style with square cells(often used for thumbs)*/
+	width: 100%;
+}
+/*Update these to use nth-match when it becomes usable*/
+.GraFlic_t tbody tr:nth-child(odd),
+.GraFlic_g tbody tr:nth-child(odd) td:nth-child(odd),
+.GraFlic_g tbody tr:nth-child(even) td:nth-child(even),
+.GraFlic_i div:nth-child(odd),
+.GraFlic_T .GraFlic_R:nth-of-type(odd){
+	background-color: #D0D0D0;
+}
+.GraFlic_t tbody tr:nth-child(even),
+.GraFlic_g tbody tr:nth-child(even) td:nth-child(odd),
+.GraFlic_g tbody tr:nth-child(odd) td:nth-child(even),
+.GraFlic_i div:nth-child(even),
+.GraFlic_T .GraFlic_R:nth-of-type(even){
+	background-color: #E0E0E0;
+}
+.GraFlic_t tbody tr:hover,
+.GraFlic_t tbody tr:hover,
+.GraFlic_g tbody tr td:nth-child(odd):hover,
+.GraFlic_g tbody tr td:nth-child(even):hover,
+.GraFlic_i div:nth-child(odd):hover,
+.GraFlic_i div:nth-child(even):hover,
+.GraFlic_T .GraFlic_R:nth-of-type(odd):hover,
+.GraFlic_T .GraFlic_R:nth-of-type(even):hover{
+	background-color: #F0F0F0;
+}
+/*make rowspan cells get the styling and work with hover*/
+.GraFlic_t tbody tr:nth-child(even) td[rowspan],
+.GraFlic_t tbody tr:nth-child(odd) td[rowspan]{
+	background-color: inherit;
+	background-image: inherit;
+	background-attachment: fixed;
+}
+td, th, .GraFlic_i div{
+	background-attachment: fixed;
+}
+
+.GraFlic_i::after{
+	content: "";
+	display: block;
+	clear: both;
+}
+
+.GraFlic_i div{
+	position: relative;
+	float: left;
+	display: inline-block;
+	box-sizing: border-box;
+	text-align: center;
+	width: 100%;
+	height: 100vw;
+}
+
+
+@media(min-width: 300px) and (max-width: 450px){
+	/*If exactly 450, next @ overrides it, max keeps it from coming back in after the next @ but before the @ after that. Do not do .99 because there is some chance of a gap!*/
+	.GraFlic_i div{
+		width: 50%;
+		height:	50vw;
+	}
+	.GraFlic_i div:nth-child(4n+2), .GraFlic_i div:nth-child(4n+3){
+		float: right;
+	}
+}
+@media(min-width: 450px){
+	.GraFlic_i div{
+		width: 33.3333%;
+		height: 33vw;
+	}
+}
+@media(min-width: 600px) and (max-width: 750px){
+	.GraFlic_i div{
+		width: 25%;
+		height:	25vw;
+	}
+	.GraFlic_i div:nth-child(8n+4),
+	.GraFlic_i div:nth-child(8n+5),
+	.GraFlic_i div:nth-child(8n+6),
+	.GraFlic_i div:nth-child(8n+7){
+		float: right;
+	}
+}
+@media(min-width: 750px){
+	.APNGz_i div, .GraFlic_i div{
+		width: 20%;
+		height: 20vw;
+	}
+}
+@media(min-width: 900px) and (max-width: 1050px){
+	.GraFlic_i div{
+		width: 16.6666%;
+		height: 17vw;
+	}
+	.GraFlic_i div:nth-child(12n+6),
+	.GraFlic_i div:nth-child(12n+7),
+	.GraFlic_i div:nth-child(12n+8),
+	.GraFlic_i div:nth-child(12n+9),
+	.GraFlic_i div:nth-child(12n+10),
+	.GraFlic_i div:nth-child(12n+11){
+		float: right;
+	}
+}
+@media(min-width: 1050px){
+	.GraFlic_i div{
+		width: 14.2857%;
+		height: 14vw;
+	}
+}
+/*@media(min-width: 1000px){
+	.GraFlic_i div{width:12.25%;}
+}*/
+
+.GraFlic_i div img{
+	display: inline-block;
+	vertical-align: middle;
+	width: auto;
+	height: auto;
+	max-width: 92%;
+	max-height: 92%;
+}
+.GraFlic_i div a::before{
+	content: "";
+	background-color:red;
+	vertical-align: middle;
+	display: inline-block;
+	height: 100%;
+}
+.GraFlic_i div a:hover{
+	text-decoration: none;
+}
+.GraFlic_i div span{
+	position: absolute;
+	opacity: 0.8;
+	background-image: inherit;
+	background-attachment: inherit;
+	z-index: 9;
+	bottom: 0px;
+	left: 0px;
+	padding: 4%;
+	pointer-events: none;
+}
+
+/*_vert for vertical head*/
+
+.GraFlic_t thead tr, .GraFlic_g thead tr,
+.GraFlic_h,
+.GraFlic_i div:nth-child(odd).GraFlic_h,
+.GraFlic_i div:nth-child(even).GraFlic_h,
+.GraFlic_t.GraFlic_v tbody tr td:nth-child(1), .GraFlic_g.GraFlic_v tbody tr td:nth-child(1),
+.GraFlic_t tbody th, .GraFlic_g tbody th{
+	background-color: #B0B0B0;
+	background-image: none;
+	font-weight:bold;
+}
+
+td.GraFlic_y, th.GraFlic_y,
+td.GraFlic_e, th.GraFlic_e{
+	width:100%;
+	/*The spec calls for the table to 'attempt' to satisfy the width.
+	The fact that there will not be enough to satisfy it does NOT make it invalid*/
+}
+input[type=range].GraFlic_y,
+input[type=text].GraFlic_y,
+progress.GraFlic_y,
+textarea.GraFlic_y,
+.GraFlic_e input[type=range],
+.GraFlic_e input[type=text],
+.GraFlic_e progress,
+.GraFlic_e textarea{
+	/*'greed_e' will make the cell and the input greedy. Good for simple one-input cells*/
+	display: block;
+	width: 96%;
+	margin: 0 auto;
+}
+.GraFlic_f{
+	border-top: 2px solid #B0B0B0;
+	padding: 2px;
+	margin-top: 7px;
+	clear: both;
+}
+.GraFlic_x{
+	font-size: 10px;
+	color: #5F5F5F;
+}
+.GraFlic_x a, .GraFlic_t a, .GraFlic_i a, .GraFlic_i g{
+	/*color: #??????;*//*#??????*/
+}
+/*.APNGz_h a, .APNGz_n a, .APNGz_t th a, .APNGz_i th a, .APNGz_g th a{
+	color: #??????;
+}*/
+/*#GraFlic_waffle{
+	pointer-events: none;
+	transition-property: opacity;
+	transition-duration: 0.5s;
+	transition-timing-function: ease-out;
+	position: fixed;
+	bottom: 0px;
+	left: 0px;
+	right: 0px;
+	padding: 25px;
+	text-align: center;
+}*/
+
+.GraFlic_L{
+	text-decoration: underline;
+	cursor: pointer;
+}
+.GraFlic_L:hover{
+	text-decoration: none;
+}
+
+.GraFlic_j{
+	font-size: 20px;
+	vertical-align: middle;
+}
