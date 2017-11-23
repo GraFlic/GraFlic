@@ -89,7 +89,7 @@ Visit <a href="http://AnimatedPNGs.com" target="_blank">AnimatedPNGs.com</a> for
 &nbsp;<input type="radio" name="GraFlicC_tool_rad" value="1" id="GraFlicC_tool_pen_rad" checked/>
 <label for="GraFlicC_tool_pen_rad" class="GraFlic_j">✍️</label>
 &nbsp;<input type="radio" name="GraFlicC_tool_rad" value="2" id="GraFlicC_tool_fill_bucket_rad"/>
-<label for="GraFlicC_tool_fill_bucket_rad" class="GraFlic_j">🛢🌊</label>
+<label for="GraFlicC_tool_fill_bucket_rad" class="GraFlic_j">🕳🌊</label>
 &nbsp;<input type="radio" name="GraFlicC_tool_rad" value="3" id="GraFlicC_tool_line_bucket_rad"/>
 <label for="GraFlicC_tool_line_bucket_rad" class="GraFlic_j">✍️🌊</label>
 &nbsp;<input type="radio" name="GraFlicC_tool_rad" value="300" id="GraFlicC_tool_lasso_rad"/>
@@ -481,7 +481,7 @@ function f_palFloatValid(v_chanVal){
 }
 function f_rebuildEmbedListUI(){
 	while(GraFlicC_embed_sel.firstChild){GraFlicC_embed_sel.removeChild(GraFlicC_embed_sel.firstChild);}
-	var eFiles = v_curGraFlic.a.listDir('embeds/');
+	var eFiles = v_curGraFlic.a.listDir('e/');
 	for(var i = 0;i < eFiles.length;i++){
 		var selObj = document.createElement('option');
 		selObj.value = eFiles[i].p;
@@ -874,7 +874,7 @@ function f_embedFile(v_evt){
 function f_embedFileLoaded(v_evt){
 	var v_fe = {};
 	v_fe.d = new Uint8Array(v_evt.target.result);
-	v_fe.p = 'embeds/' + v_fileToEmbed.name;
+	v_fe.p = 'e/' + v_fileToEmbed.name;
 	v_curGraFlic.a.addFile(v_fe);
 	f_rebuildEmbedListUI();
 }
@@ -1015,9 +1015,6 @@ function f_init(){
 }
 f_init();
 
-//var v_savedWorkFile = null;//save this ref so Object URL can be revoked when another save is made to stop the leak.
-//var v_thumbSaveBinary = null;
-//var v_thumbSaveBLOB = null;//blob link when generated
 function f_saveWorkWithThumb(){
 	//with mode 2 it will call f_saveWork once the thumbnail is ready.
 	//f_saveAnimatedPNG(2);//mode 2 thumbnail
@@ -1039,8 +1036,8 @@ function f_onLoaded(v_zRes){
 	//TODO: May want to make a system where the JSON vars init with default values, then the values from the save cascade over it.
 	//That way vars added in the future will not be undefined causing potential bugs.
 	//Otherwise, there may be in some cases checks to see if later added things are defined.
-	if(v_zRes.f['thumbs/thumb_256.png']){
-		GraFlicC_project_thumb.src = v_zRes.f['thumbs/thumb_256.png'].b;
+	if(v_zRes.f['t/t256.png']){
+		GraFlicC_project_thumb.src = v_zRes.f['t/t256.png'].b;
 	}
 }
 
