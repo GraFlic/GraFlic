@@ -45,17 +45,17 @@ function GraFlicImage(v_fromArchive, v_params){
 	
 	
 	this.penWidth = 2.5;
-	this.penOpacityAnalysis = {};//Pen strokes need to have full opacity at the center of the stroke to work with the fill tool and not leak. Using FULL opacity as the edge is important because images should not have stray bits of slightly transparent pixels randomly in them. That can mess up pixel recycling between APNG frames and force a full clear of the region to update it. This var should NOT be saved in the JSON with the save file. There is a chance that the behavior of line stroke varies slightly between browsers. This needs to be recalculated on each runtime.
+	this.penOpacityAnalysis = {};//Pen strokes need to have full opacity at the center of the stroke to work with the fill tool and not leak. Using FULL opacity as the edge is important because images should not have stray bits of slightly transparent pixels randomly in them. That can mess up pixel recycling between APNG frames and force a full clear of the region to update it. This var should NOT be saved in the JSON with the save file. There is a chance that the behavior of wire stroke varies slightly between browsers. This needs to be recalculated on each runtime.
 	this.curStroke = [];
 	this.curTool = 1;
 	//1 = pen
 	//2 = fill bucket
-	//3 = line bucket
+	//3 = wire bucket
 	//300 = lasso cutter
 	this.curToolState = 0;//tool state
 	//0 = inactive
 	//100 = drawing
-	//200 = finished and/or ready to transfer to custom bitmap channels (line_index/line_alpha/fill_index)
+	//200 = finished and/or ready to transfer to custom bitmap channels (wire_index/wire_alpha/fill_index)
 	this.curDrawMode = 1;//0 for erase, 1 for draw
 
 	if(v_params.canvasPlayback){
@@ -117,7 +117,7 @@ function GraFlicImage(v_fromArchive, v_params){
 	this.a.j.save.alpha_bit_depth = 8;//May one day be raisable to 16 for 48 bit color with 16 bit alpha.
 			//Raising bit depths would require all the channels for each bitmap to be converted into Uint16Array.
 	//== Create blank bitmap canvas to start with ==
-	this.curImage = this.initBitmap();//bitmap currently being operated on
+	this.curImage = this.initBitmapWAIFU();//bitmap currently being operated on
 	this.a.j.save.images.push(this.curImage);
 	//Note that this curBMP must be there for changeCanvasSize to init the undo stack.
 	this.changeCanvasSize(512, 512, 0);//Make sure the size is initialized to with all the things that need to be set.
@@ -262,8 +262,8 @@ GraFlicImage.prototype.calcBitmapSizes = function(){
 	//NOTE: In some cases if bit depth is increased only some channels will be increased. For example 16 bit depth for more palette indices than 255, but NOT moving to 16 bit alpha to support 48 bit color.
 	this.channelBitmapBytes = this.a.j.save.canvas_width * this.a.j.save.canvas_height;
 	this.rgba32BitmapBytes = this.a.j.save.canvas_width * this.a.j.save.canvas_height * 4;//Each custom channel will be on its own array of W*H.
-	//A channel for line color index,
-	//A channel for line color anti-alias alpha
+	//A channel for wire color index,
+	//A channel for wire color anti-alias alpha
 	//A channel for fill color index (a flat color that fills in under shapes and slides under the anti-aliased parts to blend)
 	//With each channel on its own array, other channels can be added later if needed.
 	//TODO: Supporting channels that can contain extra data that is context-dependent on palette type, like representing the position in the gradient blended between two colors.
@@ -298,12 +298,12 @@ GraFlicImage.prototype.changeCanvasSize = function(v_csW, v_csH, v_csCropMode, v
 	var v_newPixI = 0;
 	for(var v_i = 0;v_i < this.a.j.save.images.length;v_i++){
 		var v_changeB = this.a.j.save.images[v_i];
-		if(v_changeB.type == 'bitmap'){//=== only bitmaps need channels adjusted =============================================
-		var v_oldLineI = this.a.f[v_changeB.chan_li].d;
-		var v_oldLineA = this.a.f[v_changeB.chan_la].d;
+		if(v_changeB.type == 'WAIFU'){//=== only bitmaps need channels adjusted =============================================
+		var v_oldLineI = this.a.f[v_changeB.chan_wi].d;
+		var v_oldLineA = this.a.f[v_changeB.chan_wa].d;
 		var v_oldFillI = this.a.f[v_changeB.chan_fi].d;
-		this.a.f[v_changeB.chan_li].d = new Uint8Array(new ArrayBuffer(this.channelBitmapBytes));
-		this.a.f[v_changeB.chan_la].d = new Uint8Array(new ArrayBuffer(this.channelBitmapBytes));
+		this.a.f[v_changeB.chan_wi].d = new Uint8Array(new ArrayBuffer(this.channelBitmapBytes));
+		this.a.f[v_changeB.chan_wa].d = new Uint8Array(new ArrayBuffer(this.channelBitmapBytes));
 		this.a.f[v_changeB.chan_fi].d = new Uint8Array(new ArrayBuffer(this.channelBitmapBytes));
 		//alert('a');
 		for(var v_h = 0;v_h < v_csH;v_h++){
@@ -314,12 +314,12 @@ GraFlicImage.prototype.changeCanvasSize = function(v_csW, v_csH, v_csCropMode, v
 				v_oldPixI = v_hOld * v_canvasWidthOld + v_wOld;
 				//alert(v_newPixI + ' -- ' + v_oldPixI + ' ' +v_wOld + ', ' + v_hOld +' ... ' + v_canvasWidthOld);return;
 				if(v_wOld >= 0 && v_hOld >= 0 && v_wOld < v_canvasWidthOld && v_hOld < v_canvasHeightOld){
-					this.a.f[v_changeB.chan_li].d[v_newPixI] = v_oldLineI[v_oldPixI];
-					this.a.f[v_changeB.chan_la].d[v_newPixI] = v_oldLineA[v_oldPixI];
+					this.a.f[v_changeB.chan_wi].d[v_newPixI] = v_oldLineI[v_oldPixI];
+					this.a.f[v_changeB.chan_wa].d[v_newPixI] = v_oldLineA[v_oldPixI];
 					this.a.f[v_changeB.chan_fi].d[v_newPixI] = v_oldFillI[v_oldPixI];
 				}else{//init to zero anything that is not in the copied region
-					this.a.f[v_changeB.chan_li].d[v_newPixI] = 0;
-					this.a.f[v_changeB.chan_la].d[v_newPixI] = 0;
+					this.a.f[v_changeB.chan_wi].d[v_newPixI] = 0;
+					this.a.f[v_changeB.chan_wa].d[v_newPixI] = 0;
 					this.a.f[v_changeB.chan_fi].d[v_newPixI] = 0;
 				}
 			}
@@ -348,9 +348,16 @@ GraFlicImage.prototype.initImage = function(v_excludeFromArchive){
 	initI.title = '🖼';//picture graphic char
 	return initI;
 };
-GraFlicImage.prototype.initBitmap = function(v_excludeFromArchive){
+GraFlicImage.prototype.initBitmapWAIFU = function(v_excludeFromArchive){
+	//Creates a bitmap in the WAIFU (Wire Alpha / Index, Fill, Unallocated) format.
+	//W is more distinguishable than L for line in lowercase. l can be confused with number 1 or uppercase i(I).
+	//Wire like the Wire-looking effects when in stained glass view with the fills partially transparent for analysis and to guide by surrounding animation frames.
+	//Each channels is in a separate array. Wire Alpha, Wire Index, and Fill (indexed, no alpha) are initially allocated.
+	//Supporting channels are initially unallocated, but may be added as needed. Currently not implemented yet.
+	//Supporting channels would be used for assigning things like gradients or textures to assign to an index.
+	//Other types of bitmaps like traditional RGBA could be added later, but WAIFU is the focus for now to handle the cell-based graphics that Animated PNGs are good at.
 	var v_initB = this.initImage(v_excludeFromArchive);
-	v_initB.type = 'bitmap';
+	v_initB.type = 'WAIFU';
 	//NOTE: These could be switched to Uint8ClampedArray if issues are encountered. So far there have not been problems and Clamped might have extra overhead.
 	//Cann be called with (true) to exclude the bitmap from being part of the project archive. This can be used for things like temporary bitmaps used by the undo stack or cutting.
 	//TODO: .bitmap_mode could be used to make special mode bitmaps that instead of having pixel channels, maybe contain a user-loaded image, or reference a previous bitmap and recycle all or part of it. Some bitmaps could be defined as library items to be accessed by other bitmap objects, some of which might just be references to library items and instructions on where to draw them. However, for now it will stick to the basic mode. bitmap_mode being undefined should default to the default mode.
@@ -361,18 +368,18 @@ GraFlicImage.prototype.initBitmap = function(v_excludeFromArchive){
 	//TODO: what if multiple bitmaps are initialized at the exact same millisecond??
 	var v_bitmapFolder = 'b/' + v_initB.id + '/';
 	
-	var v_chanLI = new Uint8Array(new ArrayBuffer(this.channelBitmapBytes));
-	var v_chanLA = new Uint8Array(new ArrayBuffer(this.channelBitmapBytes));
+	var v_chanWI = new Uint8Array(new ArrayBuffer(this.channelBitmapBytes));
+	var v_chanWA = new Uint8Array(new ArrayBuffer(this.channelBitmapBytes));
 	var v_chanFI = new Uint8Array(new ArrayBuffer(this.channelBitmapBytes));
 	/*if(v_excludeFromArchive){
 		//For the temporary bitmaps such as undo/cut holders, they will not be part of the virtual archive and will link directly to the data instead of having a string linking to the place in the archive.
-		v_initB.chan_li = v_chanLI;
-		v_initB.chan_la = v_chanLA;
+		v_initB.chan_wi = v_chanWI;
+		v_initB.chan_wa = v_chanWA;
 		v_initB.chan_fi = v_chanFI;
 	}*/
 	//else{
-		v_initB.chan_li = v_bitmapFolder + v_initB.id + '_li.dat.gz';//channel Line Index
-		v_initB.chan_la = v_bitmapFolder + v_initB.id + '_la.dat.gz';//channel Line Alpha
+		v_initB.chan_wi = v_bitmapFolder + v_initB.id + '_wi.dat.gz';//channel Wire Index
+		v_initB.chan_wa = v_bitmapFolder + v_initB.id + '_wa.dat.gz';//channel Wire Alpha
 		v_initB.chan_fi = v_bitmapFolder + v_initB.id + '_fi.dat.gz';//channel Fill Index
 		
 		var v_bFile;
@@ -382,14 +389,14 @@ GraFlicImage.prototype.initBitmap = function(v_excludeFromArchive){
 		this.a.addFile(v_bFile);
 		
 		v_bFile = {};
-		v_bFile.p = v_initB.chan_li;
-		v_bFile.d = v_chanLI;
+		v_bFile.p = v_initB.chan_wi;
+		v_bFile.d = v_chanWI;
 		if(v_excludeFromArchive){v_bFile.temp = true;}
 		this.a.addFile(v_bFile);
 
 		v_bFile = {};
-		v_bFile.p = v_initB.chan_la;
-		v_bFile.d = v_chanLA;
+		v_bFile.p = v_initB.chan_wa;
+		v_bFile.d = v_chanWA;
 		if(v_excludeFromArchive){v_bFile.temp = true;}
 		this.a.addFile(v_bFile);
 
@@ -403,8 +410,8 @@ GraFlicImage.prototype.initBitmap = function(v_excludeFromArchive){
 	
 	
 	//Make sure all init to zeroes, some browsers may still not have Uint8Arrays automatically 0...
-	v_chanLI.fill(0);
-	v_chanLA.fill(0);
+	v_chanWI.fill(0);
+	v_chanWA.fill(0);
 	v_chanFI.fill(0);
 	
 	return v_initB;
@@ -417,7 +424,7 @@ GraFlicImage.prototype.initEmbed = function(fPath){
 };
 
 GraFlicImage.prototype.addBitmap = function(){
-	this.a.j.save.images.push(this.initBitmap());
+	this.a.j.save.images.push(this.initBitmapWAIFU());
 };
 GraFlicImage.prototype.addEmbed = function(p){
 	this.a.j.save.images.push(this.initEmbed(p));
@@ -437,49 +444,53 @@ GraFlicImage.prototype.initFrame = function(){
 
 
 GraFlicImage.prototype.undoRedoCopy = function(v_undoBMP, v_revert){
-	var v_liveLI = this.a.f[v_undoBMP.undo_copied_from.chan_li].d;//pixels live on the screen (link to the live bitmap the undo bitmap was copied from)
-	var v_liveLA = this.a.f[v_undoBMP.undo_copied_from.chan_la].d;
+	var v_liveWI = this.a.f[v_undoBMP.undo_copied_from.chan_wi].d;//pixels live on the screen (link to the live bitmap the undo bitmap was copied from)
+	var v_liveWA = this.a.f[v_undoBMP.undo_copied_from.chan_wa].d;
 	var v_liveFI = this.a.f[v_undoBMP.undo_copied_from.chan_fi].d;
-	var v_tempLI = this.a.f[v_undoBMP.chan_li].d;//pixels from the undo/redo stack object
-	var v_tempLA = this.a.f[v_undoBMP.chan_la].d;
+	var v_tempWI = this.a.f[v_undoBMP.chan_wi].d;//pixels from the undo/redo stack object
+	var v_tempWA = this.a.f[v_undoBMP.chan_wa].d;
 	var v_tempFI = this.a.f[v_undoBMP.chan_fi].d;
 	var v_copyI;
 	if(v_revert){//Revert to a previous state.
 		for(v_copyI = 0;v_copyI < this.channelBitmapBytes;v_copyI++){
 			//copy the state of the bitmap before it was changed.
-			v_liveLI[v_copyI] = v_tempLI[v_copyI];
-			v_liveLA[v_copyI] = v_tempLA[v_copyI];
+			v_liveWI[v_copyI] = v_tempWI[v_copyI];
+			v_liveWA[v_copyI] = v_tempWA[v_copyI];
 			v_liveFI[v_copyI] = v_tempFI[v_copyI];
 		}
 	}else{//Copy an existing state to add to the stack.
 		for(v_copyI = 0;v_copyI < this.channelBitmapBytes;v_copyI++){
 			//copy the state of the bitmap before it was changed.
-			v_tempLI[v_copyI] = v_liveLI[v_copyI];
-			v_tempLA[v_copyI] = v_liveLA[v_copyI];
+			v_tempWI[v_copyI] = v_liveWI[v_copyI];
+			v_tempWA[v_copyI] = v_liveWA[v_copyI];
 			v_tempFI[v_copyI] = v_liveFI[v_copyI];
 		}
 	}
 };
 GraFlicImage.prototype.pushUndoStack = function(){
 	//Call this before committing a change to the current bitmap.
-	this.redoStack = [];//Cannot redo on top of a change that was done after undoing.
-	if(this.curImage.type != 'bitmap'){
+	if(this.curImage.type != 'WAIFU'){
 		return;//Currently only supports unto to the Bitmap type image.
 	}
-	var v_undoBMP = this.initBitmap(true);
+	this.redoStack = [];//Cannot redo on top of a change that was done after undoing.
+	var v_undoBMP = this.initBitmapWAIFU(true);
 	v_undoBMP.undo_copied_from = this.curImage;
 	//v_undoBMP.name = Math.random();
 	this.undoRedoCopy(v_undoBMP, false);
 	/*for(var v_copyI = 0;v_copyI < this.channelBitmapBytes;v_copyI++){
 		//copy the state of the bitmap before it was changed.
-		v_undoBMP.chan_li[v_copyI] = this.curImage.chan_li[v_copyI];
-		v_undoBMP.chan_la[v_copyI] = this.curImage.chan_la[v_copyI];
+		v_undoBMP.chan_wi[v_copyI] = this.curImage.chan_wi[v_copyI];
+		v_undoBMP.chan_wa[v_copyI] = this.curImage.chan_wa[v_copyI];
 		v_undoBMP.chan_fi[v_copyI] = this.curImage.chan_fi[v_copyI];
 	}*/
 	this.undoStack.push(v_undoBMP);
 	if(this.undoStack.length > 20){//Limit stack size to keep resources reasonable.
 		//clear the bitmap from the undo stack array and delete it from the archive.
-		this.a.deleteFile(this.undoStack.shift().p);
+		var sDel = this.undoStack.shift();
+		this.a.deleteFile(sDel.chan_wi);
+		this.a.deleteFile(sDel.chan_wa);
+		this.a.deleteFile(sDel.chan_fi);
+		this.a.deleteFile('b/' + sDel.id + '/');
 	}
 	console.log('undo stack: ' + this.undoStack.length);// + ' n: ' + v_undoBMP.name);
 };
@@ -576,7 +587,7 @@ GraFlicImage.prototype.requestRedrawUnbound = function(x1, y1, x2, y2){
 };
 GraFlicImage.prototype.alphaOverColorChannel = function(v_byteA, v_byteB, v_alphaA, v_alphaB){
 	//apply a standard alpha compositing technique for the alpha of the 
-	//line channel to composite over the fill channel
+	//wire channel to composite over the fill channel
 	//Apply the over operation to composite byteA OVER byte B
 	//This algorithm uses 0.0 - 1.0 for alpha, so be sure to convert it from the 0-255 based palette
 	//TODO: may support 16 bit depth in the future if the project has been set to 16-bit channels
@@ -678,11 +689,11 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 		return;
 	}
 	//console.log('draw update region: ' + rdX1 + ', ' + rdY1 + ' / ' + rdX2 + ', ' + rdY2 + ' W: ' + rdW + ' H: ' + rdH);
-	var chanLI, chanLA, chanFI;
+	var chanWI, chanWA, chanFI;
 	var v_rgbaI;
 	var v_images2Draw;
 	var v_miniCX;//used to make preview thumbs of whole image and bitmap being edited.
-	var v_miniScale;
+	var v_miniScale = this.canvasPreviewBitmap.width / this.cvM.width;
 	//Special logic needed for altering draws for the onion skin. If it is currently saving, all onion skin stuff should be ignored until finished.
 	var v_drawOnion;
 	var v_drawStainedGlass = false;
@@ -749,7 +760,7 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 			//but may add more precise details for the sake of texture for example
 			//small pen sizes are too small to make a fully opaque center, which is needed for color filling detection to fill between the line art.
 			this.cxP.beginPath();
-			this.cxP.lineWidth = 1;//force a 255 alpha draw with the smallest line behind the line draw so that bucket filling can detect edges and not leave ugly semi-transparent halos around where the fill meets the line.
+			this.cxP.lineWidth = 1;//force a 255 alpha draw with the smallest line behind the line draw so that bucket filling can detect edges and not leave ugly semi-transparent halos around where the fill meets the wire.
 			
 			this.cxP.moveTo(this.curStroke[0], this.curStroke[1]);
 			for(v_i = 2;v_i < this.curStroke.length;v_i+=2){
@@ -912,7 +923,7 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 					v_dataP.data[v_pIndexFF]     = this.curPaletteColor.r;
 					v_dataP.data[v_pIndexFF + 1] = this.curPaletteColor.g;
 					v_dataP.data[v_pIndexFF + 2] = this.curPaletteColor.b;
-					v_dataP.data[v_pIndexFF + 3] = 255;//fully opaque to keep lines from leaking
+					v_dataP.data[v_pIndexFF + 3] = 255;//fully opaque to keep wires from leaking
 						//If the palette color has partial alpha that will be applied on the final draw, but it needs to be on the bitmap as full opacity.
 						//This may look partially transparent palette colors look a bit different on the preview when drawing than they are in the actual image.
 					/*    v_dataP.data[v_pIndexFC]     = this.curPaletteColor.r;
@@ -966,8 +977,8 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 		var v_pixA;
 		if(this.curTool == 1){
 			v_rgbaI = 0;
-			chanLI = this.a.f[this.curImage.chan_li].d;
-			chanLA = this.a.f[this.curImage.chan_la].d;
+			chanWI = this.a.f[this.curImage.chan_wi].d;
+			chanWA = this.a.f[this.curImage.chan_wa].d;
 			chanFI = this.a.f[this.curImage.chan_fi].d;
 			//for(v_copyI = 0;v_copyI < this.channelBitmapBytes;v_copyI++){
 			for(h = rdY1;h < rdY2;h++){
@@ -981,47 +992,47 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 				}
 				if(v_pixA){//any non-zero value that evals true.
 					if(this.curDrawMode){//if DRAWING, not erasing
-						/*if(false){//let the existing line override untying that intersects it
-							if(!this.a.f[this.curImage.chan_li].d[v_copyI]){
-								//Any line already drawn will stay and not be overwritten, this works better
+						/*if(false){//let the existing wire override untying that intersects it
+							if(!this.a.f[this.curImage.chan_wi].d[v_copyI]){
+								//Any wire already drawn will stay and not be overwritten, this works better
 								//for preserving line art and drawing the borders of shade/hilight areas
 								//drawn that intersect the line art.
 								//TODO: allow this behavior to be overridden if needed.
-								chanLI[v_copyI] = this.a.j.save.selected_color_index;
-								chanLA[v_copyI] |= v_pixA;
+								chanWI[v_copyI] = this.a.j.save.selected_color_index;
+								chanWA[v_copyI] |= v_pixA;
 							}
-						}else if(true){//the new line drawing over anything it intersects.
+						}else if(true){//the new wire drawing over anything it intersects.
 							//Fully transparent should be index [0] and alpha 0.
 							//An index set non-zero with alpha of zero triggers special handling.
-							//This allows intersecting lines of different colors to blend visually gracefully.
-							chanLI[v_copyI] = this.a.j.save.selected_color_index;
-							chanLA[v_copyI] = 0;
+							//This allows intersecting wires of different colors to blend visually gracefully.
+							chanWI[v_copyI] = this.a.j.save.selected_color_index;
+							chanWA[v_copyI] = 0;
 						}else{
-							//If a line already exists, push the current line value down to the fill channel
-							//and draw over it with the current line, giving a more natural look to the intersect.
+							//If a wire already exists, push the current wire value down to the fill channel
+							//and draw over it with the current wire, giving a more natural look to the intersect.
 							if(v_pixA == 255){
-								chanFI[v_copyI] = chanLI[v_copyI]];
+								chanFI[v_copyI] = chanWI[v_copyI]];
 							}
-							chanLI[v_copyI] = this.a.j.save.selected_color_index;
-							chanLA[v_copyI] |= v_pixA;
+							chanWI[v_copyI] = this.a.j.save.selected_color_index;
+							chanWA[v_copyI] |= v_pixA;
 						}*/
-						if(chanLI[v_copyI] && chanLI[v_copyI] != this.a.j.save.selected_color_index && v_pixA < 255){//line already there, intersect and are different colors, but the stroke over it is not fully opaque.
+						if(chanWI[v_copyI] && chanWI[v_copyI] != this.a.j.save.selected_color_index && v_pixA < 255){//wire already there, intersect and are different colors, but the stroke over it is not fully opaque.
 							//Fully transparent should be index [0] and alpha 0.
 							//An index set non-zero with alpha of zero triggers special handling.
-							//This allows intersecting lines of different colors to blend visually gracefully.
-							chanLI[v_copyI] = this.a.j.save.selected_color_index;
-							chanLA[v_copyI] = 0;
+							//This allows intersecting wires of different colors to blend visually gracefully.
+							chanWI[v_copyI] = this.a.j.save.selected_color_index;
+							chanWA[v_copyI] = 0;
 						}else{//otherwise,
-							chanLI[v_copyI] = this.a.j.save.selected_color_index;
-							chanLA[v_copyI] |= v_pixA;
+							chanWI[v_copyI] = this.a.j.save.selected_color_index;
+							chanWA[v_copyI] |= v_pixA;
 						}
-						//boolean |= so that alpha where lines intersect
+						//boolean |= so that alpha where wires intersect
 						//dos not erase alpha opacity from under it.
 					}else{//If ERASING instead of drawing.
-						chanLA[v_copyI] &= 255 - v_pixA;
-						if(!chanLA[v_copyI]){
+						chanWA[v_copyI] &= 255 - v_pixA;
+						if(!chanWA[v_copyI]){
 							//If fully erased, set to transparent pixel index
-							chanLI[v_copyI] = 0;//[0] reserved transparent index
+							chanWI[v_copyI] = 0;//[0] reserved transparent index
 						}
 					}
 				}
@@ -1033,7 +1044,7 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 		if(this.curTool == 300 && this.cutBitmap == null){//Committing lasso cut move once finished.
 			//For lasso tool, copy anything in the mask to the cut Bitmap.
 			//alert('committing lasso cut');
-			this.cutBitmap = this.initBitmap(true);
+			this.cutBitmap = this.initBitmapWAIFU(true);
 			this.cutX = 0;
 			this.cutY = 0;
 			v_rgbaI = 0;
@@ -1041,11 +1052,11 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 				v_pixA = v_dataP.data[v_rgbaI + 3];
 				if(v_pixA){
 					this.a.f[this.cutBitmap.chan_fi].d[v_copyI] = this.a.f[this.curImage.chan_fi].d[v_copyI];
-					this.a.f[this.cutBitmap.chan_li].d[v_copyI] = this.a.f[this.curImage.chan_li].d[v_copyI];
-					this.a.f[this.cutBitmap.chan_la].d[v_copyI] = this.a.f[this.curImage.chan_la].d[v_copyI];
+					this.a.f[this.cutBitmap.chan_wi].d[v_copyI] = this.a.f[this.curImage.chan_wi].d[v_copyI];
+					this.a.f[this.cutBitmap.chan_wa].d[v_copyI] = this.a.f[this.curImage.chan_wa].d[v_copyI];
 					this.a.f[this.curImage.chan_fi].d[v_copyI] = 0;//Now delete the area that was cut out of the source BMP.
-					this.a.f[this.curImage.chan_li].d[v_copyI] = 0;
-					this.a.f[this.curImage.chan_la].d[v_copyI] = 0;
+					this.a.f[this.curImage.chan_wi].d[v_copyI] = 0;
+					this.a.f[this.curImage.chan_wa].d[v_copyI] = 0;
 				}
 				v_rgbaI += 4;//4 bytes per pixel in the RBBA canvas data
 			}
@@ -1054,37 +1065,28 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 		this.curToolState = 0;//set to 0 inactive now that finished with this draw
 	}
 	
-	//This draws a warning if the current bitmap being edited is not visible. If it is visible, then this draw will be overwritten with the preview of the bitmap being drawn on.
-	if(!this.isPlaying && this.canvasPreviewBitmap){//disable this behavior while playing preview, to avoid ugly flashes
-		//The canvas for previewing bitmap must have been set in the params for this to run.
-		v_miniCX = this.canvasPreviewBitmap.getContext('2d');
-		v_miniCX.clearRect(0, 0, this.canvasPreviewBitmap.width, this.canvasPreviewBitmap.height);
-		v_miniCX.save();
-		v_miniCX.fillStyle = 'rgba(255, 0, 0, 0.5)';
-		v_miniCX.fillRect(0, 0, this.canvasPreviewBitmap.width, this.canvasPreviewBitmap.height);
-		v_miniCX.restore();
-	}
 	//Now use the palette indices and alpha values in the custom channel system
 	//To draw onto the main viewing canvas.
+	var curImageInView = false;//will be set to true when current image is drawn. If the current image is not visible, then a warning indicator will be shown on the current image preview.
 	for(var v_bmpI = 0;v_bmpI < v_images2Draw.length;v_bmpI++){//images2Draw objects contain .image with the bitmap and other parameter options
 		this.cxB.clearRect(rdX1, rdY1, rdW, rdH);//0, 0, this.cvP.width, this.cvP.height);
 		v_rgbaI = 0;
 		var v_bmpObj = v_images2Draw[v_bmpI].image;
 		var v_onionAlpha = v_images2Draw[v_bmpI].onionAlpha;//Alpha, used for onion skinning.
-		if(v_bmpObj.type == 'bitmap'){//===================================== bitmap ===========================================================
+		if(v_bmpObj.type == 'WAIFU'){//===================================== bitmap ===========================================================
 		//console.log('getimagedata ' + rdX1 + ', ' + rdY1 + ', ' + rdW + ', ' + rdH + '...');
 		var v_dataB = this.cxB.getImageData(rdX1, rdY1, rdW, rdH);//0, 0, this.cvM.width, this.cvM.height);
 			//only get image data for the region being drawn on, to avoid lag.
 		//old: for(v_copyI = 0;v_copyI < this.channelBitmapBytes;v_copyI++){
-		chanLI = this.a.f[v_bmpObj.chan_li].d;//seems to lag when looked up by associative on each iteration
-		chanLA = this.a.f[v_bmpObj.chan_la].d;
+		chanWI = this.a.f[v_bmpObj.chan_wi].d;//seems to lag when looked up by associative on each iteration
+		chanWA = this.a.f[v_bmpObj.chan_wa].d;
 		chanFI = this.a.f[v_bmpObj.chan_fi].d;
 		//Support drawing only the region that has changed to cut down lag.
 		//console.log( (rdX2- rdX1) + ' vs ' + rdW);
 		for(h = rdY1;h < rdY2;h++){
 		for(w = rdX1;w < rdX2;w++){
 			v_copyI = h * canvW + w;
-			//Draw the fill channel first, any line channel filled in will
+			//Draw the fill channel first, any wire channel filled in will
 			//draw over/partially draw over the channel based on the alpha level it has
 			var v_fillIndex = chanFI[v_copyI];
 			var v_fillPalColor = this.curPalette.colors[v_fillIndex];
@@ -1100,39 +1102,39 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 				}
 			}
 			
-			var v_lineIndex = chanLI[v_copyI];
-			var v_lineAlpha = chanLA[v_copyI];
-			//console.log('LCI ' + v_lineIndex);
-			if(v_lineIndex){//if non-zero (index zero is always fully transparent)
+			var v_wireIndex = chanWI[v_copyI];
+			var v_wireAlpha = chanWA[v_copyI];
+			//console.log('LCI ' + v_wireIndex);
+			if(v_wireIndex){//if non-zero (index zero is always fully transparent)
 				//It seems non-rounded float region coordinates were causing undefined errors?
 				/*try{
 					console.log(v_fillPalColor.a24);
 				}catch(er){
 					console.log(er + ' i: ' + v_fillIndex + ' at ' + w + ', ' + h)
 				}*/
-				var v_linePalColor = this.curPalette.colors[v_lineIndex];
+				var v_wirePalColor = this.curPalette.colors[v_wireIndex];
 				var v_pixelCurAlpha = v_fillPalColor.a24;//The alpha after fill is drawn.
 				//convert the palette index to RGBA in the canvas
-				var v_linePalAlphaOver = v_lineAlpha;//can stay the same if alpha is 255 in line palette.
-				if(v_linePalColor.a24 < 255){
+				var v_wirePalAlphaOver = v_wireAlpha;//can stay the same if alpha is 255 in wire palette.
+				if(v_wirePalColor.a24 < 255){
 					//If the palette entry has a non 255 alpha value, that must be factored into the blending.
-					v_linePalAlphaOver = Math.round(v_lineAlpha * v_linePalColor.a);
+					v_wirePalAlphaOver = Math.round(v_wireAlpha * v_wirePalColor.a);
 				}
-				if(v_lineIndex == v_fillIndex){
-					//If the line and the fill are the same color they should combine to one contiguous shape.
-					//The fill has not alpha and is just a flat fill, so anywhere the line intersects a fill with the same color,
+				if(v_wireIndex == v_fillIndex){
+					//If the wire and the fill are the same color they should combine to one contiguous shape.
+					//The fill has not alpha and is just a flat fill, so anywhere the wire intersects a fill with the same color,
 					//then it should leave it as is.
 				}else{
 					var v_underR = v_dataB.data[v_rgbaI    ];
 					var v_underG = v_dataB.data[v_rgbaI + 1];
 					var v_underB = v_dataB.data[v_rgbaI + 2];
 					var v_underA = v_pixelCurAlpha;
-					if(!v_lineAlpha){
-						//an index set non-zero with alpha of zero is special handling for intersecting lines of different colors.
-						var v_corIndex = v_lineIndex;//intersecting line correction index
+					if(!v_wireAlpha){
+						//an index set non-zero with alpha of zero is special handling for intersecting wires of different colors.
+						var v_corIndex = v_wireIndex;//intersecting wire correction index
 						var v_aroundIndex;
 						var v_aroundCheckI;
-						//Check the line channel pixels around and find one that is non zero and a different line color. Blend it with that.
+						//Check the wire channel pixels around and find one that is non zero and a different wire color. Blend it with that.
 						//  -1 0 2
 						//  +-+-+-+
 						//-1|*|*|*|
@@ -1144,50 +1146,50 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 						for(var v_aroundX = -1;v_aroundX < 2;v_aroundX++){
 							for(var v_aroundY = -1;v_aroundY < 2;v_aroundY++){
 								v_aroundCheckI = v_copyI + this.a.j.save.canvas_width * v_aroundX + v_aroundY;
-								v_aroundIndex = v_bmpObj.chan_li[v_aroundCheckI];
+								v_aroundIndex = v_bmpObj.chan_wi[v_aroundCheckI];
 								if( v_aroundIndex &&
-								    v_aroundIndex != v_lineIndex
-								    && v_bmpObj.chan_la[v_aroundCheckI] > 127 ){
+								    v_aroundIndex != v_wireIndex
+								    && v_bmpObj.chan_wa[v_aroundCheckI] > 127 ){
 									v_corIndex = v_aroundIndex;
 								}
 							}
 						}
 						var v_corPal = this.curPalette.colors[v_corIndex];
-						v_linePalAlphaOver = 127;
+						v_wirePalAlphaOver = 127;
 						v_underR = v_corPal.r24;
 						v_underG = v_corPal.g24;
 						v_underB = v_corPal.b24;
 						v_underA = v_corPal.a24 | v_pixelCurAlpha;//If fill underneath(v_pixelCurAlpha) has opacity, do not get rid of that.
 					}
 					v_dataB.data[v_rgbaI    ] = this.alphaOverColorChannel(
-								v_linePalColor.r24, v_underR,
-								v_linePalAlphaOver, v_underA );
+								v_wirePalColor.r24, v_underR,
+								v_wirePalAlphaOver, v_underA );
 					v_dataB.data[v_rgbaI + 1] = this.alphaOverColorChannel(
-								v_linePalColor.g24, v_underG,
-								v_linePalAlphaOver, v_underA );
+								v_wirePalColor.g24, v_underG,
+								v_wirePalAlphaOver, v_underA );
 					v_dataB.data[v_rgbaI + 2] = this.alphaOverColorChannel(
-								v_linePalColor.b24, v_underB,
-								v_linePalAlphaOver, v_underA);
-					//v_dataB.data[v_rgbaI + 3] = v_lineAlpha | v_underA;
-					v_dataB.data[v_rgbaI + 3] = v_underA | v_linePalAlphaOver;//v_linePalColor.a24;
+								v_wirePalColor.b24, v_underB,
+								v_wirePalAlphaOver, v_underA);
+					//v_dataB.data[v_rgbaI + 3] = v_wireAlpha | v_underA;
+					v_dataB.data[v_rgbaI + 3] = v_underA | v_wirePalAlphaOver;//v_wirePalColor.a24;
 				}
-				/*v_dataB.data[v_rgbaI + 3] = v_lineAlpha & this.alphaOverColorChannel(
-								v_linePalColor.a24, v_dataB.data[v_rgbaI + 3],
-								v_lineAlpha, v_pixelCurAlpha );*/
-					//Math.round(v_linePalColor.a24
-					//  * v_lineAlpha / 255);
+				/*v_dataB.data[v_rgbaI + 3] = v_wireAlpha & this.alphaOverColorChannel(
+								v_wirePalColor.a24, v_dataB.data[v_rgbaI + 3],
+								v_wireAlpha, v_pixelCurAlpha );*/
+					//Math.round(v_wirePalColor.a24
+					//  * v_wireAlpha / 255);
 					//some palette colors may have a translucent alpha.
-					//these palette colors need to be alpha blended based on the alpha in the palette color and also accounting for the anti-alias line_alpha channel
-				//----- Test code to find breaks in line that would cause the fill to leak: -----
+					//these palette colors need to be alpha blended based on the alpha in the palette color and also accounting for the anti-alias wire_alpha channel
+				//----- Test code to find breaks in wire that would cause the fill to leak: -----
 				//v_dataB.data[v_rgbaI    ] = 0;
 				//v_dataB.data[v_rgbaI + 1] = 0;
 				//v_dataB.data[v_rgbaI + 2] = 0;
-				//v_dataB.data[v_rgbaI + 3] = v_lineAlpha == 255 ? 255 : 0;
+				//v_dataB.data[v_rgbaI + 3] = v_wireAlpha == 255 ? 255 : 0;
 				
 				//----------- end anti-leak test code --------------------------
 			}
-			//this.a.j.save.images[v_bmpI].chan_li[v_copyI] = 0;
-			//this.a.j.save.images[v_bmpI].chan_la[v_copyI] = 0;
+			//this.a.j.save.images[v_bmpI].chan_wi[v_copyI] = 0;
+			//this.a.j.save.images[v_bmpI].chan_wa[v_copyI] = 0;
 			//this.a.j.save.images[v_bmpI].chan_fi[v_copyI] = 0;
 			v_rgbaI += 4;
 		}}//end of w and h loops.
@@ -1211,17 +1213,31 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 		if(v_bmpObj == this.curImage && this.canvasPreviewBitmap){//if the preview was configured
 			//If this is the current layer, use it to make a thumbnail of current layer being edited.
 			v_miniCX = this.canvasPreviewBitmap.getContext('2d');
-			v_miniCX.clearRect(0, 0, this.canvasPreviewBitmap.width, this.canvasPreviewBitmap.height);
-			v_miniScale = this.canvasPreviewBitmap.width / this.cvM.width;
+			v_miniCX.clearRect(rdX1 * v_miniScale, rdY1 * v_miniScale, rdW * v_miniScale, rdH * v_miniScale);
 			//TODO: make this only copy the updated region to reduce lag.
-			v_miniCX.drawImage(this.cvB, 0, 0, this.cvM.width, this.cvM.height, 0, 0, this.cvM.width * v_miniScale, this.cvM.height * v_miniScale);
+			v_miniCX.drawImage(this.cvB, rdX1, rdY1, rdW, rdH, rdX1 * v_miniScale, rdY1 * v_miniScale, rdW * v_miniScale, rdH * v_miniScale);
 			//also draw the preview for things being drawn in real time.
 			if(this.curToolState == 100){//preview in progress
 				//TODO: make this only copy the updated region to reduce lag.
-				v_miniCX.drawImage(this.cvP, 0, 0, this.cvP.width, this.cvP.height, 0, 0, this.cvP.width * v_miniScale, this.cvP.height * v_miniScale);
+				v_miniCX.drawImage(this.cvP, rdX1, rdY1, rdW, rdH, rdX1 * v_miniScale, rdY1 * v_miniScale, rdW * v_miniScale, rdH * v_miniScale);
 			}
+			curImageInView = true;
 		}
+	}//end loop thru bitmaps
+
+	
+	//This draws a warning if the current bitmap being edited is not visible. If it is visible, then this draw will be overwritten with the preview of the bitmap being drawn on.
+	if(!curImageInView && !this.isPlaying && this.canvasPreviewBitmap){//disable this behavior while playing preview, to avoid ugly flashes
+		//The canvas for previewing bitmap must have been set in the params for this to run.
+		v_miniCX = this.canvasPreviewBitmap.getContext('2d');
+		v_miniCX.clearRect(0, 0, this.cvM.width * v_miniScale, this.cvM.height * v_miniScale);
+		v_miniCX.save();
+		v_miniCX.fillStyle = 'rgba(255, 0, 0, 0.5)';
+		v_miniCX.fillRect(0, 0, this.cvM.width * v_miniScale, this.cvM.height * v_miniScale);
+		v_miniCX.restore();
 	}
+
+
 
 	if(this.curToolState == 100){//100 for in progress currently drawing
 		//If still in progress, draw the preview onto the main viewing canvas (it may be erased and updated based on what stroke or thing is currently being drawn)
@@ -1260,10 +1276,9 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 	//Now draw a smaller version onto the mini preview canvas. This is useful to see what is being drawn in relation to positioning with things around it but outside of the main viewer area.
 	if(this.canvasPreviewFrame){//if the mini-preview canvas for the current frame was set up
 		v_miniCX = this.canvasPreviewFrame.getContext('2d');
-		v_miniCX.clearRect(0, 0, this.canvasPreviewFrame.width, this.canvasPreviewFrame.height);
-		v_miniScale = this.canvasPreviewFrame.width / this.cvM.width;
+		v_miniCX.clearRect(rdX1 * v_miniScale, rdY1 * v_miniScale, rdW * v_miniScale, rdH * v_miniScale);
 		//TODO: make this only copy the updated region to reduce lag.
-		v_miniCX.drawImage(this.cvM, 0, 0, this.cvM.width, this.cvM.height, 0, 0, this.cvM.width * v_miniScale, this.cvM.height * v_miniScale);
+		v_miniCX.drawImage(this.cvM, rdX1, rdY1, rdW, rdH, rdX1 * v_miniScale, rdY1 * v_miniScale, rdW * v_miniScale, rdH * v_miniScale);
 	}
 	//now draw a mini preview of the bitmap layer being edited. That is a good reminder of what layer user is editing so they do not draw on the wrong one!
 };
@@ -1315,8 +1330,8 @@ GraFlicImage.prototype.bucketFill = function(v_x, v_y){//alert('fillcall');
 	this.antiBucketOverload = 0;
 	this.curToolState = 100;//Set it to being drawn state so that the visuals get updated.
 	//Bucket fills run very slow with associative array key lookups all the time so save a direct link to the current bitmap.
-	this.bucketLI = this.a.f[this.curImage.chan_li].d;
-	this.bucketLA = this.a.f[this.curImage.chan_la].d;
+	this.bucketLI = this.a.f[this.curImage.chan_wi].d;
+	this.bucketLA = this.a.f[this.curImage.chan_wa].d;
 	this.bucketFI = this.a.f[this.curImage.chan_fi].d;
 	this.fillRecur(Math.round(v_x), Math.round(v_y), this.cvM.width, this.cvM.height,
 		this.curDrawMode ? this.a.j.save.selected_color_index : 0, -1, 0);
@@ -1342,7 +1357,7 @@ GraFlicImage.prototype.fillRecur = function(v_x, v_y, v_maxX, v_maxY, v_colorToU
 		//canvas was clicked!
 		if(this.curTool == 2){//fill bucket
 			v_color2Replace = this.bucketFI[v_pixI];
-		}else if(this.curTool == 3){//line bucket
+		}else if(this.curTool == 3){//wire bucket
 			v_color2Replace = this.bucketLI[v_pixI];
 		}
 		if(v_color2Replace == v_colorToUse){//Trying to color the same color as itself, makes no sense, and will crash.
@@ -1353,8 +1368,8 @@ GraFlicImage.prototype.fillRecur = function(v_x, v_y, v_maxX, v_maxY, v_colorToU
 	if(this.curTool == 2){//====================== FILL Bucket ==================
 	//ANYTHING under 255 should be filled under. Otherwise it leaves ugly transparent holes
 	//that can mess up the Animated PNG compression with unneeded frame region update due to changing trans pixels
-	//The line alpha being zero, and the index being non-zero(anything other than reserved [0] fully transparent)
-	//will be considered opaque for the purpose of containing fills within lines. This triggers special handling for lines intersecting off different colors to correct their blending and appearance. That case should be blocked from considered transparent with && !(...)
+	//The wire alpha being zero, and the index being non-zero(anything other than reserved [0] fully transparent)
+	//will be considered opaque for the purpose of containing fills within wires. This triggers special handling for wires intersecting off different colors to correct their blending and appearance. That case should be blocked from considered transparent with && !(...)
 	if( (this.bucketLA[v_pixI] < 255 && !(!this.bucketLA[v_pixI] && this.bucketLI[v_pixI]) )
 	 && this.bucketFI[v_pixI] == v_color2Replace
 		){
@@ -1384,11 +1399,11 @@ GraFlicImage.prototype.fillRecur = function(v_x, v_y, v_maxX, v_maxY, v_colorToU
 	}
 	}else if(this.curTool == 3){//====================== LINE Bucket ===================
 		if(this.bucketLI[v_pixI] == v_color2Replace){
-				// && this.a.f[this.curImage.chan_la].d[v_pixI]){
-				//deleted line pixels should always be set to reserved transparent [0]
-				//that way lines in line intersect correction mode can be processed here (0 alpha, index non-zero)
-				//Filling a line with reserved [0] transparent will totally erase it.
-				//If wanting to fill with transparent line that can be recolored/replaced, make an extra palette entry with 0 alpha.
+				// && this.a.f[this.curImage.chan_wa].d[v_pixI]){
+				//deleted wire pixels should always be set to reserved transparent [0]
+				//that way wires in wire intersect correction mode can be processed here (0 alpha, index non-zero)
+				//Filling a wire with reserved [0] transparent will totally erase it.
+				//If wanting to fill with transparent wire that can be recolored/replaced, make an extra palette entry with 0 alpha.
 			if(this.antiBucketOverload > 3000){//if call stack getting overloaded:
 				this.fillBucketNextPixels[v_savedForLaterI] = true;//save the pixel spot to be continued with a new call stack.
 				return;
@@ -1443,7 +1458,7 @@ GraFlicImage.prototype.mDown = function(v_evt){
 	var v_calXY = this.getMouseCalibratedXY(v_evt);
 	var v_x = v_calXY[0];
 	var v_y = v_calXY[1];
-	if(this.curImage.type == 'bitmap'){
+	if(this.curImage.type == 'WAIFU'){
 		if((this.curTool == 1 || (this.curTool == 300 && this.cutBitmap == null))){//pen
 			//lasso cutter will also use these strokes, but fill between and use it as a mask to cut.
 			this.curStroke = [v_x, v_y];
@@ -1470,8 +1485,8 @@ GraFlicImage.prototype.mMove = function(v_evt){
 	this.minRegionY = Math.min(v_y, this.minRegionY);
 	this.maxRegionX = Math.min(this.a.j.save.canvas_width, Math.max(v_x, this.maxRegionX));
 	this.maxRegionY = Math.min(this.a.j.save.canvas_height, Math.max(v_y, this.maxRegionY));
-	if(this.curImage.type == 'bitmap'){
-		if((this.curTool == 1 || (this.curTool == 300 && this.cutBitmap == null))&& this.curStroke.length){//pen (do not extent until the line is started with one x,y coord from mousedown.)
+	if(this.curImage.type == 'WAIFU'){
+		if((this.curTool == 1 || (this.curTool == 300 && this.cutBitmap == null))&& this.curStroke.length){//pen (do not extent until the wire is started with one x,y coord from mousedown.)
 			//cut should only make the stroke if there is no cut BMP yet, otherwise it should drag the existing one.
 			var v_prevX = this.curStroke[this.curStroke.length - 2];
 			var v_prevY = this.curStroke[this.curStroke.length - 1];
@@ -1497,7 +1512,7 @@ GraFlicImage.prototype.mUp = function(v_evt){
 	var v_calXY = this.getMouseCalibratedXY(v_evt);
 	var v_x = v_calXY[0];
 	var v_y = v_calXY[1];
-	if(this.curImage.type == 'bitmap'){
+	if(this.curImage.type == 'WAIFU'){
 		if(this.curTool == 1 || (this.curTool == 300 && this.cutBitmap == null)){//pen
 			this.curToolState = 200;
 			//The redraw MUST be requested on finish, since the drawing code contains the section that commits the final stroke.
@@ -1521,19 +1536,19 @@ GraFlicImage.prototype.commitCutMove = function(){
 		//palette indices in the cut bitmap override the current ones
 		if(this.a.f[this.cutBitmap.chan_fi].d[v_srcI]){
 			this.a.f[this.curImage.chan_fi].d[v_copyI] = this.a.f[this.cutBitmap.chan_fi].d[v_srcI];
-			//The following makes a fill on the cut part cover any lines on the destination,
+			//The following makes a fill on the cut part cover any wires on the destination,
 			//this behavior may be overridable in the future.
-			this.a.f[this.curImage.chan_li].d[v_copyI] = 0;
-			this.a.f[this.curImage.chan_la].d[v_copyI] = 0;
+			this.a.f[this.curImage.chan_wi].d[v_copyI] = 0;
+			this.a.f[this.curImage.chan_wa].d[v_copyI] = 0;
 		}
-		if(this.a.f[this.cutBitmap.chan_li].d[v_srcI]){
-			this.a.f[this.curImage.chan_li].d[v_copyI] = this.a.f[this.cutBitmap.chan_li].d[v_srcI];
+		if(this.a.f[this.cutBitmap.chan_wi].d[v_srcI]){
+			this.a.f[this.curImage.chan_wi].d[v_copyI] = this.a.f[this.cutBitmap.chan_wi].d[v_srcI];
 		}
-		this.a.f[this.curImage.chan_la].d[v_copyI] |= this.a.f[this.cutBitmap.chan_la].d[v_srcI];
+		this.a.f[this.curImage.chan_wa].d[v_copyI] |= this.a.f[this.cutBitmap.chan_wa].d[v_srcI];
 	}
 	//Delete virtual files no longer needed to save memory.
-	this.a.deleteFile(this.cutBitmap.chan_li);
-	this.a.deleteFile(this.cutBitmap.chan_la);
+	this.a.deleteFile(this.cutBitmap.chan_wi);
+	this.a.deleteFile(this.cutBitmap.chan_wa);
 	this.a.deleteFile(this.cutBitmap.chan_fi);
 	this.a.deleteFile('b/' + this.cutBitmap.id + '/');
 	this.cutBitmap = null;//the cutBMP is now empty after it was merged to another bitmap.
@@ -1732,8 +1747,8 @@ Then once it is loaded use JS to find all the IMGs with custom attributes with z
 		//does not hot lots of disk space. Unlike .json or .txt, the raw binary data in the project-specific format
 		//is not easy to open up and edit directly, if they really want to they can decompress the extracted .gz first.
 		//Like images (png/jpeg/etc) that handle their own compression and store with mode 0 no compression, .dat.gz does the same.
-		v_bJSON.chan_li = '@z:bitmaps/Line_I_' + v_i + '.dat.gz';
-		v_bJSON.chan_la = '@z:bitmaps/Line_A_' + v_i + '.dat.gz';
+		v_bJSON.chan_wi = '@z:bitmaps/Wire_I_' + v_i + '.dat.gz';
+		v_bJSON.chan_wa = '@z:bitmaps/Wire_A_' + v_i + '.dat.gz';
 		v_bJSON.chan_fi = '@z:bitmaps/Fill_I_' + v_i + '.dat.gz';
 		v_bitmapsJSON.push(v_bJSON);
 	}
@@ -1754,11 +1769,11 @@ Then once it is loaded use JS to find all the IMGs with custom attributes with z
 		v_procBMP = this.a.j.save.images[v_i];
 		v_fileEntry = {};
 		v_fileEntry.p = 'bitmaps/Line_I_' + v_i + '.dat.gz';
-		v_fileEntry.d = window.pako.gzip(v_procBMP.chan_li, v_pakoDO);
+		v_fileEntry.d = window.pako.gzip(v_procBMP.chan_wi, v_pakoDO);
 		v_zSave.addFile(v_fileEntry);
 		v_fileEntry = {};
 		v_fileEntry.p = 'bitmaps/Line_A_' + v_i + '.dat.gz';
-		v_fileEntry.d = window.pako.gzip(v_procBMP.chan_la, v_pakoDO);
+		v_fileEntry.d = window.pako.gzip(v_procBMP.chan_wa, v_pakoDO);
 		v_zSave.addFile(v_fileEntry);
 		v_fileEntry = {};
 		v_fileEntry.p = 'bitmaps/Fill_I_' + v_i + '.dat.gz';
