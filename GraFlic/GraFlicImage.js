@@ -44,7 +44,7 @@ function GraFlicImage(v_fromArchive, v_params){
 	//TODO: make it able to load from an archive, probably just call a loader function from here maybe with some binding or extra stuff. 
 	
 	
-	this.penWidth = 2.5;
+	this.penWidth = 1.5;
 	this.penOpacityAnalysis = {};//Pen strokes need to have full opacity at the center of the stroke to work with the fill tool and not leak. Using FULL opacity as the edge is important because images should not have stray bits of slightly transparent pixels randomly in them. That can mess up pixel recycling between APNG frames and force a full clear of the region to update it. This var should NOT be saved in the JSON with the save file. There is a chance that the behavior of wire stroke varies slightly between browsers. This needs to be recalculated on each runtime.
 	this.curStroke = [];
 	this.curTool = 1;
@@ -130,7 +130,7 @@ function GraFlicImage(v_fromArchive, v_params){
 	this.curPalette.default = true;//Non-default palettes may only override some colors and rely on the default to ensure every used index has a color.
 	this.a.j.save.palettes = [this.curPalette];//Init palette array.
 	this.a.j.save.selected_palette_index = 0;
-	this.fillBucketNextPixels = {};//used to handle area fills that have trouble with JS call-stack limits.
+	this.fillBucketNextPixels = [];//used to handle area fills that have trouble with JS call-stack limits.
 	this.a.j.save.onion_skin_on = false;
 	this.a.j.save.stain_glass_on = false;//Makes fill areas more see-thru so that multiple layers are easier to see.
 	
@@ -172,14 +172,16 @@ function GraFlicImage(v_fromArchive, v_params){
 
 	//hook up events
 	//TODO: parameter to turn this off if only playback, not drawing is wanted.
-	this.cvM.addEventListener('mousedown', this.mDown.bind(this));
-	this.cvM.addEventListener('mousemove', this.mMove.bind(this));
-	this.cvM.addEventListener('mouseup', this.mUp.bind(this));
+	//PointerEvent inherits from MouseEvent, so everything mouse has pointer has, plus pressure.
+	var browserHasPE = (typeof PointerEvent) !== 'undefined';
+	this.cvM.addEventListener(browserHasPE ? 'pointerdown' : 'mousedown', this.mDown.bind(this));
+	this.cvM.addEventListener(browserHasPE ? 'pointermove' : 'mousemove', this.mMove.bind(this));
+	this.cvM.addEventListener(browserHasPE ? 'pointerup' : 'mouseup', this.mUp.bind(this));
 	this.cvM.addEventListener('touchstart', this.mDown.bind(this));//Also add these handlers as touch so that it works on mobile.
 	this.cvM.addEventListener('touchmove', this.mMove.bind(this));
 	this.cvM.addEventListener('touchend', this.mUp.bind(this));
 	
-	this.bucketFillBound = this.bucketFill.bind(this);//Used for bucket fills to make this keyword work.
+	this.bucketFill = this.bucketFillUnbound.bind(this);//Used for bucket fills to make this keyword work.
 	this.playNextFrame = this.playNextFrameUnbound.bind(this);
 	
 	if(GraFlicEncoder){//The class will be defined if GraFlicEncoder.js was in a script element. It may not be needed if only doing playback.
@@ -201,6 +203,11 @@ function GraFlicImage(v_fromArchive, v_params){
 		this.fileSelectLoadedHandler = this.fileSelectLoadedHandlerUnbound.bind(this);
 	}
 };
+GraFlicImage.TOOL_PEN = 1;//Simple single width line that ignores pressure.
+GraFlicImage.TOOL_BRUSH = 101;//Variable width pressure-aware line.
+GraFlicImage.TOOL_FLOOD_FILL = 2;
+GraFlicImage.TOOL_FLOOD_WIRE = 3;
+GraFlicImage.TOOL_CUT_LASSO = 300;
 
 GraFlicImage.prototype.initSaveJSON = function(){
 	var configInit = {};
@@ -335,7 +342,15 @@ GraFlicImage.prototype.changeCanvasSize = function(v_csW, v_csH, v_csCropMode, v
 	this.cvB.height = this.a.j.save.canvas_height;
 	this.cvP.width = this.a.j.save.canvas_width;
 	this.cvP.height = this.a.j.save.canvas_height;
-};
+	
+	//The aspect ratio has changed, so adjust the preview canvases
+	//this.canvasPreviewBitmap.width = this.a.j.save.canvas_width;
+	var v_miniCX;
+	v_miniCX = this.canvasPreviewBitmap.getContext('2d');
+	v_miniCX.clearRect(0, 0, this.canvasPreviewBitmap.width, this.canvasPreviewBitmap.height);
+	v_miniCX = this.canvasPreviewFrame.getContext('2d');
+	v_miniCX.clearRect(0, 0, this.canvasPreviewFrame.width, this.canvasPreviewFrame.height);
+};//end change canvas size
 GraFlicImage.prototype.initImage = function(v_excludeFromArchive){
 	//Initializes the shared properties that different types of image all have (bitmaps, embeds...)
 	var initI = {};
@@ -713,8 +728,17 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 	this.cxP.clearRect(rdX1, rdY1, rdW, rdH);
 	//this.cxM.clearRect(0, 0, this.cvM.width, this.cvM.height);
 	//this.cxP.clearRect(0, 0, this.cvP.width, this.cvP.height);
-	if((this.curTool == 1 || (this.curTool == 300 && this.cutBitmap == null) ) && this.curStroke.length){//pen
+	if(
+		(
+		    this.curTool == GraFlicImage.TOOL_PEN
+		 || this.curTool == GraFlicImage.TOOL_BRUSH
+		 || (this.curTool == GraFlicImage.TOOL_CUT_LASSO && this.cutBitmap == null)
+		)
 		
+		&& this.curStroke.length ){//---------------------------------
+		
+		/*
+		//this wonky code should no longer be needed due to better flood fill logic.
 		var v_penOA;
 		if(this.penWidth >= 2 && this.penWidth < 3){//Lines 3 width and above do not seem to have a problem getting full opacity pixels in the middle.
 			var v_indexPOA = this.penWidth.toString();
@@ -753,7 +777,7 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 				v_penOA.full_thresh = Math.max(1, v_darkestAlpha - 32);//0 or less will fill the whole canvas when adjusting.
 				//alert('Darkest Alpha found: ' + v_darkestAlpha);
 			}
-		}
+		}*/
 		/*if(true || this.penWidth < 3 && this.penWidth >= 0.5){
 			//pen strokes less than 1.5 wide are considered 'detail strokes'
 			//and are not expected to define edges where areas can be filled,
@@ -763,7 +787,7 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 			this.cxP.lineWidth = 1;//force a 255 alpha draw with the smallest line behind the line draw so that bucket filling can detect edges and not leave ugly semi-transparent halos around where the fill meets the wire.
 			
 			this.cxP.moveTo(this.curStroke[0], this.curStroke[1]);
-			for(v_i = 2;v_i < this.curStroke.length;v_i+=2){
+			for(v_i = 3;v_i < this.curStroke.length;v_i+=3){
 				this.cxP.lineTo(this.curStroke[v_i], this.curStroke[v_i + 1]);
 			}
 			
@@ -795,7 +819,7 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 		//these gaps may vary by stroke speed direct, or maybe even browser...
 		//This code will draw a basic 1px line that guarantees being blocked off with a contiguous fully opaque line from point A to point B
 		v_dataP = this.cxP.getImageData(0, 0, this.cvP.width, this.cvP.height);
-		for(v_i = 2;v_i < this.curStroke.length;v_i+=2){
+		for(v_i = 3;v_i < this.curStroke.length;v_i+=3){
 			var v_lineX1;
 			var v_lineX2;
 			var v_lineY1;
@@ -852,7 +876,7 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 			}
 		}*/
 		//start at [2] it needs too x,y points and will reference [-2, -1]
-		/*for(v_i = 2;v_i < this.curStroke.length;v_i+=2){
+		/*for(v_i = 2;v_i < this.curStroke.length;v_i+=3){
 			var v_pixMoveX = this.curStroke[v_i - 2] - this.curStroke[v_i];
 			var v_pixMoveY = this.curStroke[v_i - 1] - this.curStroke[v_i + 1];
 			var v_pixMoveAbsX = Math.abs(v_pixMoveX);
@@ -961,21 +985,121 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 			}
 		}
 		this.cxP.moveTo(this.curStroke[0], this.curStroke[1]);
-		for(v_i = 2;v_i < this.curStroke.length;v_i+=2){
-			this.cxP.lineTo(this.curStroke[v_i], this.curStroke[v_i + 1]);
+		var usePressure = true;
+		if(this.curTool == GraFlicImage.TOOL_CUT_LASSO || this.curTool == GraFlicImage.TOOL_PEN){
+			usePressure = false;//no pressure needed for lasso or basic pen.
+		}
+		if(usePressure){
+			var lastX = this.curStroke[0];
+			var lastY = this.curStroke[1];
+			var strokeX, strokeY;
+			var pointPScale;
+/*
+
+             +--{point 1 pressure scale * base wireWidth}
+             |
+       <-----+---->
+       | (x1, y1) |
+       |     .    |
+      |      .     |
+      |      .     |
+     |       .      |
+     |       .   <--|------{strokes are not filled with .stroke().
+    |        .       |  .fill() fills between the two sides of dynamic width line.}
+    |    (x2, y2)    |
+    <--------+------->
+             |
+             +--{point 2 pressure scale * base wireWidth}
+*/
+			var pPushX; 
+			var pPushY;
+			//var pPushTurn;
+			var wAngle;
+			for(v_i = 3;v_i < this.curStroke.length;v_i += 3){
+				strokeX = this.curStroke[v_i];
+				strokeY = this.curStroke[v_i + 1];
+				pointPScale = this.curStroke[v_i + 2];
+				console.log('pic' + pointPScale);
+					//Will push out half the amount on each side to span the whole amount symmetrically.
+				wAngle = GraFlicImage.angleBetween(lastX, lastY, strokeX, strokeY);
+				//TODO: Must move the point to the side, but have the rotation factored in when moving based on the angle.
+				//That way the wire is a shape with lines around the two sides expanding/contracting based on the pen pressure at that point.
+				lastX = strokeX;
+				lastY = strokeY;
+				var wAngleDeg = wAngle * (180/Math.PI);
+				if(wAngleDeg < 0){
+					wAngleDeg = 360 + wAngleDeg;
+				}
+				console.log(wAngleDeg + 'deg');
+					//     ---
+					//  ---  ^ Y push 100%
+					//................ 0 deg
+					//  ---  v
+					//     ---
+					//     | . |
+					//    |< . >| X push 100%
+					//   |   .   |
+					//    90 deg
+					pPushX = pointPScale * ( (wAngleDeg % 90) / 90 );
+					pPushY = pointPScale - pPushX;
+				if(wAngleDeg >= 0 && wAngleDeg < 180){
+					pPushX *= -1;
+				}
+				//if(wAngleDeg >= 0 && wAngleDeg < 90 || wAngleDeg >= 180 && wAngleDeg < 270){
+				//	pPushY *= -1;
+				//}
+				//if(wAngleDeg >= 90 && wAngleDeg < 180){
+					//pPushY *= -1;
+				//}
+				//pPushTurn = (wAngle / Math.PI);
+				//pPushX = pPushTurn * 2 * pointPScale;
+				//if(){
+					//pPushY = (pointPScale - pPushX);
+				//}
+				//pPushX *= -1;
+				console.log('push ' + pPushX + ' , ' + pPushY);
+				//console.log(wAngleDeg);
+				this.cxP.lineTo(this.curStroke[v_i] + pPushX,
+						this.curStroke[v_i + 1] + pPushY);
+			}
+			for(v_i = this.curStroke.length - 3;v_i >= 0;v_i -= 3){
+				strokeX = this.curStroke[v_i];
+				strokeY = this.curStroke[v_i + 1];
+				pointPScale = this.curStroke[v_i + 2] / 2;
+					//Will push out half the amount on each side to span the whole amount symmetrically.
+				wAngle = GraFlicImage.angleBetween(lastX, lastY, strokeX, strokeY);
+				
+				lastX = strokeX;
+				lastY = strokeY;
+				//pPushTurn = (wAngle / Math.PI);
+				pPushX = 0;//pPushTurn * pointPScale;
+				pPushY = 0;//pointPScale - pPushX;
+				//pPushX *= -1;
+				this.cxP.lineTo(this.curStroke[v_i] + pPushX,
+						this.curStroke[v_i + 1] + pPushY);
+			}
+			this.cxP.lineWidth = 1;//Test trace outline of shape-as line.
+			this.cxP.stroke();
+			//this.cxP.fill();
+		}else{//simple line with no pressure variance.
+			for(v_i = 3;v_i < this.curStroke.length;v_i+=3){
+				this.cxP.lineTo(this.curStroke[v_i], this.curStroke[v_i + 1]);
+			}
+			this.cxP.stroke();
+			if(this.curTool == GraFlicImage.TOOL_CUT_LASSO && this.curToolState == 200){
+				//For lasso, If finished and ready to commit, fill it to build the mask.
+				this.cxP.fill();
+			}
 		}
 		//Do not .closePath() unless drawing a closed shape to connect start/end of line.
-		this.cxP.stroke();
-		if(this.curTool == 300 && this.curToolState == 200){//If finished and ready to commit, fill it to build the mask.
-			this.cxP.fill();
-		}
+		
 		this.cxP.restore();
 	}
 	v_dataP = this.cxP.getImageData(rdX1, rdY1, rdW, rdH);//0, 0, this.cvP.width, this.cvP.height);
 	if(this.curToolState == 200){
 		//If done with current draw, copy to the custom channel system.
 		var v_pixA;
-		if(this.curTool == 1){
+		if(this.curTool == GraFlicImage.TOOL_PEN || this.curTool == GraFlicImage.TOOL_BRUSH){
 			v_rgbaI = 0;
 			chanWI = this.a.f[this.curImage.chan_wi].d;
 			chanWA = this.a.f[this.curImage.chan_wa].d;
@@ -985,11 +1109,12 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 			for(w = rdX1;w < rdX2;w++){
 				v_copyI = h * canvW + w;
 				v_pixA = v_dataP.data[v_rgbaI + 3];//get alpha transparency
+				/*penOA replaced with better flood logic
 				if(this.penWidth >= 2 && this.penWidth < 3){
 					if(v_pixA >= v_penOA.full_thresh){
 						v_pixA = 255;
 					}
-				}
+				}*/
 				if(v_pixA){//any non-zero value that evals true.
 					if(this.curDrawMode){//if DRAWING, not erasing
 						/*if(false){//let the existing wire override untying that intersects it
@@ -1041,9 +1166,9 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 			this.pushUndoStack();//Save state AFTER stroke committed. An initial push will be made when the file is first started.
 			this.requestRedraw(rdX1, rdY2, rdX2, rdY2);//redraw after the stroke has been merged into the channel system.
 		}//end pen stroke finished code.
-		if(this.curTool == 300 && this.cutBitmap == null){//Committing lasso cut move once finished.
+		if(this.curTool == GraFlicImage.TOOL_CUT_LASSO && this.cutBitmap == null){//Committing lasso cut move once finished.
 			//For lasso tool, copy anything in the mask to the cut Bitmap.
-			//alert('committing lasso cut');
+			console.log('Committing lasso cut, movable cut bitmap created.');
 			this.cutBitmap = this.initBitmapWAIFU(true);
 			this.cutX = 0;
 			this.cutY = 0;
@@ -1297,6 +1422,21 @@ GraFlicImage.prototype.togglePlay = function(v_play){
 		this.requestRedraw();//draw it on whatever the current frame is now that it is no longer playing a preview.
 	}
 }
+GraFlicImage.angleBetween = function(v_angleRotX1, v_angleRotY1, v_angleRotX2, v_angleRotY2){
+	var v_angleDeltaX;
+	var v_angleDeltaY;
+				//if(false&&v_angleRotX1 >= v_angleRotX2){
+				//	v_angleDeltaX = v_angleRotX1 - v_angleRotX2;
+				//}else{
+	v_angleDeltaX = v_angleRotX2 - v_angleRotX1;
+				//if(false&&v_angleRotY1 >= v_angleRotY2){
+				//	v_angleDeltaY = v_angleRotY1 - v_angleRotY2;
+				//}else{
+	v_angleDeltaY = v_angleRotY2 - v_angleRotY1;
+	var v_angleAngle = Math.atan2(v_angleDeltaY, v_angleDeltaX);
+	//var v_angleAngle = Math.atan(v_angleDeltaY / v_angleDeltaX);
+	return v_angleAngle;
+};
 GraFlicImage.prototype.playNextFrameUnbound = function(){
 	if(!this.isPlaying){return;}
 	this.playingFrame++;
@@ -1304,53 +1444,69 @@ GraFlicImage.prototype.playNextFrameUnbound = function(){
 	//Note that 0 is valid for setTimeout. Some frames could have delay of 0 to draw one regional area at the same time as updating a separate regional area and skip the spaces between.
 	setTimeout(this.playNextFrame, this.a.j.save.frames[this.playingFrame].delay === undefined ? this.a.j.save.global_delay : this.a.j.save.frames[this.playingFrame].delay);
 	this.requestRedraw();
-}
+};
 
-GraFlicImage.prototype.bucketFill = function(v_x, v_y){//alert('fillcall');
-	if(v_x === undefined){
+GraFlicImage.prototype.bucketFillUnbound = function(v_x, v_y){//alert('fillcall');
+	var alphaMax = 0;//alphaMax and alphaRep always start out 0
+	var alphaRep = 0;
+	if(v_x === undefined){//If a follow up call to refresh the call stack after the first click started it.
 		//alert(this.fillBucketNextPixels);
-		for(var v_key in this.fillBucketNextPixels){
+		if(this.fillBucketNextPixels.length){//If pixels still left to process.
+				//for(var n = 0;n < this.fillBucketNextPixels.length;n++){
 			//grab the first pixel position that comes up and then exit
-			var v_keyCoords = v_key.split(/,/);
+			//var v_keyCoords = v_key.split(/,/);
 			//alert('wat');
-			v_x = parseInt(v_keyCoords[0]);
-			v_y = parseInt(v_keyCoords[1]);
-			delete this.fillBucketNextPixels[v_key];
-			break;
-		}
+			var nObj = this.fillBucketNextPixels.shift();
+			v_x = nObj.x;//parseInt(v_keyCoords[0]);
+			v_y = nObj.y;//parseInt(v_keyCoords[1]);
+			//var v_saveAlphaVals = this.fillBucketNextPixels[v_key];
+			alphaMax = nObj.m;//v_saveAlphaVals & 0x00FFFFFF;//the first 24 bits store the alpha, only 8 are needed but if 16 bit alpha gets supported, this could be useful.
+			alphaRep = nObj.r;//v_saveAlphaVals >> 24 & 0xFF;//The high 8 bits store the alpha repeat count.
+			//delete this.fillBucketNextPixels[v_key];
+			//break;
+				//}
+		}//end if still has pixels
 		//for(v_key in this.fillBucketNextPixels){console.log('has key: ' + v_key);}
-		//alert(v_x + ',' + v_y);
+		//console.log('fillcoord: ' + v_x + ' , ' + v_y);
+		this.requestRedraw();//Only request redraw AFTER the fill is done or at least substantial part of it. Otherwise, all the draws lag it and slow it down.
 		if(v_x === undefined){
 			this.curToolState = 200;//finished state so that unneeded draws are not done now that it is finished.
 			this.pushUndoStack();
-			this.requestRedraw();//Only request redraw AFTER the fill is done. Otherwise, all the draws lag it and slow it down.
 			return;//If no more spots left over to finish, exit, it is done.
 		}
+	}else{//If the initial call with the x,y coordinates of the clicked point defined.
+		this.floodStopped = false;//The user may stop the flood, if it gets out of control in undesired area and is taking a long time.
 	}
 	this.antiBucketOverload = 0;
 	this.curToolState = 100;//Set it to being drawn state so that the visuals get updated.
 	//Bucket fills run very slow with associative array key lookups all the time so save a direct link to the current bitmap.
-	this.bucketLI = this.a.f[this.curImage.chan_wi].d;
-	this.bucketLA = this.a.f[this.curImage.chan_wa].d;
+	this.bucketWI = this.a.f[this.curImage.chan_wi].d;
+	this.bucketWA = this.a.f[this.curImage.chan_wa].d;
 	this.bucketFI = this.a.f[this.curImage.chan_fi].d;
 	this.fillRecur(Math.round(v_x), Math.round(v_y), this.cvM.width, this.cvM.height,
-		this.curDrawMode ? this.a.j.save.selected_color_index : 0, -1, 0);
+		this.curDrawMode ? this.a.j.save.selected_color_index : 0, -1, 0, alphaMax, alphaRep);
 				//Always use [0] (reserved transparent) when in erase mode
 	//alert('bfdone? ' + v_bfDone);
-	setTimeout(this.bucketFillBound, 0);//keep the time small, the issue causing crashes is the number of chained function calls, the call stack.
+	setTimeout(this.bucketFill, 0);//keep the time small, the issue causing crashes is the number / resource usage of chained function calls, the call stack.
 };
 //antiBucketOverload;//Make this global rather than passed recursive, so there is better control of reining in the call stack
 		//the call stack size, maximum number of chained function calls, that JS has cannot handle bucket filling.
 		//And withe the global, it makes a straighter fill pattern without as many lone pixels that have to be
 		//filled individually with a whole timed call.
 //fillBucketNextPixels;//when the call stack gets heated, the spots where the fill left off will be saved and continued with timed intervals until the fill is complete
-GraFlicImage.prototype.fillRecur = function(v_x, v_y, v_maxX, v_maxY, v_colorToUse, v_color2Replace){
+GraFlicImage.prototype.fillRecur = function(v_x, v_y, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep){
+	if(this.floodStopped){
+		return;
+	}
+	//alphaMax tracks the maximum wire alpha encountered for fill floods.
+	//alphaRep tracks how many times the same alpha has been repeated.
+	//If the alpha encountered is lower than the alphaMax, then it has passed the center of the line where it is darkest and should exit. If the same alpha is repeatedly encountered.
+	//The rules of alphaMax/alphaRep apply to Fill floods, NOT wire floods.
 	if(v_x < 0 || v_y < 0 || v_x >= v_maxX || v_y >= v_maxY){
 		return;//out of bitmap bounds.
 	}
 	this.antiBucketOverload++;
 	var v_pixI = (v_maxX * v_y + v_x);
-	var v_savedForLaterI = v_x + ',' + v_y;//in format '999,999'
 	if( v_color2Replace == -1){
 		//will start out as -1.
 		//If -1, set it to the pixel at this coords, this is where the
@@ -1358,7 +1514,10 @@ GraFlicImage.prototype.fillRecur = function(v_x, v_y, v_maxX, v_maxY, v_colorToU
 		if(this.curTool == 2){//fill bucket
 			v_color2Replace = this.bucketFI[v_pixI];
 		}else if(this.curTool == 3){//wire bucket
-			v_color2Replace = this.bucketLI[v_pixI];
+			v_color2Replace = this.bucketWI[v_pixI];
+			if(v_color2Replace == 0){
+				return;//Any wire pixel set to [0] transparent is ERASED, and this should exit. Most likely the user click missed the line.
+			}
 		}
 		if(v_color2Replace == v_colorToUse){//Trying to color the same color as itself, makes no sense, and will crash.
 			return;
@@ -1370,59 +1529,231 @@ GraFlicImage.prototype.fillRecur = function(v_x, v_y, v_maxX, v_maxY, v_colorToU
 	//that can mess up the Animated PNG compression with unneeded frame region update due to changing trans pixels
 	//The wire alpha being zero, and the index being non-zero(anything other than reserved [0] fully transparent)
 	//will be considered opaque for the purpose of containing fills within wires. This triggers special handling for wires intersecting off different colors to correct their blending and appearance. That case should be blocked from considered transparent with && !(...)
-	if( (this.bucketLA[v_pixI] < 255 && !(!this.bucketLA[v_pixI] && this.bucketLI[v_pixI]) )
+	if(this.bucketWA[v_pixI] < alphaMax * 0.85){
+		return;//If the alpha goes down from what has been encountered before, the center of the line has been reached and it should not bleed past the edge.
+	}
+	if(this.bucketWA[v_pixI] <= alphaMax){
+		alphaRep++;//AlphaRep will count anything at or below alpha max. Being only slightly below alphaMax does not exit because there are situations where tight corners need to be filled and a strict cutoff would stop too soon.
+		if(alphaRep >= 16 && alphaMax){
+			//It may have hit a place where two ends of the line are loosely connected with alpha transparent pixels. Do not let it wrap all around the line on the outside.
+			//However, DO NOT, exit if the alphaMax is still 0 and no wires have been encountered. 
+			return;
+		}
+	}else{
+		alphaRep = 1;
+	}
+	var nObj;//Used for nextPixels		
+	alphaMax = this.bucketWA[v_pixI];
+	if( (this.bucketWA[v_pixI] < 255 && !(!this.bucketWA[v_pixI] && this.bucketWI[v_pixI]) )
 	 && this.bucketFI[v_pixI] == v_color2Replace
 		){
 		if(this.antiBucketOverload > 3000){//if call stack getting overloaded:
 			//this.a.f[this.curImage.chan_fi].d[v_pixI] = 3;//trace color to TEST with
-			this.fillBucketNextPixels[v_savedForLaterI] = true;//save the pixel spot to be continued with a new call stack.
+			//var v_savedForLaterI = v_x + ',' + v_y;//in format '999,999'
+			/*if(this.fillBucketNextPixels[v_savedForLaterI]){
+				//If this already exists in savedForLater, then use the minimal thresholds
+				//This will help get into tight corners where recur calls from other pixels are overlapping each other.
+				var sAlphaMax = this.fillBucketNextPixels[v_savedForLaterI] & 0xFFFFFF;
+				var sAlphaRep = this.fillBucketNextPixels[v_savedForLaterI] >> 24 & 0xFF;
+				alphaMax = Math.min(alphaMax, sAlphaMax);
+				alphaRep = Math.min(alphaRep, sAlphaRep);
+			}
+			this.fillBucketNextPixels[v_savedForLaterI] = alphaRep << 24 | alphaMax;*/
+			for(var n = 0;n < this.fillBucketNextPixels.length;n++){
+				nObj = this.fillBucketNextPixels[n];
+				if(nObj.x == v_x && nObj.y == v_y){
+					return;//coord already in next pixels
+				}
+			}
+			nObj = {};
+			nObj.x = v_x;
+			nObj.y = v_y;
+			nObj.m = alphaMax;
+			nObj.r = alphaRep;
+			this.fillBucketNextPixels.push(nObj);
+			//save the pixel spot to be continued with a new call stack.
+			//The first 24 bits are reserved for alpha max to support future 16-bit alpha
+			//The high 8 bits store the times the same alpha has been repeatedly encountered.
 			//alert ('nextpixval ' + v_savedForLaterI + ': ' + this.fillBucketNextPixels[v_savedForLaterI]);
 			return;
 		}
 		this.bucketFI[v_pixI] = v_colorToUse;
-		if(this.bucketLA[v_pixI] < 255){
+		if(this.bucketWA[v_pixI] < 255){
 			//The alpha threshold to keep expanding the fill, is more tight
 			//than the alpha threshold to just fill the current pixel and exit.
 			//try{
-				this.fillRecur(v_x + 1, v_y, v_maxX, v_maxY, v_colorToUse, v_color2Replace);
-				this.fillRecur(v_x - 1, v_y, v_maxX, v_maxY, v_colorToUse, v_color2Replace);
-				this.fillRecur(v_x, v_y + 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace);
-				this.fillRecur(v_x, v_y - 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace);
+				this.fillRecur(v_x + 1, v_y, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
+				this.fillRecur(v_x - 1, v_y, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
+				this.fillRecur(v_x, v_y + 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
+				this.fillRecur(v_x, v_y - 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
+				//Do diagonal corners. Some tight spots around sharp points are having trouble getting filled.
+				//Diagonals could cause leaks with 1x1 lines, but since things are anti-aliased, that should not happen unless the line is extremely thin in which case it is probably just a textural thing, not a boundary for containing fills.
+				//Diagonals are not helping it seems...
+				/*this.fillRecur(v_x + 1, v_y + 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
+				this.fillRecur(v_x - 1, v_y - 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
+				this.fillRecur(v_x - 1, v_y + 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
+				this.fillRecur(v_x + 1, v_y - 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);*/
 			/*}catch(v_err){//This technique causes the fill pattern to be jagged and inefficient. Setting a reliable overload limit is faster.
 				//retry the calls that failed with a new call stack
-				this.fillBucketNextPixels[ (v_x + 1) + ',' +  v_y ] = true;
-				this.fillBucketNextPixels[ (v_x - 1) + ',' +  v_y ] = true;
-				this.fillBucketNextPixels[  v_x      + ',' + (v_y + 1) ] = true;
-				this.fillBucketNextPixels[  v_x      + ',' + (v_y - 1) ] = true;
+				this.fillBucketNextPixels.push({'x':(v_x + 1), 'y':v_y, 'm':alphaMax, 'r':alphaRep});
+				this.fillBucketNextPixels.push({'x':(v_x - 1), 'y':v_y, 'm':alphaMax, 'r':alphaRep});
+				this.fillBucketNextPixels.push({'x':v_x, 'y':(v_y + 1), 'm':alphaMax, 'r':alphaRep});
+				this.fillBucketNextPixels.push({'x':v_x, 'y':(v_y - 1), 'm':alphaMax, 'r':alphaRep});
 			}*/
 		}
 	}
-	}else if(this.curTool == 3){//====================== LINE Bucket ===================
-		if(this.bucketLI[v_pixI] == v_color2Replace){
+	}else if(this.curTool == 3){//====================== WIRE Bucket ===================
+		if(this.bucketWI[v_pixI] == v_color2Replace){
 				// && this.a.f[this.curImage.chan_wa].d[v_pixI]){
 				//deleted wire pixels should always be set to reserved transparent [0]
 				//that way wires in wire intersect correction mode can be processed here (0 alpha, index non-zero)
 				//Filling a wire with reserved [0] transparent will totally erase it.
 				//If wanting to fill with transparent wire that can be recolored/replaced, make an extra palette entry with 0 alpha.
 			if(this.antiBucketOverload > 3000){//if call stack getting overloaded:
-				this.fillBucketNextPixels[v_savedForLaterI] = true;//save the pixel spot to be continued with a new call stack.
+				//this.fillBucketNextPixels[v_x + ',' + v_y] = 0x000000FF;//save the pixel spot to be continued with a new call stack.
+				//Wire flood fills all connected wire pixels with any opacity, so the values saved in next pixels are irrelevant and only need to evaluate true.
+				for(var n = 0;n < this.fillBucketNextPixels.length;n++){
+					nObj = this.fillBucketNextPixels[n];
+					if(nObj.x == v_x && nObj.y == v_y){
+						return;//coord already in next pixels
+					}
+				}
+				nObj = {};
+				nObj.x = v_x;
+				nObj.y = v_y;
+				nObj.m = alphaMax;
+				nObj.r = alphaRep;
+				this.fillBucketNextPixels.push(nObj);
 				return;
 			}
 			if(this.curDrawMode){
-				this.bucketLI[v_pixI] = v_colorToUse;
+				this.bucketWI[v_pixI] = v_colorToUse;
 			}else{
-				this.bucketLI[v_pixI] = 0;
-				this.bucketLA[v_pixI] = 0;
+				this.bucketWI[v_pixI] = 0;
+				this.bucketWA[v_pixI] = 0;
 			}
-			this.fillRecur(v_x + 1, v_y, v_maxX, v_maxY, v_colorToUse, v_color2Replace);
-			this.fillRecur(v_x - 1, v_y, v_maxX, v_maxY, v_colorToUse, v_color2Replace);
-			this.fillRecur(v_x, v_y + 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace);
-			this.fillRecur(v_x, v_y - 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace);
+			this.fillRecur(v_x + 1, v_y, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
+			this.fillRecur(v_x - 1, v_y, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
+			this.fillRecur(v_x, v_y + 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
+			this.fillRecur(v_x, v_y - 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
 		}
 	}//==========================================================================
-	//if got all the way to the end without exiting for overload, delete any saved for later stuff on the pixel and return.
-	if(this.fillBucketNextPixels[v_savedForLaterI]){delete this.fillBucketNextPixels[v_savedForLaterI];}
 	return;
+};
+GraFlicImage.prototype.stopFlood = function(){
+	this.floodStopped = true;
+};
+GraFlicImage.prototype.plugWires = function(){
+	this.pushUndoStack();
+	var plugWA = this.a.f[this.curImage.chan_wa].d;
+	var plugFI = this.a.f[this.curImage.chan_fi].d;
+	var maxX = this.cvM.width;
+	var maxY = this.cvM.height;
+	var plugScore;
+	var plugAround;
+	var plugAroundCount;
+	var plugAroundFill;
+	var plugAroundFCount;
+	var plugThresh = 0;
+	var plugSafeL, plugSafeR, plugSafeT, plugSafeB;
+	for(var i = 0;i < plugWA.length;i++){
+		if(!plugFI[i]){//If not filled on the Fill channel
+			plugAround = 0;
+			plugAroundCount = 0;
+			plugAroundFill = 0;
+			plugAroundFCount = 0;
+			plugSafeL = i % maxX ? true : false;
+			if(plugSafeL){
+				if(plugWA[i - 1] - plugThresh > plugWA[i]){//If not at the left edge
+					plugAround += plugWA[i - 1] - plugWA[i];
+					plugAroundCount++;
+				}
+				if(plugFI[i - 1] && plugWA[i - 1]){
+					plugAroundFill = plugFI[i - 1];
+					plugAroundFCount++;
+				}
+			}
+			plugSafeR = i % maxX != 1;
+			if(plugSafeR){
+				if(plugWA[i + 1] - plugThresh > plugWA[i]){//If not at the right edge
+					plugAround += plugWA[i + 1] - plugWA[i];
+					plugAroundCount++;
+				}
+				if(plugFI[i + 1]){
+					plugAroundFill = plugFI[i + 1];
+					plugAroundFCount++;
+				}
+			}
+			plugSafeT = i >= maxX;
+			if(plugSafeT){
+				if(plugWA[i - maxX] - plugThresh > plugWA[i]){//If not at the bottom edge
+					plugAround += plugWA[i - maxX] - plugWA[i];
+					plugAroundCount++;
+				}
+				if(plugFI[i - maxX]){
+					plugAroundFill = plugFI[i - maxX];
+					plugAroundFCount++;
+				}
+			}
+			plugSafeB = i + maxX < plugWA.length;
+			if(plugSafeB){
+				if(plugWA[i + maxX] - plugThresh > plugWA[i]){//If not at the top edge
+					plugAround += plugWA[i + maxX] - plugWA[i];
+					plugAroundCount++;
+				}
+				if(plugFI[i + maxX]){
+					plugAroundFill = plugFI[i + maxX];
+					plugAroundFCount++;
+				}
+			}
+			if(plugSafeB && plugSafeL){
+				if(plugWA[i + maxX - 1] - plugThresh > plugWA[i]){
+					plugAround += plugWA[i + maxX - 1] - plugWA[i];
+					plugAroundCount++;
+				}
+				if(plugFI[i + maxX - 1]){
+					plugAroundFill = plugFI[i + maxX - 1];
+					plugAroundFCount++;
+				}
+			}
+			if(plugSafeB && plugSafeR){
+				if(plugWA[i + maxX + 1] - plugThresh > plugWA[i]){
+					plugAround += plugWA[i + maxX + 1] - plugWA[i];
+					plugAroundCount++;
+				}
+				if(plugFI[i + maxX + 1]){
+					plugAroundFill = plugFI[i + maxX + 1];
+					plugAroundFCount++;
+				}
+			}
+			if(plugSafeT && plugSafeL){
+				if(plugWA[i - maxX - 1] - plugThresh > plugWA[i]){
+					plugAround += plugWA[i - maxX - 1] - plugWA[i];
+					plugAroundCount++;
+				}
+				if(plugFI[i - maxX - 1]){
+					plugAroundFill = plugFI[i - maxX - 1];
+					plugAroundFCount++;
+				}
+			}
+			if(plugSafeT && plugSafeR){
+				if(plugWA[i - maxX + 1] - plugThresh > plugWA[i]){
+					plugAround += plugWA[i - maxX + 1] - plugWA[i];
+					plugAroundCount++;
+				}
+				if(plugFI[i - maxX + 1]){
+					plugAroundFill = plugFI[i - maxX + 1];
+					plugAroundFCount++;
+				}
+			}
+			plugScore = plugAround + plugAroundCount * 150 + plugAroundFCount * 150;
+			if( plugScore >= 2000//(plugAround >= 500 && plugAroundCount >= 3 || plugAroundCount >= 6)
+				&& plugAroundFill ){
+				plugFI[i] = plugAroundFill;
+			}
+		}
+	}
+	this.requestRedraw();
 };
 
 
@@ -1452,16 +1783,27 @@ GraFlicImage.prototype.getMouseCalibratedXY = function(v_evt){
 		v_x = v_evt.offsetX / cScale;
 		v_y = v_evt.offsetY / cScale;
 	}
+	if(v_evt.pressure === undefined){
+		//console.log('no pointer event available');
+		v_evt.pressure = 0.5;//If browser does not support PointerEvent/pressure, set it to the default in the middle.
+	}
+	//console.log(v_evt.pressure);
 	return [v_x, v_y];
+};
+GraFlicImage.prototype.isStrokeBasedTool = function(){
+	return	   this.curTool == GraFlicImage.TOOL_PEN
+		|| this.curTool == GraFlicImage.TOOL_BRUSH
+		|| (this.curTool == GraFlicImage.TOOL_CUT_LASSO && this.cutBitmap == null);
 };
 GraFlicImage.prototype.mDown = function(v_evt){
 	var v_calXY = this.getMouseCalibratedXY(v_evt);
 	var v_x = v_calXY[0];
 	var v_y = v_calXY[1];
+	//TODO: Implement pressure/pointer event.
 	if(this.curImage.type == 'WAIFU'){
-		if((this.curTool == 1 || (this.curTool == 300 && this.cutBitmap == null))){//pen
+		if(this.isStrokeBasedTool()){
 			//lasso cutter will also use these strokes, but fill between and use it as a mask to cut.
-			this.curStroke = [v_x, v_y];
+			this.curStroke = [v_x, v_y, v_evt.pressure * 2];
 			this.curToolState = 100;
 		}
 	}//end bitmap
@@ -1486,14 +1828,15 @@ GraFlicImage.prototype.mMove = function(v_evt){
 	this.maxRegionX = Math.min(this.a.j.save.canvas_width, Math.max(v_x, this.maxRegionX));
 	this.maxRegionY = Math.min(this.a.j.save.canvas_height, Math.max(v_y, this.maxRegionY));
 	if(this.curImage.type == 'WAIFU'){
-		if((this.curTool == 1 || (this.curTool == 300 && this.cutBitmap == null))&& this.curStroke.length){//pen (do not extent until the wire is started with one x,y coord from mousedown.)
+		if(this.isStrokeBasedTool() && this.curStroke.length){//pen (do not extent until the wire is started with one x,y coord from mousedown.)
 			//cut should only make the stroke if there is no cut BMP yet, otherwise it should drag the existing one.
-			var v_prevX = this.curStroke[this.curStroke.length - 2];
-			var v_prevY = this.curStroke[this.curStroke.length - 1];
+			var v_prevX = this.curStroke[this.curStroke.length - 3];
+			var v_prevY = this.curStroke[this.curStroke.length - 2];
 			if(Math.abs(v_x - v_prevX) + Math.abs(v_y - v_prevY) > 2){
 				//Do not make a new coord for very short distance,
 				//it will all clump together and lose the antialiased effect.
-				this.curStroke.push(v_x, v_y);
+				this.curStroke.push(v_x, v_y, v_evt.pressure * 2 * this.penWidth);
+				//0.5 * 2 is 1.0 for normal scale. 0.25 would be 0.5, 0.75 would be 1.5, etc...
 			}
 			//Request redraw only for the region that is being changed.
 			//-1 to avoid out of bounds error
@@ -1513,12 +1856,16 @@ GraFlicImage.prototype.mUp = function(v_evt){
 	var v_x = v_calXY[0];
 	var v_y = v_calXY[1];
 	if(this.curImage.type == 'WAIFU'){
-		if(this.curTool == 1 || (this.curTool == 300 && this.cutBitmap == null)){//pen
+		if(this.isStrokeBasedTool()){//pen
 			this.curToolState = 200;
 			//The redraw MUST be requested on finish, since the drawing code contains the section that commits the final stroke.
-			this.requestRedraw(this.minRegionX, this.minRegionY, this.maxRegionX, this.maxRegionY);
+			if(this.curTool == GraFlicImage.TOOL_CUT_LASSO){
+				this.requestRedraw();//Must draw the whole region so that the lasso is not misaligned when copying over in the cut code. If variable sized bitmaps are implemented, this limitation may not be needed.
+			}else{
+				this.requestRedraw(this.minRegionX, this.minRegionY, this.maxRegionX, this.maxRegionY);
+			}
 		}//end pen
-		if(this.curTool == 2 || this.curTool == 3){//bucket
+		if(this.curTool == GraFlicImage.TOOL_FLOOD_FILL || this.curTool == GraFlicImage.TOOL_FLOOD_WIRE){//bucket
 			this.bucketFill(v_x, v_y);
 		}
 	}//end bitmap
@@ -1530,6 +1877,7 @@ GraFlicImage.prototype.commitCutMove = function(){
 	//This will merge the cut BMP onto the current BMP.
 	//If the current bitmap has been changed, note that it is also moved to another layer.
 	//if this.cutX this.a.j.save.canvas_height
+	//console.log('Committing cut move.');
 	var v_srcI;
 	for(var v_copyI = 0;v_copyI < this.channelBitmapBytes;v_copyI++){
 		v_srcI = v_copyI - this.cutX - Math.round(this.cutY * this.a.j.save.canvas_width);

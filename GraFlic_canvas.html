@@ -87,13 +87,16 @@ Visit <a href="http://AnimatedPNGs.com" target="_blank">AnimatedPNGs.com</a> for
 &nbsp;<input type="checkbox" id="GraFlicC_tool_erase_chk"/>
 <label for="GraFlicC_tool_erase_chk" class="GraFlic_j">❌</label>
 &nbsp;<input type="radio" name="GraFlicC_tool_rad" value="1" id="GraFlicC_tool_pen_rad" checked/>
-<label for="GraFlicC_tool_pen_rad" class="GraFlic_j">✍️</label>
+<label for="GraFlicC_tool_pen_rad" class="GraFlic_j">🖊</label>
+&nbsp;<input type="radio" name="GraFlicC_tool_rad" value="101" id="GraFlicC_tool_brush_rad"/>
+<label for="GraFlicC_tool_brush_rad" class="GraFlic_j">🖌</label>
 &nbsp;<input type="radio" name="GraFlicC_tool_rad" value="2" id="GraFlicC_tool_fill_bucket_rad"/>
 <label for="GraFlicC_tool_fill_bucket_rad" class="GraFlic_j">🕳🌊</label>
 &nbsp;<input type="radio" name="GraFlicC_tool_rad" value="3" id="GraFlicC_tool_line_bucket_rad"/>
-<label for="GraFlicC_tool_line_bucket_rad" class="GraFlic_j">✍️🌊</label>
+<label for="GraFlicC_tool_line_bucket_rad" class="GraFlic_j">🖊🌊</label>
 &nbsp;<input type="radio" name="GraFlicC_tool_rad" value="300" id="GraFlicC_tool_lasso_rad"/>
 <label for="GraFlicC_tool_lasso_rad" class="GraFlic_j">✂</label>
+&nbsp;<button id="GraFlicC_plug_wires_btn" title="Plu[g] Wires">🔌</button>
 </td>
 
 <td>
@@ -103,9 +106,9 @@ x
 
 <tr>
 <td class="GraFlic_e">
-<input id="GraFlicC_pen_width_rng" type="range" value="2.5" min="0.1" max="10" step="0.1"/>
+<input id="GraFlicC_pen_width_rng" type="range" value="1.5" min="0.1" max="10" step="0.1"/>
 </td>
-<td><input type="text" id="GraFlicC_pen_width_txt" value="2.5" style="width:4em;"/><span class="GraFlic_j">🖊</span></td>
+<td><input type="text" id="GraFlicC_pen_width_txt" value="1.5" style="width:4em;"/><span class="GraFlic_j">🖊</span></td>
 </tr>
 
 
@@ -309,7 +312,7 @@ x
 <br/>
 <table class="GraFlic_t">
 <thead>
-<tr><th>Embed images</tr></th>
+<tr><th>Embed images</th></tr>
 </thead>
 <tbody>
 <tr><td>
@@ -567,7 +570,7 @@ function f_rebuildBitmapAndFrameUI(){
 	/*for(v_i = 0;v_i < v_curGraFlic.a.j.save.images.length;v_i++){
 		v_procBMP = v_curGraFlic.a.j.save.images[v_i];
 		for(var v_i2 = 0;v_i2 < v_procBMP.plays_on_frames.length;v_i2++){
-			//Find the latest frame that any layer is to be played on
+			//Find the latest frame that any image is to be played on
 			v_totalFrames = Math.max(v_totalFrames, v_curGraFlic.a.j.save.frames[v_procBMP.plays_on_frames[v_i2] + 1].id);//+1 since zero-based.
 		}
 	}*/
@@ -581,14 +584,14 @@ function f_rebuildBitmapAndFrameUI(){
 	GraFlicC_bitmap_title_txt.value = v_curGraFlic.curImage.title;
 	GraFlicC_bitmap_z_index_txt.value = v_curGraFlic.curImage.z_index.toString();
 	GraFlicC_frame_title_txt.value = v_curGraFlic.curFrame.title;
-	while(v_layerSel.firstChild){v_layerSel.removeChild(v_layerSel.firstChild);}
+	while(v_imageSel.firstChild){v_imageSel.removeChild(v_imageSel.firstChild);}
 	while(v_frameSel.firstChild){v_frameSel.removeChild(v_frameSel.firstChild);}
 	for(v_i = 0;v_i < v_curGraFlic.a.j.save.images.length;v_i++){
 		v_selObj = document.createElement('option');
 		v_selObj.value = v_i;
 		v_selObj.innerHTML = '[' + v_i + '] ' + v_curGraFlic.a.j.save.images[v_i].title;
 		if(v_curGraFlic.a.j.save.images[v_i] == v_curGraFlic.curImage){v_selObj.selected = true;}
-		v_layerSel.appendChild(v_selObj);
+		v_imageSel.appendChild(v_selObj);
 	}
 	for(v_i = 0;v_i < v_curGraFlic.a.j.save.frames.length;v_i++){
 		v_selObj = document.createElement('option');
@@ -638,9 +641,9 @@ function f_frameNew(v_evt){
 	f_rebuildBitmapAndFrameUI();
 	f_rebuildPlaysOnFramesUI();
 }
-function f_layerSelect(v_evt){
+function f_imageSelect(v_evt){
 	//.selectedIndex standard yet?
-	v_curGraFlic.curImage = v_curGraFlic.a.j.save.images[v_layerSel.selectedIndex];
+	v_curGraFlic.curImage = v_curGraFlic.a.j.save.images[v_imageSel.selectedIndex];
 	f_rebuildBitmapAndFrameUI();
 	f_rebuildPlaysOnFramesUI();//update this UI to have the frames the the current bitmap plays on selected.
 	f_requestRedraw();
@@ -715,6 +718,9 @@ function f_toolSelect(v_evt){
 function f_toolEraseSelect(v_evt){
 	v_curGraFlic.curDrawMode = v_evt.target.checked ? 0 : 1;//parseInt(v_evt.target.value);
 }
+function f_plugWires(v_evt){
+	v_curGraFlic.plugWires();
+}
 function f_metadataRefreshUI(v_evt){
 	//update the textarea to match what is in the selected metadata
 	//(Can be called with no parameter to just refresh whatever is selected.)
@@ -762,6 +768,9 @@ function f_kUp(v_evt){
 		case 57:
 			v_curGraFlic.a.j.save.selected_color_index = Math.min(v_evt.keyCode - 48, v_curGraFlic.curPalette.colors.length - 1);
 			break;
+		case 71://Plu(g) Wires
+			f_plugWires();
+			break;
 		case 80://(P)en
 			v_curGraFlic.curTool = 1;
 			v_curGraFlic.curToolState = 0;//inactive, not started drawing yet
@@ -776,6 +785,15 @@ function f_kUp(v_evt){
 			f_redo();
 			break;
 		case 90://(Z) Undoo
+			if( ( v_curGraFlic.curTool == GraFlicImage.TOOL_FLOOD_FILL
+			   || v_curGraFlic.curTool == GraFlicImage.TOOL_FLOOD_WIRE )
+			   && v_curGraFlic.curToolState == 100){
+				//First, if there is an out-of control laggy flood fill,
+				//stop that.
+				v_curGraFlic.stopFlood();
+				alert('🚫🌊❗️');
+				break;
+			}
 			f_undo();
 			break;
 	}//end switch
@@ -795,7 +813,7 @@ function f_addToUndoStack(){
 }
 var v_penWidthRng;//range input for pen width
 var v_penWidthTxt;//text input for pen width
-var v_layerSel;
+var v_imageSel;
 var v_frameSel;
 var v_playsOnFramesSel;
 var v_onionSkinChk;
@@ -819,8 +837,8 @@ function f_zoomChange(v_evt){
 function f_penWidthChange(v_evt){
 	v_curGraFlic.penWidth = parseFloat(v_evt.target.value);
 	if(isNaN(v_curGraFlic.penWidth) || v_curGraFlic.penWidth < 0.1){
-		//Invalid / Out of Range, default to 2.5
-		v_curGraFlic.penWidth = 2.5;
+		//Invalid / Out of Range, default to 1.5
+		v_curGraFlic.penWidth = 1.5;
 	}
 	v_curGraFlic.cxP.lineWidth = v_curGraFlic.penWidth;
 	v_penWidthRng.value = v_curGraFlic.penWidth;
@@ -919,7 +937,7 @@ function f_init(){
 	v_palSel = document.getElementById('palette_color_sel');
 	v_penWidthRng = document.getElementById('GraFlicC_pen_width_rng');
 	v_penWidthTxt = document.getElementById('GraFlicC_pen_width_txt');
-	v_layerSel = document.getElementById('GraFlicC_bitmap_sel');
+	v_imageSel = document.getElementById('GraFlicC_bitmap_sel');
 	v_frameSel = document.getElementById('GraFlicC_frame_sel');
 	v_playsOnFramesSel = document.getElementById('GraFlicC_plays_on_frames_sel');
 	v_onionSkinChk = document.getElementById('GraFlicC_onion_skin_chk');
@@ -937,12 +955,14 @@ function f_init(){
 	
 	//radio/checkbox has issues with 'input' event in some browsers. Make it 'change' to ensure event is going after the input changed it.
 	GraFlicC_tool_pen_rad.addEventListener('change', f_toolSelect);
+	GraFlicC_tool_brush_rad.addEventListener('change', f_toolSelect);
 	GraFlicC_tool_fill_bucket_rad.addEventListener('change', f_toolSelect);
 	GraFlicC_tool_line_bucket_rad.addEventListener('change', f_toolSelect);
 	GraFlicC_tool_lasso_rad.addEventListener('change', f_toolSelect);
 	GraFlicC_tool_erase_chk.addEventListener('change', f_toolEraseSelect);
+	GraFlicC_plug_wires_btn.addEventListener('click', f_plugWires);
 	
-	v_layerSel.addEventListener('input', f_layerSelect);
+	v_imageSel.addEventListener('input', f_imageSelect);
 	v_frameSel.addEventListener('input', f_frameSelect);
 	v_playsOnFramesSel.addEventListener('input', f_playsOnFramesSelect);
 	GraFlicC_new_bitmap_btn.addEventListener('click', f_bitmapNew);
@@ -1049,7 +1069,7 @@ function f_onRedrawn(){
 	v_miniCX.clearRect(0, 0, GraFlicC_mini_canvas.width, GraFlicC_mini_canvas.height);
 	var v_miniScale = GraFlicC_mini_canvas.width / this.cvM.width;
 	v_miniCX.drawImage(GraFlicC_main_canvas, 0, 0, GraFlicC_main_canvas.width, GraFlicC_main_canvas.height, 0, 0, GraFlicC_main_canvas.width * v_miniScale, GraFlicC_main_canvas.height * v_miniScale);
-	//now draw a mini preview of the bitmap layer being edited. That is a good reminder of what layer user is editing so they do not draw on the wrong one!
+	//now draw a mini preview of the bitmap image being edited. That is a good reminder of what bitmap the user is editing so they do not draw on the wrong one!
 
 
 
