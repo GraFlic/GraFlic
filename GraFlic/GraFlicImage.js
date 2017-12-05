@@ -1483,31 +1483,29 @@ GraFlicImage.prototype.bucketFillUnbound = function(v_x, v_y){//alert('fillcall'
 	this.bucketWI = this.a.f[this.curImage.chan_wi].d;
 	this.bucketWA = this.a.f[this.curImage.chan_wa].d;
 	this.bucketFI = this.a.f[this.curImage.chan_fi].d;
+	/* Doing this as recursive is cripplingly slow and requires all kinds of workarounds due to call stack limits of JS
 	this.fillRecur(Math.round(v_x), Math.round(v_y), this.cvM.width, this.cvM.height,
 		this.curDrawMode ? this.a.j.save.selected_color_index : 0, -1, 0, alphaMax, alphaRep);
 				//Always use [0] (reserved transparent) when in erase mode
 	//alert('bfdone? ' + v_bfDone);
 	setTimeout(this.bucketFill, 0);//keep the time small, the issue causing crashes is the number / resource usage of chained function calls, the call stack.
-};
+	*/
+
 //antiBucketOverload;//Make this global rather than passed recursive, so there is better control of reining in the call stack
 		//the call stack size, maximum number of chained function calls, that JS has cannot handle bucket filling.
 		//And withe the global, it makes a straighter fill pattern without as many lone pixels that have to be
 		//filled individually with a whole timed call.
 //fillBucketNextPixels;//when the call stack gets heated, the spots where the fill left off will be saved and continued with timed intervals until the fill is complete
-GraFlicImage.prototype.fillRecur = function(v_x, v_y, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep){
-	if(this.floodStopped){
-		return;
-	}
-	//alphaMax tracks the maximum wire alpha encountered for fill floods.
-	//alphaRep tracks how many times the same alpha has been repeated.
-	//If the alpha encountered is lower than the alphaMax, then it has passed the center of the line where it is darkest and should exit. If the same alpha is repeatedly encountered.
-	//The rules of alphaMax/alphaRep apply to Fill floods, NOT wire floods.
-	if(v_x < 0 || v_y < 0 || v_x >= v_maxX || v_y >= v_maxY){
-		return;//out of bitmap bounds.
-	}
-	this.antiBucketOverload++;
+		//GraFlicImage.prototype.fillRecur = function(v_x, v_y, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep){
+	//if(this.floodStopped){
+	//	return;
+	//}
+	//Make the call parameters for the first pixel where the flood starts. It will simulate recursive logic without being recursive and running into call stack limits by pushing the next 'calls' into an array that holds the parameters of the simulated calls.
+	var v_color2Replace;
+	var v_maxX = this.cvM.width;//max x
+	var v_maxY = this.cvM.height;//max y
 	var v_pixI = (v_maxX * v_y + v_x);
-	if( v_color2Replace == -1){
+	var v_colorToUse = this.curDrawMode ? this.a.j.save.selected_color_index : 0;//color to fill with
 		//will start out as -1.
 		//If -1, set it to the pixel at this coords, this is where the
 		//canvas was clicked!
@@ -1522,7 +1520,31 @@ GraFlicImage.prototype.fillRecur = function(v_x, v_y, v_maxX, v_maxY, v_colorToU
 		if(v_color2Replace == v_colorToUse){//Trying to color the same color as itself, makes no sense, and will crash.
 			return;
 		}
-	}
+	var np = {};
+	np.x = Math.round(v_x);
+	np.y = Math.round(v_y);
+	np.m = 0;//Alpha Max
+	np.r = 0;//Alpha Repeat
+	var nextPix = [np];
+	var exitPix;
+	//alphaMax tracks the maximum wire alpha encountered for fill floods.
+	//alphaRep tracks how many times the same alpha has been repeated.
+	//If the alpha encountered is lower than the alphaMax, then it has passed the center of the line where it is darkest and should exit. If the same alpha is repeatedly encountered.
+	//The rules of alphaMax/alphaRep apply to Fill floods, NOT wire floods.
+	while(nextPix.length){
+	exitPix = false;//Set this true to 'return' from the pixel since return would end the whole function.
+	np = nextPix.shift();
+	v_x = np.x;
+	v_y = np.y;
+	//console.log(v_x + ', ' + v_y);
+	if(v_x < 0 || v_y < 0 || v_x >= v_maxX || v_y >= v_maxY){//If out of bitmap bounds
+		//console.log('out of bounds');
+		//out of bounds, do not process
+	}else{//if in bitmap bounds
+	alphaMax = np.m;
+	alphaRep = np.r;
+	//this.antiBucketOverload++;
+	v_pixI = (v_maxX * v_y + v_x);
 		//OLD: * 4;//get the corresponding pixel in RGBA array.
 	if(this.curTool == 2){//====================== FILL Bucket ==================
 	//ANYTHING under 255 should be filled under. Otherwise it leaves ugly transparent holes
@@ -1530,24 +1552,24 @@ GraFlicImage.prototype.fillRecur = function(v_x, v_y, v_maxX, v_maxY, v_colorToU
 	//The wire alpha being zero, and the index being non-zero(anything other than reserved [0] fully transparent)
 	//will be considered opaque for the purpose of containing fills within wires. This triggers special handling for wires intersecting off different colors to correct their blending and appearance. That case should be blocked from considered transparent with && !(...)
 	if(this.bucketWA[v_pixI] < alphaMax * 0.85){
-		return;//If the alpha goes down from what has been encountered before, the center of the line has been reached and it should not bleed past the edge.
+		exitPix = true;//If the alpha goes down from what has been encountered before, the center of the line has been reached and it should not bleed past the edge.
 	}
 	if(this.bucketWA[v_pixI] <= alphaMax){
 		alphaRep++;//AlphaRep will count anything at or below alpha max. Being only slightly below alphaMax does not exit because there are situations where tight corners need to be filled and a strict cutoff would stop too soon.
 		if(alphaRep >= 16 && alphaMax){
 			//It may have hit a place where two ends of the line are loosely connected with alpha transparent pixels. Do not let it wrap all around the line on the outside.
 			//However, DO NOT, exit if the alphaMax is still 0 and no wires have been encountered. 
-			return;
+			exitPix = true;
 		}
 	}else{
 		alphaRep = 1;
 	}
 	var nObj;//Used for nextPixels		
 	alphaMax = this.bucketWA[v_pixI];
-	if( (this.bucketWA[v_pixI] < 255 && !(!this.bucketWA[v_pixI] && this.bucketWI[v_pixI]) )
+	if(!exitPix && (this.bucketWA[v_pixI] < 255 && !(!this.bucketWA[v_pixI] && this.bucketWI[v_pixI]) )
 	 && this.bucketFI[v_pixI] == v_color2Replace
 		){
-		if(this.antiBucketOverload > 3000){//if call stack getting overloaded:
+		if(false && this.antiBucketOverload > 3000){//if call stack getting overloaded:
 			//this.a.f[this.curImage.chan_fi].d[v_pixI] = 3;//trace color to TEST with
 			//var v_savedForLaterI = v_x + ',' + v_y;//in format '999,999'
 			/*if(this.fillBucketNextPixels[v_savedForLaterI]){
@@ -1582,10 +1604,14 @@ GraFlicImage.prototype.fillRecur = function(v_x, v_y, v_maxX, v_maxY, v_colorToU
 			//The alpha threshold to keep expanding the fill, is more tight
 			//than the alpha threshold to just fill the current pixel and exit.
 			//try{
-				this.fillRecur(v_x + 1, v_y, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
-				this.fillRecur(v_x - 1, v_y, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
-				this.fillRecur(v_x, v_y + 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
-				this.fillRecur(v_x, v_y - 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
+				nextPix.push({"x":(v_x + 1), "y":v_y, "m":alphaMax, "r":alphaRep});
+				nextPix.push({"x":(v_x - 1), "y":v_y, "m":alphaMax, "r":alphaRep});
+				nextPix.push({"x":v_x, "y":(v_y + 1), "m":alphaMax, "r":alphaRep});
+				nextPix.push({"x":v_x, "y":(v_y - 1), "m":alphaMax, "r":alphaRep});
+				//this.fillRecur(v_x + 1, v_y, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
+				//this.fillRecur(v_x - 1, v_y, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
+				//this.fillRecur(v_x, v_y + 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
+				//this.fillRecur(v_x, v_y - 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
 				//Do diagonal corners. Some tight spots around sharp points are having trouble getting filled.
 				//Diagonals could cause leaks with 1x1 lines, but since things are anti-aliased, that should not happen unless the line is extremely thin in which case it is probably just a textural thing, not a boundary for containing fills.
 				//Diagonals are not helping it seems...
@@ -1609,7 +1635,7 @@ GraFlicImage.prototype.fillRecur = function(v_x, v_y, v_maxX, v_maxY, v_colorToU
 				//that way wires in wire intersect correction mode can be processed here (0 alpha, index non-zero)
 				//Filling a wire with reserved [0] transparent will totally erase it.
 				//If wanting to fill with transparent wire that can be recolored/replaced, make an extra palette entry with 0 alpha.
-			if(this.antiBucketOverload > 3000){//if call stack getting overloaded:
+			if(false && this.antiBucketOverload > 3000){//if call stack getting overloaded:
 				//this.fillBucketNextPixels[v_x + ',' + v_y] = 0x000000FF;//save the pixel spot to be continued with a new call stack.
 				//Wire flood fills all connected wire pixels with any opacity, so the values saved in next pixels are irrelevant and only need to evaluate true.
 				for(var n = 0;n < this.fillBucketNextPixels.length;n++){
@@ -1632,13 +1658,21 @@ GraFlicImage.prototype.fillRecur = function(v_x, v_y, v_maxX, v_maxY, v_colorToU
 				this.bucketWI[v_pixI] = 0;
 				this.bucketWA[v_pixI] = 0;
 			}
-			this.fillRecur(v_x + 1, v_y, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
-			this.fillRecur(v_x - 1, v_y, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
-			this.fillRecur(v_x, v_y + 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
-			this.fillRecur(v_x, v_y - 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
+			nextPix.push({"x":(v_x + 1), "y":v_y, "m":alphaMax, "r":alphaRep});
+			nextPix.push({"x":(v_x - 1), "y":v_y, "m":alphaMax, "r":alphaRep});
+			nextPix.push({"x":v_x, "y":(v_y + 1), "m":alphaMax, "r":alphaRep});
+			nextPix.push({"x":v_x, "y":(v_y - 1), "m":alphaMax, "r":alphaRep});
+			//this.fillRecur(v_x + 1, v_y, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
+			//this.fillRecur(v_x - 1, v_y, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
+			//this.fillRecur(v_x, v_y + 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
+			//this.fillRecur(v_x, v_y - 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
 		}
 	}//==========================================================================
-	return;
+	}//end if in bitmap bounds
+	//console.log(nextPix.length);
+	}//end while
+	//console.log('end of fill func');
+	this.requestRedraw();
 };
 GraFlicImage.prototype.stopFlood = function(){
 	this.floodStopped = true;

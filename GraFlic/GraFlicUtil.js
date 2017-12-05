@@ -418,11 +418,15 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 	//Will write the current date to everything for now.
 	//TODO: Implement something to remember previous creation dates? It may not be applicable, this is for saving the state of runtime data components that are destroyed/rebuilt regularly.
 	var jDate = new Date();
+	jDate.setTime(jDate.getTime() - 21600000);//DATE time goes by -6 hours subtract that many milliseconds.
+		//Still off on hours. If subtracting it goes to 12AM hours (0), if leaving as is it shows it modified tomorrow.
 	//11111000 00000000 hours
 	//00000111 11100000 mins
 	//00000000 00011111 seconds
-	var dHour = ((jDate.getUTCHours() + 19) % 24) << 11;//5 bits (seems to be in a timezone off by 2 hours of UTC)
-		//Subtract 5 hours. Add (24 -5) then mod for rollover. Regular subtraction could make invalid negative.
+	var dHour = jDate.getUTCHours();
+		//OLD:((jDate.getUTCHours() + 18) % 24) << 11;//5 bits (seems to be in a timezone off by 2 hours of UTC)
+		//Subtract 6 hours. Add (24 -6) then mod for rollover. Regular subtraction could make invalid negative.
+		//Daylight savings time may mess with it. -5 was working before, now -6 gets correct time.
 	var dMin = jDate.getUTCMinutes() << 5;//6 bits
 	var dSec = (jDate.getUTCSeconds() / 2);//4 bits
 	
