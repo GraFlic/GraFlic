@@ -89,13 +89,13 @@ Visit <a href="http://AnimatedPNGs.com" target="_blank">AnimatedPNGs.com</a> for
 &nbsp;<input type="radio" name="GraFlicC_tool_rad" value="1" id="GraFlicC_tool_pen_rad" checked/>
 <label for="GraFlicC_tool_pen_rad" class="GraFlic_j">🖊</label>
 &nbsp;<input type="radio" name="GraFlicC_tool_rad" value="101" id="GraFlicC_tool_brush_rad"/>
-<label for="GraFlicC_tool_brush_rad" class="GraFlic_j">🖌</label>
+<label for="GraFlicC_tool_brush_rad" class="GraFlic_j">🖋</label>
 &nbsp;<input type="radio" name="GraFlicC_tool_rad" value="2" id="GraFlicC_tool_fill_bucket_rad"/>
 <label for="GraFlicC_tool_fill_bucket_rad" class="GraFlic_j">🕳🌊</label>
-&nbsp;<input type="radio" name="GraFlicC_tool_rad" value="3" id="GraFlicC_tool_line_bucket_rad"/>
-<label for="GraFlicC_tool_line_bucket_rad" class="GraFlic_j">🖊🌊</label>
+&nbsp;<input type="radio" name="GraFlicC_tool_rad" value="3" id="GraFlicC_tool_wire_bucket_rad"/>
+<label for="GraFlicC_tool_wire_bucket_rad" class="GraFlic_j">⌇🌊</label>
 &nbsp;<input type="radio" name="GraFlicC_tool_rad" value="300" id="GraFlicC_tool_lasso_rad"/>
-<label for="GraFlicC_tool_lasso_rad" class="GraFlic_j">✂</label>
+<label for="GraFlicC_tool_lasso_rad" class="GraFlic_j">✂️</label>
 &nbsp;<button id="GraFlicC_plug_wires_btn" title="Plu[g] Wires">🔌</button>
 </td>
 
@@ -957,7 +957,7 @@ function f_init(){
 	GraFlicC_tool_pen_rad.addEventListener('change', f_toolSelect);
 	GraFlicC_tool_brush_rad.addEventListener('change', f_toolSelect);
 	GraFlicC_tool_fill_bucket_rad.addEventListener('change', f_toolSelect);
-	GraFlicC_tool_line_bucket_rad.addEventListener('change', f_toolSelect);
+	GraFlicC_tool_wire_bucket_rad.addEventListener('change', f_toolSelect);
 	GraFlicC_tool_lasso_rad.addEventListener('change', f_toolSelect);
 	GraFlicC_tool_erase_chk.addEventListener('change', f_toolEraseSelect);
 	GraFlicC_plug_wires_btn.addEventListener('click', f_plugWires);

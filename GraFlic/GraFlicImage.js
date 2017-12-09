@@ -208,6 +208,9 @@ GraFlicImage.TOOL_BRUSH = 101;//Variable width pressure-aware line.
 GraFlicImage.TOOL_FLOOD_FILL = 2;
 GraFlicImage.TOOL_FLOOD_WIRE = 3;
 GraFlicImage.TOOL_CUT_LASSO = 300;
+GraFlicImage.TOOL_STATE_STOP = 0;
+GraFlicImage.TOOL_STATE_DRAW = 100;
+GraFlicImage.TOOL_STATE_DONE = 200;
 
 GraFlicImage.prototype.initSaveJSON = function(){
 	var configInit = {};
@@ -684,7 +687,28 @@ GraFlicImage.prototype.updateCanvasVisualsUnbound = function(v_cTimestamp){
 	}
 	window.requestAnimationFrame(this.updateCanvasVisuals);
 };
+/*GraFlic uses the custom channel system WAIFU, rather than the typical RGBA.
+Wire Alpha/Index, Fill, Unallocated
+A palette is defined and referenced with indices rather than having colors saved directly to the bitmap.
+This allows for colors to be changed dynamically at any time without any loss or degradation to what has been drawn. It could also allow for alternate palette styles.
+It allows for flood fills to touch against smooth antialiased wires without corruption. Fill and Wires can be switched to other color indices without loss or degradation.
+Palette index [0] is reserved for transparent with all values 0.
+Palette index [0xFF] (255) will be reserved for a placeholder for swapping indices. (Or 0xFFFF in 16-bit mode)
 
+Wire Alpha and Wire Index represent the opacity and the color in the palette for the stokes drawn.
+
+Fill is an indexed channel with no opacity level that can be used to fill in the gaps between wires.
+
+When a wire pixel is fully erased, wire index should be [0] and wire alpha should be 0. There is no need for an palette index if fully erased, and there is no need for a non-zero alpha level if fully erased.
+If one of these values is zero(0) but the other is not it will activate a special mode.
+
+If the Wire Alpha is zero, but the wire index is non-zero, then the pixel will be treated as a special case where wires intersect. There is only one set of wire alpha/index channels per bitmap so if one wire hits another, it will set the pixel to 0 alpha and set the index to a color to activate this mode. This mode will blend the pixel based on other wire pixels around it.
+
+If the Wire Index is set to zero, but the Wire Alpha is non-zero, then the Alpha will instead be used to give the Fill channel an opacity level.
+(not implemented yet)
+
+There are initially unallocated supporting channels that may be allocated as needed. This can be used to support things like gradients or textures in the future.
+*/
 GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 	var v_i;
 	var v_i2;
@@ -737,245 +761,11 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 		
 		&& this.curStroke.length ){//---------------------------------
 		
-		/*
-		//this wonky code should no longer be needed due to better flood fill logic.
-		var v_penOA;
-		if(this.penWidth >= 2 && this.penWidth < 3){//Lines 3 width and above do not seem to have a problem getting full opacity pixels in the middle.
-			var v_indexPOA = this.penWidth.toString();
-			if(this.penOpacityAnalysis[v_indexPOA]){
-				v_penOA = this.penOpacityAnalysis[v_indexPOA];
-			}else{
-				v_penOA = {};
-				this.penOpacityAnalysis[v_indexPOA] = v_penOA;
-				var v_cvPOA = document.createElement('canvas');
-				v_cvPOA.width = 200;
-				v_cvPOA.height = 200;
-				var v_cxPOA = v_cvPOA.getContext('2d');
-				v_cxPOA.lineWidth = this.penWidth;
-				v_cxPOA.moveTo(20, 20);
-				v_cxPOA.lineTo(180, 180);
-				v_cxPOA.stroke();
-				var v_datPOA = v_cxPOA.getImageData(0, 0, 200, 200);
-				var v_darkestAlpha = 0;
-				//Count how many times the alpha level occurs. If it is only on a few pixels it can be thrown out as an anomaly.
-				var v_alphaCountPOA = new Uint8Array(new ArrayBuffer(256));
-				for(v_i = 0;v_i < 160000;v_i += 4){
-					if(v_alphaCountPOA[v_datPOA.data[v_i + 3]] < 255){
-						//Any alpha count incremented should also increment alphas lower than itself
-						//If there are allot of pixels that are close in value like 245, 243, 246
-						//count how many are at least that dark
-						for(v_i2 = v_datPOA.data[v_i + 3];v_i2 >= 0;v_i2--){
-							v_alphaCountPOA[v_i2]++;
-						}
-					}
-				}
-				for(v_i = 0;v_i < 256;v_i++){
-					if(v_alphaCountPOA[v_i] > 200){
-						v_darkestAlpha = v_i;
-					}
-				}
-				v_penOA.full_thresh = Math.max(1, v_darkestAlpha - 32);//0 or less will fill the whole canvas when adjusting.
-				//alert('Darkest Alpha found: ' + v_darkestAlpha);
-			}
-		}*/
-		/*if(true || this.penWidth < 3 && this.penWidth >= 0.5){
-			//pen strokes less than 1.5 wide are considered 'detail strokes'
-			//and are not expected to define edges where areas can be filled,
-			//but may add more precise details for the sake of texture for example
-			//small pen sizes are too small to make a fully opaque center, which is needed for color filling detection to fill between the line art.
-			this.cxP.beginPath();
-			this.cxP.lineWidth = 1;//force a 255 alpha draw with the smallest line behind the line draw so that bucket filling can detect edges and not leave ugly semi-transparent halos around where the fill meets the wire.
-			
-			this.cxP.moveTo(this.curStroke[0], this.curStroke[1]);
-			for(v_i = 3;v_i < this.curStroke.length;v_i+=3){
-				this.cxP.lineTo(this.curStroke[v_i], this.curStroke[v_i + 1]);
-			}
-			
-			//this.cxP.strokeStyle = GraFlicImage.getPaletteCSSRGB(this.curPaletteColor);
-			//var v_strokeExpand = 0.01;
-			//this.cxP.moveTo(this.curStroke[0] - v_strokeExpand, this.curStroke[1] - v_strokeExpand);
-			//for(v_i = 2;v_i < this.curStroke.length;v_i+=2){
-			//	this.cxP.lineTo(this.curStroke[v_i] - v_strokeExpand, this.curStroke[v_i + 1] - v_strokeExpand);
-			//}
-			//for(v_i = this.curStroke.length - 2;v_i > 0;v_i -= 2){
-			//	this.cxP.lineTo(this.curStroke[v_i] + v_strokeExpand, this.curStroke[v_i + 1] + v_strokeExpand);
-			//}
-			//this.cxP.fill();
-			this.cxP.stroke();
-			//this.cxP.stroke();
-			//this.cxP.stroke();
-			//this.cxP.stroke();
-			v_dataP = this.cxP.getImageData(0, 0, this.cvP.width, this.cvP.height);
-			for(v_rgbaI = 3;v_rgbaI < this.rgba32BitmapBytes;v_rgbaI += 4){
-				if(v_dataP.data[v_rgbaI] > 95){//any pixels with any opacity are set to fully opaque
-					v_dataP.data[v_rgbaI] = 255;
-				}
-			}
-			this.cxP.putImageData(v_dataP, 0, 0);
-		}*/
-		/*
-		//OLD CODE: this is laggy and buggy and can make crashes.
-		//Sometimes strokes leave gaps between fully opaque pixels so that fills will leak even in contained areas.
-		//these gaps may vary by stroke speed direct, or maybe even browser...
-		//This code will draw a basic 1px line that guarantees being blocked off with a contiguous fully opaque line from point A to point B
-		v_dataP = this.cxP.getImageData(0, 0, this.cvP.width, this.cvP.height);
-		for(v_i = 3;v_i < this.curStroke.length;v_i+=3){
-			var v_lineX1;
-			var v_lineX2;
-			var v_lineY1;
-			var v_lineY2;
-			if(this.curStroke[v_i] > this.curStroke[v_i - 2]){
-				v_lineX1 = this.curStroke[v_i - 2];
-				v_lineX2 = this.curStroke[v_i];
-				v_lineY1 = this.curStroke[v_i - 1];
-				v_lineY2 = this.curStroke[v_i + 1];
-			}else{
-				v_lineX1 = this.curStroke[v_i];
-				v_lineX2 = this.curStroke[v_i - 2];
-				v_lineY1 = this.curStroke[v_i + 1];
-				v_lineY2 = this.curStroke[v_i - 1];
-			}
-			var v_lineYDirection = v_lineY2 > v_lineY1 ? 1 : -1;
-			//v_lineX1 = Math.floor(v_lineX1);
-			//v_lineX2 = Math.ceil(v_lineX2);
-			/ *if(v_lineYDirection == 1){
-				v_lineY1 = Math.floor(v_lineY1);
-				v_lineY2 = Math.ceil(v_lineY2);
-			}else{
-				v_lineY1 = Math.ceil(v_lineY1);
-				v_lineY2 = Math.floor(v_lineY2);
-			}* /
-			/ *v_lineX1 = Math.round(v_lineX1);
-			v_lineX2 = Math.round(v_lineX2);
-			v_lineY1 = Math.round(v_lineY1);
-			v_lineY2 = Math.round(v_lineY2);* /
-			var v_lineDX = v_lineX2 - v_lineX1;//x2 - x1
-			var v_lineDY = v_lineY2 - v_lineY1;//y2 - y1
-			var v_lineDE = Math.abs(v_lineDY / v_lineDX);
-			var v_lineE = 0;
-			var v_lineY = v_lineY1;//v_lineYDirection == 2 ? Math.floor(v_lineY1) : Math.ceil(v_lineY1);
-			var v_XsPerY = (v_lineX2 - v_lineX1) / Math.abs(v_lineY2 - v_lineY1);
-			if(v_XsPerY >= 1){
-				v_XsPerY = 1;
-			}else{//If the line will be taller than it is long, it will need more cycles to make more pixels on different Ys but the same X
-				if(v_XsPerY < 0.01){v_XsPerY = 0.01;}//avoid divide by 0 and extremely long cycles
-				//v_lineDE *= v_XsPerY;//will only be going a partial part of an X pixel at a time now, so error should account for only the fraction that is moved
-			}
-			for(var v_lineX = v_lineX1;v_lineX <= v_lineX2;v_lineX += v_XsPerY){
-				var v_pIndex = ( Math.round(v_lineY) * this.cvP.width + Math.round(v_lineX) ) * 4;
-				v_dataP.data[v_pIndex]     = this.curPaletteColor.r;
-				v_dataP.data[v_pIndex + 1] = this.curPaletteColor.g;
-				v_dataP.data[v_pIndex + 2] = this.curPaletteColor.b;
-				v_dataP.data[v_pIndex + 3] = 255;
-				v_lastPix = v_pIndex;
-				v_lineE += v_lineDE;
-				if(v_lineE >= 0.5){//if error over tolerance, shift y and restart error accumulation.
-					v_lineY += v_lineYDirection;
-					v_lineE = 0;
-				}
-			}
-		}*/
-		//start at [2] it needs too x,y points and will reference [-2, -1]
-		/*for(v_i = 2;v_i < this.curStroke.length;v_i+=3){
-			var v_pixMoveX = this.curStroke[v_i - 2] - this.curStroke[v_i];
-			var v_pixMoveY = this.curStroke[v_i - 1] - this.curStroke[v_i + 1];
-			var v_pixMoveAbsX = Math.abs(v_pixMoveX);
-			var v_pixMoveAbsY = Math.abs(v_pixMoveY);
-			var v_pixStepX;
-			var v_pixStepY;
-			var v_pixProgX = 0;
-			var v_pixProgY = 0;
-			//Move at most 1,1 pixels at a time so there are no gaps.
-			if(v_pixMoveAbsX > v_pixMoveAbsY){
-				v_pixStepX = v_pixMoveAbsX / v_pixMoveAbsY;
-				v_pixStepY = 1;
-			}else{
-				v_pixStepY = v_pixMoveAbsY / v_pixMoveAbsX;
-				v_pixStepX = 1;
-			}
-			var v_pixStepAbsX = v_pixStepX;
-			var v_pixStepAbsY = v_pixStepY;
-			var v_pixStepSignX = 1;
-			var v_pixStepSignY = 1;
-			if(v_pixMoveX < 0){v_pixStepSignX = -1;}
-			if(v_pixMoveY < 0){v_pixStepSignY = -1;}
-			v_pixStepX *= v_pixStepSignX;
-			v_pixStepY *= v_pixStepSignY;
-			//v_pixStepX /= 8;
-			//v_pixStepY /= 8;
-			var v_pIndexFF;//Get index with floor ceil combinations
-			var v_pIndexFC;
-			var v_pIndexCF;
-			var v_pIndexCC;
-			var v_psX = this.curStroke[v_i - 2];//start on point A [x, y]
-			var v_psY = this.curStroke[v_i - 1];
-			var v_psMaxX = this.curStroke[v_i];
-			var v_psMaxY = this.curStroke[v_i + 1];
-			var v_psRevX = false;//v_pixMoveX < 0;//for conditions must be reversed if negative
-			var v_psRevY = false;//v_pixMoveY < 0;
-			//var v_psDrawX = Math.floor(v_psX);
-			//var v_psDrawY = Math.floor(v_psY);
-			//var v_psFloorX;
-			//var v_psFloorY;
-			
-			var v_pixMovedAbsX = 0;
-			var v_pixMovedAbsY = 0;
-			var v_pixMovedNextX = v_pixStepAbsX;//how for it should move before switching to the other coordinate.
-			var v_pixMovedNextY = v_pixStepAbsY;
-			var v_lastPix = -1;
-			while(v_pixMovedAbsX < v_pixMoveAbsX && v_pixMovedAbsY < v_pixMoveAbsY){
-				//for(;(v_psRevY? v_psY > v_psMaxY : v_psY < v_psMaxY);v_psY += v_pixStepY){
-				for(;v_pixMovedAbsX < v_pixMovedNextX;v_pixMovedAbsX++){
-					v_pIndexFF = ( Math.floor(v_psY) * this.cvP.width + Math.floor(v_psX) ) * 4;
-					if(v_pIndexFF != v_lastPix){
-						v_dataP.data[v_pIndexFF]     = this.curPaletteColor.r;
-						v_dataP.data[v_pIndexFF + 1] = this.curPaletteColor.g;
-						v_dataP.data[v_pIndexFF + 2] = this.curPaletteColor.b;
-						v_dataP.data[v_pIndexFF + 3] = 255;
-						v_lastPix = v_pIndexFF;
-					}
-					v_psX += v_pixStepSignX;
-				}
-				v_pixMovedNextX += v_pixStepAbsX;
-				//for(;(v_psRevX? v_psX > v_psMaxX: v_psX < v_psMaxX);v_psX += v_pixStepX){
-				for(;v_pixMovedAbsY < v_pixMovedNextY;v_pixMovedAbsY++){
-					v_pIndexFF = ( Math.floor(v_psY) * this.cvP.width + Math.floor(v_psX) ) * 4;
-					if(v_pIndexFF != v_lastPix){
-					//v_pIndexFC = ( Math.floor(v_psY) * this.cvP.width + Math.ceil(v_psX) ) * 4;
-					//v_pIndexCF = ( Math.ceil(v_psY) * this.cvP.width + Math.floor(v_psX) ) * 4;
-					//v_pIndexCC = ( Math.ceil(v_psY) * this.cvP.width + Math.ceil(v_psX) ) * 4;
-					v_dataP.data[v_pIndexFF]     = this.curPaletteColor.r;
-					v_dataP.data[v_pIndexFF + 1] = this.curPaletteColor.g;
-					v_dataP.data[v_pIndexFF + 2] = this.curPaletteColor.b;
-					v_dataP.data[v_pIndexFF + 3] = 255;//fully opaque to keep wires from leaking
-						//If the palette color has partial alpha that will be applied on the final draw, but it needs to be on the bitmap as full opacity.
-						//This may look partially transparent palette colors look a bit different on the preview when drawing than they are in the actual image.
-					/*    v_dataP.data[v_pIndexFC]     = this.curPaletteColor.r;
-					v_dataP.data[v_pIndexFC + 1] = this.curPaletteColor.g;
-					v_dataP.data[v_pIndexFC + 2] = this.curPaletteColor.b;
-					v_dataP.data[v_pIndexFC + 3] = 255;
-					v_dataP.data[v_pIndexCF]     = this.curPaletteColor.r;
-					v_dataP.data[v_pIndexCF + 1] = this.curPaletteColor.g;
-					v_dataP.data[v_pIndexCF + 2] = this.curPaletteColor.b;
-					v_dataP.data[v_pIndexCF + 3] = 255;
-					v_dataP.data[v_pIndexCC]     = this.curPaletteColor.r;
-					v_dataP.data[v_pIndexCC + 1] = this.curPaletteColor.g;
-					v_dataP.data[v_pIndexCC + 2] = this.curPaletteColor.b;
-					v_dataP.data[v_pIndexCC + 3] = 255;*    /
-					v_lastPix = v_pIndexFF;
-					break;
-					}//end if moved to a new pixel
-					v_psY += v_pixStepSignY;
-				}
-				v_pixMovedNextY += v_pixStepAbsY;
-			}//end while
-		}*/
-		//this.cxP.putImageData(v_dataP, 0, 0);
-		//-----------
 		this.cxP.save();
 		this.cxP.beginPath();
 		this.cxP.lineWidth = this.penWidth;//For some reason .lineWidth is ignored if set before .beginPath()
 		this.cxP.strokeStyle = GraFlicImage.getPaletteCSSRGB(this.curPaletteColor);
+		this.cxP.fillStyle = this.cxP.strokeStyle;
 		if(this.curTool == 300){//Lasso
 			if(this.curToolState == 200){
 				this.cxP.strokeStyle = 'black';
@@ -984,7 +774,6 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 				this.cxP.strokeStyle = '#7F7F7F';
 			}
 		}
-		this.cxP.moveTo(this.curStroke[0], this.curStroke[1]);
 		var usePressure = true;
 		if(this.curTool == GraFlicImage.TOOL_CUT_LASSO || this.curTool == GraFlicImage.TOOL_PEN){
 			usePressure = false;//no pressure needed for lasso or basic pen.
@@ -1011,77 +800,84 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
              |
              +--{point 2 pressure scale * base wireWidth}
 */
-			var pPushX; 
-			var pPushY;
-			//var pPushTurn;
+			this.cxP.moveTo(this.curStroke[0], this.curStroke[1]);
 			var wAngle;
+			var sPointX, sPointY;
+			var xAxisX, xAxisY, yAxisX, yAxisY;
+			var rotX, rotY, arcRotX, arcRotY;
+			var firstIter = true;
 			for(v_i = 3;v_i < this.curStroke.length;v_i += 3){
 				strokeX = this.curStroke[v_i];
 				strokeY = this.curStroke[v_i + 1];
-				pointPScale = this.curStroke[v_i + 2];
-				console.log('pic' + pointPScale);
+				pointPScale = this.curStroke[v_i + 2] / 2;//Shape loops around each side of the stroke points, sticking out half each side. 
 					//Will push out half the amount on each side to span the whole amount symmetrically.
+				if(firstIter){firstIter = false;}//TODO: some things that only apply to first point.
 				wAngle = GraFlicImage.angleBetween(lastX, lastY, strokeX, strokeY);
 				//TODO: Must move the point to the side, but have the rotation factored in when moving based on the angle.
 				//That way the wire is a shape with lines around the two sides expanding/contracting based on the pen pressure at that point.
 				lastX = strokeX;
 				lastY = strokeY;
-				var wAngleDeg = wAngle * (180/Math.PI);
+				/*var wAngleDeg = wAngle * (180/Math.PI);
 				if(wAngleDeg < 0){
 					wAngleDeg = 360 + wAngleDeg;
 				}
 				console.log(wAngleDeg + 'deg');
-					//     ---
-					//  ---  ^ Y push 100%
-					//................ 0 deg
-					//  ---  v
-					//     ---
-					//     | . |
-					//    |< . >| X push 100%
-					//   |   .   |
-					//    90 deg
-					pPushX = pointPScale * ( (wAngleDeg % 90) / 90 );
-					pPushY = pointPScale - pPushX;
-				if(wAngleDeg >= 0 && wAngleDeg < 180){
-					pPushX *= -1;
-				}
-				//if(wAngleDeg >= 0 && wAngleDeg < 90 || wAngleDeg >= 180 && wAngleDeg < 270){
-				//	pPushY *= -1;
-				//}
-				//if(wAngleDeg >= 90 && wAngleDeg < 180){
-					//pPushY *= -1;
-				//}
-				//pPushTurn = (wAngle / Math.PI);
-				//pPushX = pPushTurn * 2 * pointPScale;
-				//if(){
-					//pPushY = (pointPScale - pPushX);
-				//}
-				//pPushX *= -1;
-				console.log('push ' + pPushX + ' , ' + pPushY);
-				//console.log(wAngleDeg);
-				this.cxP.lineTo(this.curStroke[v_i] + pPushX,
-						this.curStroke[v_i + 1] + pPushY);
+				*/
+				xAxisX = Math.cos(wAngle);
+				xAxisY = Math.sin(wAngle);
+				yAxisX = Math.cos(wAngle + (Math.PI/2));
+				yAxisY = Math.sin(wAngle + (Math.PI/2));
+				sPointX = 0;
+				sPointY = pointPScale;
+				//Rotate the point at origin 0,0 based on the angle between points with the Y sticking out based on the pressure, then translate it to where the line is at the point in the stroke.
+				rotX = strokeX + sPointX * xAxisX + sPointY * yAxisX;
+				rotY = strokeY + sPointX * xAxisY + sPointY * yAxisY;
+				this.cxP.lineTo(rotX, rotY);
 			}
+			//wAngle -= 1.570796;//Rotate 90 degrees in radians.
+			//xAxisX = Math.cos(wAngle);
+			//xAxisY = Math.sin(wAngle);
+			//yAxisX = Math.cos(wAngle + (Math.PI/2));
+			//yAxisY = Math.sin(wAngle + (Math.PI/2));
+			sPointX = pointPScale;//For the arcRot to bend between points at the end before wrapping around, push out X instead of Y.
+			sPointY = 0;
+			arcRotX = strokeX + sPointX * xAxisX + sPointY * yAxisX;
+			arcRotY = strokeY + sPointX * xAxisY + sPointY * yAxisY;
+			firstIter = true;
 			for(v_i = this.curStroke.length - 3;v_i >= 0;v_i -= 3){
 				strokeX = this.curStroke[v_i];
 				strokeY = this.curStroke[v_i + 1];
 				pointPScale = this.curStroke[v_i + 2] / 2;
 					//Will push out half the amount on each side to span the whole amount symmetrically.
-				wAngle = GraFlicImage.angleBetween(lastX, lastY, strokeX, strokeY);
-				
+				if(firstIter){//The point before was on the other side at same point, and will not make an angle on first iteration.
+					wAngle = GraFlicImage.angleBetween(strokeX, strokeY, this.curStroke[v_i - 3], this.curStroke[v_i - 2]);
+				}else{
+					wAngle = GraFlicImage.angleBetween(lastX, lastY, strokeX, strokeY);
+				}
 				lastX = strokeX;
 				lastY = strokeY;
-				//pPushTurn = (wAngle / Math.PI);
-				pPushX = 0;//pPushTurn * pointPScale;
-				pPushY = 0;//pointPScale - pPushX;
-				//pPushX *= -1;
-				this.cxP.lineTo(this.curStroke[v_i] + pPushX,
-						this.curStroke[v_i + 1] + pPushY);
+				xAxisX = Math.cos(wAngle);
+				xAxisY = Math.sin(wAngle);
+				yAxisX = Math.cos(wAngle + (Math.PI/2));
+				yAxisY = Math.sin(wAngle + (Math.PI/2));
+				sPointX = 0;
+				sPointY = pointPScale;//push out the opposite direction for the other side of the stroke from the center of the stroke pont.
+				rotX = strokeX + sPointX * xAxisX + sPointY * yAxisX;
+				rotY = strokeY + sPointX * xAxisY + sPointY * yAxisY;
+				if(firstIter){//The first time it switches from tracing one side to the other, arcTo instead of lineTo. That way the end of the stroke is rounded and pleasant, not only flat.
+					//this.cxP.lineTo(arcRotX, arcRotY);//Simple lineTo tracer to test that points are in the right place.
+					this.cxP.arcTo(arcRotX, arcRotY, rotX, rotY, pointPScale);
+					firstIter = false;
+				}//To arc you must arcTo AND lineTo
+				this.cxP.lineTo(rotX, rotY);
 			}
-			this.cxP.lineWidth = 1;//Test trace outline of shape-as line.
-			this.cxP.stroke();
-			//this.cxP.fill();
+			//this.cxP.lineWidth = 1;//Test trace outline of shape-as line.
+			//this.cxP.stroke();//Trace tester
+			this.cxP.fill();//For actual production use .fill() rather than line debug trace.
+			//this.cxP.fillStyle = '#FF0000';//Trace control point for end curve.
+			//this.cxP.fillRect(arcRotX-1, arcRotY-1, 2, 2);
 		}else{//simple line with no pressure variance.
+			this.cxP.moveTo(this.curStroke[0], this.curStroke[1]);
 			for(v_i = 3;v_i < this.curStroke.length;v_i+=3){
 				this.cxP.lineTo(this.curStroke[v_i], this.curStroke[v_i + 1]);
 			}
@@ -1245,15 +1041,17 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 					//If the palette entry has a non 255 alpha value, that must be factored into the blending.
 					v_wirePalAlphaOver = Math.round(v_wireAlpha * v_wirePalColor.a);
 				}
-				if(v_wireIndex == v_fillIndex){
+				//if(v_wireIndex == v_fillIndex){
 					//If the wire and the fill are the same color they should combine to one contiguous shape.
 					//The fill has not alpha and is just a flat fill, so anywhere the wire intersects a fill with the same color,
 					//then it should leave it as is.
-				}else{
-					var v_underR = v_dataB.data[v_rgbaI    ];
-					var v_underG = v_dataB.data[v_rgbaI + 1];
-					var v_underB = v_dataB.data[v_rgbaI + 2];
-					var v_underA = v_pixelCurAlpha;
+				//}else{
+				//}
+				//Get the color of the canvas before line applied to composite over
+				var v_underR = v_dataB.data[v_rgbaI    ];
+				var v_underG = v_dataB.data[v_rgbaI + 1];
+				var v_underB = v_dataB.data[v_rgbaI + 2];
+				var v_underA = v_pixelCurAlpha;
 					if(!v_wireAlpha){
 						//an index set non-zero with alpha of zero is special handling for intersecting wires of different colors.
 						var v_corIndex = v_wireIndex;//intersecting wire correction index
@@ -1270,21 +1068,32 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 						//  +-+-+-+
 						for(var v_aroundX = -1;v_aroundX < 2;v_aroundX++){
 							for(var v_aroundY = -1;v_aroundY < 2;v_aroundY++){
-								v_aroundCheckI = v_copyI + this.a.j.save.canvas_width * v_aroundX + v_aroundY;
-								v_aroundIndex = v_bmpObj.chan_wi[v_aroundCheckI];
+								v_aroundCheckI = v_copyI + this.a.j.save.canvas_width * v_aroundY + v_aroundX;
+								v_aroundIndex = chanWI[v_aroundCheckI];
 								if( v_aroundIndex &&
-								    v_aroundIndex != v_wireIndex
-								    && v_bmpObj.chan_wa[v_aroundCheckI] > 127 ){
+								    v_aroundIndex != v_wireIndex &&
+								    v_copyI != v_aroundCheckI){
+								    //&& chanWA[v_aroundCheckI] > 127 ){
 									v_corIndex = v_aroundIndex;
 								}
 							}
 						}
 						var v_corPal = this.curPalette.colors[v_corIndex];
-						v_wirePalAlphaOver = 127;
 						v_underR = v_corPal.r24;
 						v_underG = v_corPal.g24;
 						v_underB = v_corPal.b24;
 						v_underA = v_corPal.a24 | v_pixelCurAlpha;//If fill underneath(v_pixelCurAlpha) has opacity, do not get rid of that.
+						v_wirePalAlphaOver = 127;//partial blend over fully opaque whatever is under it according to the correction detect.
+
+						//Composite this partially over the fill that has already been drawn based on opacity levels.
+						var interectAlphaOver = 127;
+						/*v_underR = this.alphaOverColorChannel(v_corPal.r24, v_underR, interectAlphaOver, v_underA);
+						v_underG = this.alphaOverColorChannel(v_corPal.g24, v_underG, interectAlphaOver, v_underA);
+						v_underB = this.alphaOverColorChannel(v_corPal.b24, v_underB, interectAlphaOver, v_underA);
+						v_underA = v_corPal.a24 | v_pixelCurAlpha;//If fill underneath(v_pixelCurAlpha) has opacity, do not get rid of that.
+						*/
+						
+						//v_underR = 255;v_underG = 0;v_underB = 255;
 					}
 					v_dataB.data[v_rgbaI    ] = this.alphaOverColorChannel(
 								v_wirePalColor.r24, v_underR,
@@ -1297,7 +1106,7 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 								v_wirePalAlphaOver, v_underA);
 					//v_dataB.data[v_rgbaI + 3] = v_wireAlpha | v_underA;
 					v_dataB.data[v_rgbaI + 3] = v_underA | v_wirePalAlphaOver;//v_wirePalColor.a24;
-				}
+				
 				/*v_dataB.data[v_rgbaI + 3] = v_wireAlpha & this.alphaOverColorChannel(
 								v_wirePalColor.a24, v_dataB.data[v_rgbaI + 3],
 								v_wireAlpha, v_pixelCurAlpha );*/
@@ -1449,66 +1258,48 @@ GraFlicImage.prototype.playNextFrameUnbound = function(){
 GraFlicImage.prototype.bucketFillUnbound = function(v_x, v_y){//alert('fillcall');
 	var alphaMax = 0;//alphaMax and alphaRep always start out 0
 	var alphaRep = 0;
+	var followUp = false;//If the initial fill click has already been made, and this is a chunked call to do part of the progress with a delay so that it does not lag and lock up for the users while it finishes.
 	if(v_x === undefined){//If a follow up call to refresh the call stack after the first click started it.
-		//alert(this.fillBucketNextPixels);
-		if(this.fillBucketNextPixels.length){//If pixels still left to process.
-				//for(var n = 0;n < this.fillBucketNextPixels.length;n++){
-			//grab the first pixel position that comes up and then exit
-			//var v_keyCoords = v_key.split(/,/);
-			//alert('wat');
-			var nObj = this.fillBucketNextPixels.shift();
-			v_x = nObj.x;//parseInt(v_keyCoords[0]);
-			v_y = nObj.y;//parseInt(v_keyCoords[1]);
-			//var v_saveAlphaVals = this.fillBucketNextPixels[v_key];
-			alphaMax = nObj.m;//v_saveAlphaVals & 0x00FFFFFF;//the first 24 bits store the alpha, only 8 are needed but if 16 bit alpha gets supported, this could be useful.
-			alphaRep = nObj.r;//v_saveAlphaVals >> 24 & 0xFF;//The high 8 bits store the alpha repeat count.
-			//delete this.fillBucketNextPixels[v_key];
-			//break;
-				//}
-		}//end if still has pixels
-		//for(v_key in this.fillBucketNextPixels){console.log('has key: ' + v_key);}
-		//console.log('fillcoord: ' + v_x + ' , ' + v_y);
-		this.requestRedraw();//Only request redraw AFTER the fill is done or at least substantial part of it. Otherwise, all the draws lag it and slow it down.
-		if(v_x === undefined){
-			this.curToolState = 200;//finished state so that unneeded draws are not done now that it is finished.
-			this.pushUndoStack();
-			return;//If no more spots left over to finish, exit, it is done.
-		}
+		followUp = true;
 	}else{//If the initial call with the x,y coordinates of the clicked point defined.
 		this.floodStopped = false;//The user may stop the flood, if it gets out of control in undesired area and is taking a long time.
 	}
-	this.antiBucketOverload = 0;
+	if(this.floodStopped){//Exit lengthy flood operation the user cancelled.
+		this.curToolState = GraFlicImage.TOOL_STATE_STOP;
+		this.pushUndoStack();
+		return;
+	}
+	
+	var chunkPix = 0;//When so many pixels have been processed, it will exit and proceed after a delay, to avoid lag/lock-up.
 	this.curToolState = 100;//Set it to being drawn state so that the visuals get updated.
 	//Bucket fills run very slow with associative array key lookups all the time so save a direct link to the current bitmap.
 	this.bucketWI = this.a.f[this.curImage.chan_wi].d;
 	this.bucketWA = this.a.f[this.curImage.chan_wa].d;
 	this.bucketFI = this.a.f[this.curImage.chan_fi].d;
-	/* Doing this as recursive is cripplingly slow and requires all kinds of workarounds due to call stack limits of JS
-	this.fillRecur(Math.round(v_x), Math.round(v_y), this.cvM.width, this.cvM.height,
-		this.curDrawMode ? this.a.j.save.selected_color_index : 0, -1, 0, alphaMax, alphaRep);
-				//Always use [0] (reserved transparent) when in erase mode
-	//alert('bfdone? ' + v_bfDone);
-	setTimeout(this.bucketFill, 0);//keep the time small, the issue causing crashes is the number / resource usage of chained function calls, the call stack.
-	*/
-
-//antiBucketOverload;//Make this global rather than passed recursive, so there is better control of reining in the call stack
-		//the call stack size, maximum number of chained function calls, that JS has cannot handle bucket filling.
-		//And withe the global, it makes a straighter fill pattern without as many lone pixels that have to be
-		//filled individually with a whole timed call.
-//fillBucketNextPixels;//when the call stack gets heated, the spots where the fill left off will be saved and continued with timed intervals until the fill is complete
-		//GraFlicImage.prototype.fillRecur = function(v_x, v_y, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep){
-	//if(this.floodStopped){
-	//	return;
-	//}
+	//Doing this as recursive is cripplingly slow and requires all kinds of workarounds due to call stack limits of JS
+	//So this simulates recursive-style logic while not being actually recursive.
 	//Make the call parameters for the first pixel where the flood starts. It will simulate recursive logic without being recursive and running into call stack limits by pushing the next 'calls' into an array that holds the parameters of the simulated calls.
 	var v_color2Replace;
 	var v_maxX = this.cvM.width;//max x
 	var v_maxY = this.cvM.height;//max y
+	v_x = Math.round(v_x);//Pixel indices are on a round numbers only.
+	v_y = Math.round(v_y);
 	var v_pixI = (v_maxX * v_y + v_x);
-	var v_colorToUse = this.curDrawMode ? this.a.j.save.selected_color_index : 0;//color to fill with
-		//will start out as -1.
-		//If -1, set it to the pixel at this coords, this is where the
-		//canvas was clicked!
+	var v_colorToUse;
+	
+	var nextPix, np;
+	if(followUp){
+		nextPix = this.floodPix;//Accessing with .varName seems to maybe slow it down some??
+		v_colorToUse = this.floodColor;
+		v_color2Replace = this.floodTarget;
+	}else{//If initial call, make the first pixel in the array so that the loop will process.
+		np = {};
+		np.x = v_x;
+		np.y = v_y;
+		np.m = 0;//Alpha Max
+		np.r = 0;//Alpha Repeat
+		nextPix = [np];
+		v_colorToUse = this.curDrawMode ? this.a.j.save.selected_color_index : 0;//color to fill with
 		if(this.curTool == 2){//fill bucket
 			v_color2Replace = this.bucketFI[v_pixI];
 		}else if(this.curTool == 3){//wire bucket
@@ -1520,13 +1311,9 @@ GraFlicImage.prototype.bucketFillUnbound = function(v_x, v_y){//alert('fillcall'
 		if(v_color2Replace == v_colorToUse){//Trying to color the same color as itself, makes no sense, and will crash.
 			return;
 		}
-	var np = {};
-	np.x = Math.round(v_x);
-	np.y = Math.round(v_y);
-	np.m = 0;//Alpha Max
-	np.r = 0;//Alpha Repeat
-	var nextPix = [np];
+	}
 	var exitPix;
+	var chunkExit = false;//Will be set to true if exiting to to max chunk processing.
 	//alphaMax tracks the maximum wire alpha encountered for fill floods.
 	//alphaRep tracks how many times the same alpha has been repeated.
 	//If the alpha encountered is lower than the alphaMax, then it has passed the center of the line where it is darkest and should exit. If the same alpha is repeatedly encountered.
@@ -1569,63 +1356,21 @@ GraFlicImage.prototype.bucketFillUnbound = function(v_x, v_y){//alert('fillcall'
 	if(!exitPix && (this.bucketWA[v_pixI] < 255 && !(!this.bucketWA[v_pixI] && this.bucketWI[v_pixI]) )
 	 && this.bucketFI[v_pixI] == v_color2Replace
 		){
-		if(false && this.antiBucketOverload > 3000){//if call stack getting overloaded:
-			//this.a.f[this.curImage.chan_fi].d[v_pixI] = 3;//trace color to TEST with
-			//var v_savedForLaterI = v_x + ',' + v_y;//in format '999,999'
-			/*if(this.fillBucketNextPixels[v_savedForLaterI]){
-				//If this already exists in savedForLater, then use the minimal thresholds
-				//This will help get into tight corners where recur calls from other pixels are overlapping each other.
-				var sAlphaMax = this.fillBucketNextPixels[v_savedForLaterI] & 0xFFFFFF;
-				var sAlphaRep = this.fillBucketNextPixels[v_savedForLaterI] >> 24 & 0xFF;
-				alphaMax = Math.min(alphaMax, sAlphaMax);
-				alphaRep = Math.min(alphaRep, sAlphaRep);
-			}
-			this.fillBucketNextPixels[v_savedForLaterI] = alphaRep << 24 | alphaMax;*/
-			for(var n = 0;n < this.fillBucketNextPixels.length;n++){
-				nObj = this.fillBucketNextPixels[n];
-				if(nObj.x == v_x && nObj.y == v_y){
-					return;//coord already in next pixels
-				}
-			}
-			nObj = {};
-			nObj.x = v_x;
-			nObj.y = v_y;
-			nObj.m = alphaMax;
-			nObj.r = alphaRep;
-			this.fillBucketNextPixels.push(nObj);
-			//save the pixel spot to be continued with a new call stack.
-			//The first 24 bits are reserved for alpha max to support future 16-bit alpha
-			//The high 8 bits store the times the same alpha has been repeatedly encountered.
-			//alert ('nextpixval ' + v_savedForLaterI + ': ' + this.fillBucketNextPixels[v_savedForLaterI]);
-			return;
-		}
 		this.bucketFI[v_pixI] = v_colorToUse;
 		if(this.bucketWA[v_pixI] < 255){
 			//The alpha threshold to keep expanding the fill, is more tight
 			//than the alpha threshold to just fill the current pixel and exit.
-			//try{
-				nextPix.push({"x":(v_x + 1), "y":v_y, "m":alphaMax, "r":alphaRep});
-				nextPix.push({"x":(v_x - 1), "y":v_y, "m":alphaMax, "r":alphaRep});
-				nextPix.push({"x":v_x, "y":(v_y + 1), "m":alphaMax, "r":alphaRep});
-				nextPix.push({"x":v_x, "y":(v_y - 1), "m":alphaMax, "r":alphaRep});
-				//this.fillRecur(v_x + 1, v_y, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
-				//this.fillRecur(v_x - 1, v_y, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
-				//this.fillRecur(v_x, v_y + 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
-				//this.fillRecur(v_x, v_y - 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
-				//Do diagonal corners. Some tight spots around sharp points are having trouble getting filled.
-				//Diagonals could cause leaks with 1x1 lines, but since things are anti-aliased, that should not happen unless the line is extremely thin in which case it is probably just a textural thing, not a boundary for containing fills.
-				//Diagonals are not helping it seems...
-				/*this.fillRecur(v_x + 1, v_y + 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
-				this.fillRecur(v_x - 1, v_y - 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
-				this.fillRecur(v_x - 1, v_y + 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
-				this.fillRecur(v_x + 1, v_y - 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);*/
-			/*}catch(v_err){//This technique causes the fill pattern to be jagged and inefficient. Setting a reliable overload limit is faster.
-				//retry the calls that failed with a new call stack
-				this.fillBucketNextPixels.push({'x':(v_x + 1), 'y':v_y, 'm':alphaMax, 'r':alphaRep});
-				this.fillBucketNextPixels.push({'x':(v_x - 1), 'y':v_y, 'm':alphaMax, 'r':alphaRep});
-				this.fillBucketNextPixels.push({'x':v_x, 'y':(v_y + 1), 'm':alphaMax, 'r':alphaRep});
-				this.fillBucketNextPixels.push({'x':v_x, 'y':(v_y - 1), 'm':alphaMax, 'r':alphaRep});
-			}*/
+			nextPix.push({"x":(v_x + 1), "y":v_y, "m":alphaMax, "r":alphaRep});
+			nextPix.push({"x":(v_x - 1), "y":v_y, "m":alphaMax, "r":alphaRep});
+			nextPix.push({"x":v_x, "y":(v_y + 1), "m":alphaMax, "r":alphaRep});
+			nextPix.push({"x":v_x, "y":(v_y - 1), "m":alphaMax, "r":alphaRep});
+			//Do diagonal corners. Some tight spots around sharp points are having trouble getting filled.
+			//Diagonals could cause leaks with 1x1 lines, but since things are anti-aliased, that should not happen unless the line is extremely thin in which case it is probably just a textural thing, not a boundary for containing fills.
+			//Diagonals are not helping it seems...
+			/*this.fillRecur(v_x + 1, v_y + 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
+			this.fillRecur(v_x - 1, v_y - 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
+			this.fillRecur(v_x - 1, v_y + 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
+			this.fillRecur(v_x + 1, v_y - 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);*/
 		}
 	}
 	}else if(this.curTool == 3){//====================== WIRE Bucket ===================
@@ -1635,23 +1380,6 @@ GraFlicImage.prototype.bucketFillUnbound = function(v_x, v_y){//alert('fillcall'
 				//that way wires in wire intersect correction mode can be processed here (0 alpha, index non-zero)
 				//Filling a wire with reserved [0] transparent will totally erase it.
 				//If wanting to fill with transparent wire that can be recolored/replaced, make an extra palette entry with 0 alpha.
-			if(false && this.antiBucketOverload > 3000){//if call stack getting overloaded:
-				//this.fillBucketNextPixels[v_x + ',' + v_y] = 0x000000FF;//save the pixel spot to be continued with a new call stack.
-				//Wire flood fills all connected wire pixels with any opacity, so the values saved in next pixels are irrelevant and only need to evaluate true.
-				for(var n = 0;n < this.fillBucketNextPixels.length;n++){
-					nObj = this.fillBucketNextPixels[n];
-					if(nObj.x == v_x && nObj.y == v_y){
-						return;//coord already in next pixels
-					}
-				}
-				nObj = {};
-				nObj.x = v_x;
-				nObj.y = v_y;
-				nObj.m = alphaMax;
-				nObj.r = alphaRep;
-				this.fillBucketNextPixels.push(nObj);
-				return;
-			}
 			if(this.curDrawMode){
 				this.bucketWI[v_pixI] = v_colorToUse;
 			}else{
@@ -1662,15 +1390,25 @@ GraFlicImage.prototype.bucketFillUnbound = function(v_x, v_y){//alert('fillcall'
 			nextPix.push({"x":(v_x - 1), "y":v_y, "m":alphaMax, "r":alphaRep});
 			nextPix.push({"x":v_x, "y":(v_y + 1), "m":alphaMax, "r":alphaRep});
 			nextPix.push({"x":v_x, "y":(v_y - 1), "m":alphaMax, "r":alphaRep});
-			//this.fillRecur(v_x + 1, v_y, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
-			//this.fillRecur(v_x - 1, v_y, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
-			//this.fillRecur(v_x, v_y + 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
-			//this.fillRecur(v_x, v_y - 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);
 		}
 	}//==========================================================================
 	}//end if in bitmap bounds
 	//console.log(nextPix.length);
+	if(chunkPix > 100000){//Large number of pixels processed, break it into chunks so there are not lag spikes on the user experience.
+		this.floodPix = nextPix;
+		this.floodColor = v_colorToUse;
+		this.floodTarget = v_color2Replace;
+		chunkExit = true;
+		setTimeout(this.bucketFill, 0);
+		break;
+	}
+	chunkPix++;
 	}//end while
+	if(!chunkExit){
+		//Do not need DONE state to transfer to the channel system, floods are put directly onto the channels as it goes along, just STOP.
+		this.curToolState = GraFlicImage.TOOL_STATE_STOP;
+		this.pushUndoStack();
+	}
 	//console.log('end of fill func');
 	this.requestRedraw();
 };
