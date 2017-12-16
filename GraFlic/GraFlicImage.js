@@ -44,7 +44,7 @@ function GraFlicImage(v_fromArchive, v_params){
 	//TODO: make it able to load from an archive, probably just call a loader function from here maybe with some binding or extra stuff. 
 	
 	
-	this.penWidth = 1.5;
+	this.penWidth = 2;
 	this.penOpacityAnalysis = {};//Pen strokes need to have full opacity at the center of the stroke to work with the fill tool and not leak. Using FULL opacity as the edge is important because images should not have stray bits of slightly transparent pixels randomly in them. That can mess up pixel recycling between APNG frames and force a full clear of the region to update it. This var should NOT be saved in the JSON with the save file. There is a chance that the behavior of wire stroke varies slightly between browsers. This needs to be recalculated on each runtime.
 	this.curStroke = [];
 	this.curTool = 1;
@@ -137,9 +137,9 @@ function GraFlicImage(v_fromArchive, v_params){
 	//----------------------------------------------
 
 	//=========== build default palette ============
-	this.newPaletteColorRGBA(0, 0, 0, 0, '🏁');//palette[0] should ALWAYS be fully transparent
-	this.newPaletteColorRGBA(0, 0, 0, 1, '🏴');//Default to true black for color [1].
-	this.newPaletteColorRGBA(1, 1, 1, 1, '🏳');//Default to true white for color [2].
+	this.newPaletteColorRGBA(0, 0, 0, 0, '❌');//palette[0] should ALWAYS be fully transparent
+	this.newPaletteColorRGBA(0, 0, 0, 1, '⚫️');//Default to true black for color [1].
+	this.newPaletteColorRGBA(1, 1, 1, 1, '⚪️');//Default to true white for color [2].
 	this.newPaletteColorRGBA(1, 0, 0, 1, '❤️');
 	this.newPaletteColorRGBA(0, 1, 0, 1, '💚');
 	this.newPaletteColorRGBA(0, 0, 1, 1, '💙');
@@ -258,6 +258,9 @@ GraFlicImage.prototype.initMetadata = function(){
 	v_metadata.project.mimetype = 'image/graflic';
 	v_metadata.general = {};//This var should contain metadata that would apply to the result image, not just the project save.
 				//Things like Title would apply to the project and the output image.
+	v_metadata.locale = {};//Data set in locale can cascade over metadata properties (other than .locale itself obviously).
+		//For example create 'de_DE' in .locale and create the chain of properties "locale":{"de_DE":{"general":{"Title":"Deutsch Titel"}}}
+		//(underscore(_) is better than dash(-) in this case for javascript access .loacale.de-DE is a not valid property name)
 	//Change metadata.text to .general, to make it more consistent with how GraFlicEncoder .metadata works
 	//Instead of having .text be just text, it could be any value, if 'typeof' text, it can be inserted as a tEXt or iTXt entry for PNG,
 	//If typeof 'object' it could have a structure used to build other types of metadata like pHYs or colorspace entries.
@@ -309,12 +312,12 @@ GraFlicImage.prototype.changeCanvasSize = function(v_csW, v_csH, v_csCropMode, v
 	for(var v_i = 0;v_i < this.a.j.save.images.length;v_i++){
 		var v_changeB = this.a.j.save.images[v_i];
 		if(v_changeB.type == 'WAIFU'){//=== only bitmaps need channels adjusted =============================================
-		var v_oldLineI = this.a.f[v_changeB.chan_wi].d;
-		var v_oldLineA = this.a.f[v_changeB.chan_wa].d;
-		var v_oldFillI = this.a.f[v_changeB.chan_fi].d;
-		this.a.f[v_changeB.chan_wi].d = new Uint8Array(new ArrayBuffer(this.channelBitmapBytes));
-		this.a.f[v_changeB.chan_wa].d = new Uint8Array(new ArrayBuffer(this.channelBitmapBytes));
-		this.a.f[v_changeB.chan_fi].d = new Uint8Array(new ArrayBuffer(this.channelBitmapBytes));
+		var v_oldLineA = this.a.f[v_changeB.chan_a].d;
+		var v_oldLineI = this.a.f[v_changeB.chan_i].d;
+		var v_oldFillI = this.a.f[v_changeB.chan_f].d;
+		this.a.f[v_changeB.chan_a].d = new Uint8Array(new ArrayBuffer(this.channelBitmapBytes));
+		this.a.f[v_changeB.chan_i].d = new Uint8Array(new ArrayBuffer(this.channelBitmapBytes));
+		this.a.f[v_changeB.chan_f].d = new Uint8Array(new ArrayBuffer(this.channelBitmapBytes));
 		//alert('a');
 		for(var v_h = 0;v_h < v_csH;v_h++){
 			for(var v_w = 0;v_w < v_csW;v_w++){
@@ -324,13 +327,13 @@ GraFlicImage.prototype.changeCanvasSize = function(v_csW, v_csH, v_csCropMode, v
 				v_oldPixI = v_hOld * v_canvasWidthOld + v_wOld;
 				//alert(v_newPixI + ' -- ' + v_oldPixI + ' ' +v_wOld + ', ' + v_hOld +' ... ' + v_canvasWidthOld);return;
 				if(v_wOld >= 0 && v_hOld >= 0 && v_wOld < v_canvasWidthOld && v_hOld < v_canvasHeightOld){
-					this.a.f[v_changeB.chan_wi].d[v_newPixI] = v_oldLineI[v_oldPixI];
-					this.a.f[v_changeB.chan_wa].d[v_newPixI] = v_oldLineA[v_oldPixI];
-					this.a.f[v_changeB.chan_fi].d[v_newPixI] = v_oldFillI[v_oldPixI];
+					this.a.f[v_changeB.chan_a].d[v_newPixI] = v_oldLineA[v_oldPixI];
+					this.a.f[v_changeB.chan_i].d[v_newPixI] = v_oldLineI[v_oldPixI];
+					this.a.f[v_changeB.chan_f].d[v_newPixI] = v_oldFillI[v_oldPixI];
 				}else{//init to zero anything that is not in the copied region
-					this.a.f[v_changeB.chan_wi].d[v_newPixI] = 0;
-					this.a.f[v_changeB.chan_wa].d[v_newPixI] = 0;
-					this.a.f[v_changeB.chan_fi].d[v_newPixI] = 0;
+					this.a.f[v_changeB.chan_a].d[v_newPixI] = 0;
+					this.a.f[v_changeB.chan_i].d[v_newPixI] = 0;
+					this.a.f[v_changeB.chan_f].d[v_newPixI] = 0;
 				}
 			}
 			//v_oldPixI += this.a.j.save.canvas_widthOld;//old value before this var is changed
@@ -391,14 +394,14 @@ GraFlicImage.prototype.initBitmapWAIFU = function(v_excludeFromArchive){
 	var v_chanFI = new Uint8Array(new ArrayBuffer(this.channelBitmapBytes));
 	/*if(v_excludeFromArchive){
 		//For the temporary bitmaps such as undo/cut holders, they will not be part of the virtual archive and will link directly to the data instead of having a string linking to the place in the archive.
-		v_initB.chan_wi = v_chanWI;
-		v_initB.chan_wa = v_chanWA;
-		v_initB.chan_fi = v_chanFI;
+		v_initB.chan_a = v_chanWA;
+		v_initB.chan_i = v_chanWI;
+		v_initB.chan_f = v_chanFI;
 	}*/
 	//else{
-		v_initB.chan_wi = v_bitmapFolder + v_initB.id + '_wi.dat.gz';//channel Wire Index
-		v_initB.chan_wa = v_bitmapFolder + v_initB.id + '_wa.dat.gz';//channel Wire Alpha
-		v_initB.chan_fi = v_bitmapFolder + v_initB.id + '_fi.dat.gz';//channel Fill Index
+		v_initB.chan_a = v_bitmapFolder + v_initB.id + 'a.dat.gz';//channel Wire Alpha
+		v_initB.chan_i = v_bitmapFolder + v_initB.id + 'i.dat.gz';//channel Wire Index
+		v_initB.chan_f = v_bitmapFolder + v_initB.id + 'f.dat.gz';//channel Fill Index
 		
 		var v_bFile;
 		v_bFile = {};//The folder based on the ID will hold the bitmap channels.
@@ -407,19 +410,19 @@ GraFlicImage.prototype.initBitmapWAIFU = function(v_excludeFromArchive){
 		this.a.addFile(v_bFile);
 		
 		v_bFile = {};
-		v_bFile.p = v_initB.chan_wi;
+		v_bFile.p = v_initB.chan_a;
+		v_bFile.d = v_chanWA;
+		if(v_excludeFromArchive){v_bFile.temp = true;}
+		this.a.addFile(v_bFile);
+		
+		v_bFile = {};
+		v_bFile.p = v_initB.chan_i;
 		v_bFile.d = v_chanWI;
 		if(v_excludeFromArchive){v_bFile.temp = true;}
 		this.a.addFile(v_bFile);
 
 		v_bFile = {};
-		v_bFile.p = v_initB.chan_wa;
-		v_bFile.d = v_chanWA;
-		if(v_excludeFromArchive){v_bFile.temp = true;}
-		this.a.addFile(v_bFile);
-
-		v_bFile = {};
-		v_bFile.p = v_initB.chan_fi;
+		v_bFile.p = v_initB.chan_f;
 		v_bFile.d = v_chanFI;
 		if(v_excludeFromArchive){v_bFile.temp = true;}
 		this.a.addFile(v_bFile);
@@ -462,12 +465,12 @@ GraFlicImage.prototype.initFrame = function(){
 
 
 GraFlicImage.prototype.undoRedoCopy = function(v_undoBMP, v_revert){
-	var v_liveWI = this.a.f[v_undoBMP.undo_copied_from.chan_wi].d;//pixels live on the screen (link to the live bitmap the undo bitmap was copied from)
-	var v_liveWA = this.a.f[v_undoBMP.undo_copied_from.chan_wa].d;
-	var v_liveFI = this.a.f[v_undoBMP.undo_copied_from.chan_fi].d;
-	var v_tempWI = this.a.f[v_undoBMP.chan_wi].d;//pixels from the undo/redo stack object
-	var v_tempWA = this.a.f[v_undoBMP.chan_wa].d;
-	var v_tempFI = this.a.f[v_undoBMP.chan_fi].d;
+	var v_liveWI = this.a.f[v_undoBMP.undo_copied_from.chan_i].d;//pixels live on the screen (link to the live bitmap the undo bitmap was copied from)
+	var v_liveWA = this.a.f[v_undoBMP.undo_copied_from.chan_a].d;
+	var v_liveFI = this.a.f[v_undoBMP.undo_copied_from.chan_f].d;
+	var v_tempWI = this.a.f[v_undoBMP.chan_i].d;//pixels from the undo/redo stack object
+	var v_tempWA = this.a.f[v_undoBMP.chan_a].d;
+	var v_tempFI = this.a.f[v_undoBMP.chan_f].d;
 	var v_copyI;
 	if(v_revert){//Revert to a previous state.
 		for(v_copyI = 0;v_copyI < this.channelBitmapBytes;v_copyI++){
@@ -497,17 +500,17 @@ GraFlicImage.prototype.pushUndoStack = function(){
 	this.undoRedoCopy(v_undoBMP, false);
 	/*for(var v_copyI = 0;v_copyI < this.channelBitmapBytes;v_copyI++){
 		//copy the state of the bitmap before it was changed.
-		v_undoBMP.chan_wi[v_copyI] = this.curImage.chan_wi[v_copyI];
-		v_undoBMP.chan_wa[v_copyI] = this.curImage.chan_wa[v_copyI];
-		v_undoBMP.chan_fi[v_copyI] = this.curImage.chan_fi[v_copyI];
+		v_undoBMP.chan_a[v_copyI] = this.curImage.chan_a[v_copyI];
+		v_undoBMP.chan_i[v_copyI] = this.curImage.chan_i[v_copyI];
+		v_undoBMP.chan_f[v_copyI] = this.curImage.chan_f[v_copyI];
 	}*/
 	this.undoStack.push(v_undoBMP);
 	if(this.undoStack.length > 20){//Limit stack size to keep resources reasonable.
 		//clear the bitmap from the undo stack array and delete it from the archive.
 		var sDel = this.undoStack.shift();
-		this.a.deleteFile(sDel.chan_wi);
-		this.a.deleteFile(sDel.chan_wa);
-		this.a.deleteFile(sDel.chan_fi);
+		this.a.deleteFile(sDel.chan_a);
+		this.a.deleteFile(sDel.chan_i);
+		this.a.deleteFile(sDel.chan_f);
 		this.a.deleteFile('b/' + sDel.id + '/');
 	}
 	console.log('undo stack: ' + this.undoStack.length);// + ' n: ' + v_undoBMP.name);
@@ -897,9 +900,9 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 		var v_pixA;
 		if(this.curTool == GraFlicImage.TOOL_PEN || this.curTool == GraFlicImage.TOOL_BRUSH){
 			v_rgbaI = 0;
-			chanWI = this.a.f[this.curImage.chan_wi].d;
-			chanWA = this.a.f[this.curImage.chan_wa].d;
-			chanFI = this.a.f[this.curImage.chan_fi].d;
+			chanWA = this.a.f[this.curImage.chan_a].d;
+			chanWI = this.a.f[this.curImage.chan_i].d;
+			chanFI = this.a.f[this.curImage.chan_f].d;
 			//for(v_copyI = 0;v_copyI < this.channelBitmapBytes;v_copyI++){
 			for(h = rdY1;h < rdY2;h++){
 			for(w = rdX1;w < rdX2;w++){
@@ -914,7 +917,7 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 				if(v_pixA){//any non-zero value that evals true.
 					if(this.curDrawMode){//if DRAWING, not erasing
 						/*if(false){//let the existing wire override untying that intersects it
-							if(!this.a.f[this.curImage.chan_wi].d[v_copyI]){
+							if(!this.a.f[this.curImage.chan_i].d[v_copyI]){
 								//Any wire already drawn will stay and not be overwritten, this works better
 								//for preserving line art and drawing the borders of shade/hilight areas
 								//drawn that intersect the line art.
@@ -972,12 +975,12 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 			for(v_copyI = 0;v_copyI < this.channelBitmapBytes;v_copyI++){
 				v_pixA = v_dataP.data[v_rgbaI + 3];
 				if(v_pixA){
-					this.a.f[this.cutBitmap.chan_fi].d[v_copyI] = this.a.f[this.curImage.chan_fi].d[v_copyI];
-					this.a.f[this.cutBitmap.chan_wi].d[v_copyI] = this.a.f[this.curImage.chan_wi].d[v_copyI];
-					this.a.f[this.cutBitmap.chan_wa].d[v_copyI] = this.a.f[this.curImage.chan_wa].d[v_copyI];
-					this.a.f[this.curImage.chan_fi].d[v_copyI] = 0;//Now delete the area that was cut out of the source BMP.
-					this.a.f[this.curImage.chan_wi].d[v_copyI] = 0;
-					this.a.f[this.curImage.chan_wa].d[v_copyI] = 0;
+					this.a.f[this.cutBitmap.chan_a].d[v_copyI] = this.a.f[this.curImage.chan_a].d[v_copyI];
+					this.a.f[this.cutBitmap.chan_i].d[v_copyI] = this.a.f[this.curImage.chan_i].d[v_copyI];
+					this.a.f[this.cutBitmap.chan_f].d[v_copyI] = this.a.f[this.curImage.chan_f].d[v_copyI];
+					this.a.f[this.curImage.chan_a].d[v_copyI] = 0;//Now delete the area that was cut out of the source bitmap.
+					this.a.f[this.curImage.chan_i].d[v_copyI] = 0;
+					this.a.f[this.curImage.chan_f].d[v_copyI] = 0;
 				}
 				v_rgbaI += 4;//4 bytes per pixel in the RBBA canvas data
 			}
@@ -999,9 +1002,9 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 		var v_dataB = this.cxB.getImageData(rdX1, rdY1, rdW, rdH);//0, 0, this.cvM.width, this.cvM.height);
 			//only get image data for the region being drawn on, to avoid lag.
 		//old: for(v_copyI = 0;v_copyI < this.channelBitmapBytes;v_copyI++){
-		chanWI = this.a.f[v_bmpObj.chan_wi].d;//seems to lag when looked up by associative on each iteration
-		chanWA = this.a.f[v_bmpObj.chan_wa].d;
-		chanFI = this.a.f[v_bmpObj.chan_fi].d;
+		chanWA = this.a.f[v_bmpObj.chan_a].d;//seems to lag when looked up by associative on each iteration
+		chanWI = this.a.f[v_bmpObj.chan_i].d;
+		chanFI = this.a.f[v_bmpObj.chan_f].d;
 		//Support drawing only the region that has changed to cut down lag.
 		//console.log( (rdX2- rdX1) + ' vs ' + rdW);
 		for(h = rdY1;h < rdY2;h++){
@@ -1122,9 +1125,9 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 				
 				//----------- end anti-leak test code --------------------------
 			}
-			//this.a.j.save.images[v_bmpI].chan_wi[v_copyI] = 0;
-			//this.a.j.save.images[v_bmpI].chan_wa[v_copyI] = 0;
-			//this.a.j.save.images[v_bmpI].chan_fi[v_copyI] = 0;
+			//this.a.j.save.images[v_bmpI].chan_a[v_copyI] = 0;
+			//this.a.j.save.images[v_bmpI].chan_i[v_copyI] = 0;
+			//this.a.j.save.images[v_bmpI].chan_f[v_copyI] = 0;
 			v_rgbaI += 4;
 		}}//end of w and h loops.
 		this.cxB.putImageData(v_dataB, rdX1, rdY1);
@@ -1273,9 +1276,9 @@ GraFlicImage.prototype.bucketFillUnbound = function(v_x, v_y){//alert('fillcall'
 	var chunkPix = 0;//When so many pixels have been processed, it will exit and proceed after a delay, to avoid lag/lock-up.
 	this.curToolState = 100;//Set it to being drawn state so that the visuals get updated.
 	//Bucket fills run very slow with associative array key lookups all the time so save a direct link to the current bitmap.
-	this.bucketWI = this.a.f[this.curImage.chan_wi].d;
-	this.bucketWA = this.a.f[this.curImage.chan_wa].d;
-	this.bucketFI = this.a.f[this.curImage.chan_fi].d;
+	this.bucketWA = this.a.f[this.curImage.chan_a].d;
+	this.bucketWI = this.a.f[this.curImage.chan_i].d;
+	this.bucketFI = this.a.f[this.curImage.chan_f].d;
 	//Doing this as recursive is cripplingly slow and requires all kinds of workarounds due to call stack limits of JS
 	//So this simulates recursive-style logic while not being actually recursive.
 	//Make the call parameters for the first pixel where the flood starts. It will simulate recursive logic without being recursive and running into call stack limits by pushing the next 'calls' into an array that holds the parameters of the simulated calls.
@@ -1375,7 +1378,7 @@ GraFlicImage.prototype.bucketFillUnbound = function(v_x, v_y){//alert('fillcall'
 	}
 	}else if(this.curTool == 3){//====================== WIRE Bucket ===================
 		if(this.bucketWI[v_pixI] == v_color2Replace){
-				// && this.a.f[this.curImage.chan_wa].d[v_pixI]){
+				// && this.a.f[this.curImage.chan_a].d[v_pixI]){
 				//deleted wire pixels should always be set to reserved transparent [0]
 				//that way wires in wire intersect correction mode can be processed here (0 alpha, index non-zero)
 				//Filling a wire with reserved [0] transparent will totally erase it.
@@ -1417,8 +1420,8 @@ GraFlicImage.prototype.stopFlood = function(){
 };
 GraFlicImage.prototype.plugWires = function(){
 	this.pushUndoStack();
-	var plugWA = this.a.f[this.curImage.chan_wa].d;
-	var plugFI = this.a.f[this.curImage.chan_fi].d;
+	var plugWA = this.a.f[this.curImage.chan_a].d;
+	var plugFI = this.a.f[this.curImage.chan_f].d;
 	var maxX = this.cvM.width;
 	var maxY = this.cvM.height;
 	var plugScore;
@@ -1654,22 +1657,22 @@ GraFlicImage.prototype.commitCutMove = function(){
 	for(var v_copyI = 0;v_copyI < this.channelBitmapBytes;v_copyI++){
 		v_srcI = v_copyI - this.cutX - Math.round(this.cutY * this.a.j.save.canvas_width);
 		//palette indices in the cut bitmap override the current ones
-		if(this.a.f[this.cutBitmap.chan_fi].d[v_srcI]){
-			this.a.f[this.curImage.chan_fi].d[v_copyI] = this.a.f[this.cutBitmap.chan_fi].d[v_srcI];
+		if(this.a.f[this.cutBitmap.chan_f].d[v_srcI]){
 			//The following makes a fill on the cut part cover any wires on the destination,
 			//this behavior may be overridable in the future.
-			this.a.f[this.curImage.chan_wi].d[v_copyI] = 0;
-			this.a.f[this.curImage.chan_wa].d[v_copyI] = 0;
+			this.a.f[this.curImage.chan_a].d[v_copyI] = 0;
+			this.a.f[this.curImage.chan_i].d[v_copyI] = 0;
+			this.a.f[this.curImage.chan_f].d[v_copyI] = this.a.f[this.cutBitmap.chan_f].d[v_srcI];
 		}
-		if(this.a.f[this.cutBitmap.chan_wi].d[v_srcI]){
-			this.a.f[this.curImage.chan_wi].d[v_copyI] = this.a.f[this.cutBitmap.chan_wi].d[v_srcI];
+		if(this.a.f[this.cutBitmap.chan_i].d[v_srcI]){
+			this.a.f[this.curImage.chan_i].d[v_copyI] = this.a.f[this.cutBitmap.chan_i].d[v_srcI];
 		}
-		this.a.f[this.curImage.chan_wa].d[v_copyI] |= this.a.f[this.cutBitmap.chan_wa].d[v_srcI];
+		this.a.f[this.curImage.chan_a].d[v_copyI] |= this.a.f[this.cutBitmap.chan_a].d[v_srcI];
 	}
 	//Delete virtual files no longer needed to save memory.
-	this.a.deleteFile(this.cutBitmap.chan_wi);
-	this.a.deleteFile(this.cutBitmap.chan_wa);
-	this.a.deleteFile(this.cutBitmap.chan_fi);
+	this.a.deleteFile(this.cutBitmap.chan_a);
+	this.a.deleteFile(this.cutBitmap.chan_i);
+	this.a.deleteFile(this.cutBitmap.chan_f);
 	this.a.deleteFile('b/' + this.cutBitmap.id + '/');
 	this.cutBitmap = null;//the cutBMP is now empty after it was merged to another bitmap.
 	this.requestRedraw();//The cut adds a bitmap for the cut area, so request a redraw.
@@ -1867,9 +1870,9 @@ Then once it is loaded use JS to find all the IMGs with custom attributes with z
 		//does not hot lots of disk space. Unlike .json or .txt, the raw binary data in the project-specific format
 		//is not easy to open up and edit directly, if they really want to they can decompress the extracted .gz first.
 		//Like images (png/jpeg/etc) that handle their own compression and store with mode 0 no compression, .dat.gz does the same.
-		v_bJSON.chan_wi = '@z:bitmaps/Wire_I_' + v_i + '.dat.gz';
-		v_bJSON.chan_wa = '@z:bitmaps/Wire_A_' + v_i + '.dat.gz';
-		v_bJSON.chan_fi = '@z:bitmaps/Fill_I_' + v_i + '.dat.gz';
+		v_bJSON.chan_i = '@z:bitmaps/Wire_I_' + v_i + '.dat.gz';
+		v_bJSON.chan_a = '@z:bitmaps/Wire_A_' + v_i + '.dat.gz';
+		v_bJSON.chan_f = '@z:bitmaps/Fill_I_' + v_i + '.dat.gz';
 		v_bitmapsJSON.push(v_bJSON);
 	}
 	v_fileEntry = {};
@@ -1888,16 +1891,16 @@ Then once it is loaded use JS to find all the IMGs with custom attributes with z
 	for(v_i = 0;v_i < this.a.j.save.images.length;v_i++){
 		v_procBMP = this.a.j.save.images[v_i];
 		v_fileEntry = {};
-		v_fileEntry.p = 'bitmaps/Line_I_' + v_i + '.dat.gz';
-		v_fileEntry.d = window.pako.gzip(v_procBMP.chan_wi, v_pakoDO);
+		v_fileEntry.p = 'bitmaps/Line_A_' + v_i + '.dat.gz';
+		v_fileEntry.d = window.pako.gzip(v_procBMP.chan_a, v_pakoDO);
 		v_zSave.addFile(v_fileEntry);
 		v_fileEntry = {};
-		v_fileEntry.p = 'bitmaps/Line_A_' + v_i + '.dat.gz';
-		v_fileEntry.d = window.pako.gzip(v_procBMP.chan_wa, v_pakoDO);
+		v_fileEntry.p = 'bitmaps/Line_I_' + v_i + '.dat.gz';
+		v_fileEntry.d = window.pako.gzip(v_procBMP.chan_i, v_pakoDO);
 		v_zSave.addFile(v_fileEntry);
 		v_fileEntry = {};
 		v_fileEntry.p = 'bitmaps/Fill_I_' + v_i + '.dat.gz';
-		v_fileEntry.d = window.pako.gzip(v_procBMP.chan_fi, v_pakoDO);
+		v_fileEntry.d = window.pako.gzip(v_procBMP.chan_f, v_pakoDO);
 		v_zSave.addFile(v_fileEntry);
 	}
 	*/

@@ -1,4 +1,4 @@
-<!doctype html><html>
+<!doctype html><html lang="🌐1000_lang🌐">
 <head>
 <meta charset="UTF-8"/>
 <title>GraFlic™ Animated PNG Drawing Tool &mdash; AnimatedPNGs.com | GraFlic.com</title>
@@ -49,14 +49,19 @@ SOFTWARE.
 <canvas id="GraFlicC_main_canvas" style="border: 0px solid rgba(0, 0, 0, 0.25);box-shadow: 5px 5px 5px #AFAFAF, 7px 7px 7px #FFFFFF;">
 </canvas>
 </div>
+
 <div style="display:inline-block;overflow:hidden;width:15vw;height:50vh;">
-<div style="height:50%;overflow:hidden;">
+<div style="height:20%;" class="GraFlic_j">
+<a href="de.html">🇩🇪</a><a href="jp.html">🇯🇵</a><a href="en.html">🇺🇸</a>⋯
+</div>
+<div style="height:40%;overflow:hidden;">
 <canvas id="GraFlicC_mini_editing_canvas" width="200" height="400" style="width:100%;"></canvas>
 </div>
-<div style="height:50%;overflow:hidden;">
+<div style="height:40%;overflow:hidden;">
 <canvas id="GraFlicC_mini_canvas" width="200" height="400" style="width:100%;"></canvas>
 </div>
-</div>
+</div><!--end holder-->
+
 </td>
 </tr>
 
@@ -106,9 +111,9 @@ x
 
 <tr>
 <td class="GraFlic_e">
-<input id="GraFlicC_pen_width_rng" type="range" value="1.5" min="0.1" max="10" step="0.1"/>
+<input id="GraFlicC_pen_width_rng" type="range" value="2" min="0.1" max="10" step="0.1"/>
 </td>
-<td><input type="text" id="GraFlicC_pen_width_txt" value="1.5" style="width:4em;"/><span class="GraFlic_j">🖊</span></td>
+<td><input type="text" id="GraFlicC_pen_width_txt" value="2" style="width:4em;"/><span class="GraFlic_j">🖊</span></td>
 </tr>
 
 
@@ -131,7 +136,7 @@ x
 <button id="GraFlicC_new_frame_btn">➕🎞</button>
 <input type="text" id="GraFlicC_frame_title_txt" value="🎞" style="width:8em;"/>
 &nbsp;<input type="text" id="GraFlicC_frame_ms_txt" value="" style="width:5em;"/><span class="GraFlic_j">⏳</span>
-&nbsp;<input type="text" id="GraFlicC_frame_global_ms_txt" value="200" style="width:5em;"/><span class="GraFlic_j">🌎⏳</span>
+&nbsp;<input type="text" id="GraFlicC_frame_global_ms_txt" value="200" style="width:5em;"/><span class="GraFlic_j">🌐⏳</span>
 <button id="GraFlicC_play_pause_btn" class="GraFlic_j">⏯</button>
 </td>
 </tr>
@@ -174,7 +179,7 @@ x
 <th id="GraFlicC_palette_color_preview" style="background-color:black;" class="GraFlic_j">
 🎨 
 </th>
-<th class="GraFlic_e" colspan="2"><input type="text" id="GraFlicC_palette_color_title_txt" value="True Black"/></th>
+<th class="GraFlic_e" colspan="2"><input type="text" id="GraFlicC_palette_color_title_txt" value="⚫️"/></th>
 </tr>
 </thead>
 <tbody>
@@ -275,17 +280,17 @@ x
 <tr>
 <td>
 <select id="GraFlicC_metadata_sel" style="vertical-align:top;">
-<option value="meta_Title">Title</option>
-<option value="meta_Author">Author</option>
-<option value="meta_Copyright">Copyright</option>
-<option value="meta_Description">Description</option>
-<option value="meta_Warning">Warning</option>
-<option value="meta_Disclaimer">Disclaimer</option>
-<option value="meta_Comment">Comment</option>
+<option value="meta_Title">🌐1001📝Title🌐</option>
+<option value="meta_Author">🌐1003📝Author🌐</option>
+<option value="meta_Copyright">🌐1005📝Copyright🌐</option>
+<option value="meta_Description">🌐1002📝Description🌐</option>
+<option value="meta_Warning">🌐1006📝Warning🌐</option>
+<option value="meta_Disclaimer">🌐1007📝Disclaimer🌐</option>
+<option value="meta_Comment">🌐1004📝Comment🌐</option>
 </select>
 </td>
 <td colspan="3" class="GraFlic_e">
-<textarea id="GraFlicC_metadata_txt" rows="2" placeholder="Omitted"></textarea>
+<textarea id="GraFlicC_metadata_txt" rows="2" placeholder="--"></textarea>
 </td>
 </tr>
 
@@ -302,7 +307,7 @@ x
 <td colspan="4">
 <input type="checkbox" id="GraFlicC_brute_force_chk"/>
 <label for="GraFlicC_brute_force_chk" class="GraFlic_j">🔨</label>
- x <input type="text" id="GraFlicC_brute_force_iter_txt" value="15" style="width:4em;" disabled/> <span>Brute force compression is very processor intensive to shave more bytes off of the filesize.</span>
+ x <input type="text" id="GraFlicC_brute_force_iter_txt" value="15" style="width:4em;" disabled/> <span>🌐1008 Brute-force compression quick note🌐</span>
 </td>
 </tr>
 
@@ -609,7 +614,7 @@ function f_rebuildPlaysOnFramesUI(){
 	var v_i2;
 	v_selObj = document.createElement('option');
 	v_selObj.value = -1;
-	v_selObj.innerHTML = '&#x1F30E;&#x1F39E;';//globe and movie frame chars
+	v_selObj.innerHTML = '🌐🎞';//globe and movie frame chars
 	if(v_curGraFlic.curImage.plays_on_all_frames){
 		v_selObj.selected = true;
 	}
@@ -1105,7 +1110,7 @@ function f_onRedrawn(){
 </tbody>
 </table>
 <p id="About_saves">
-<b>About saves:</b> This is an early version of the format and many things are not set in stone. Things may change under the hood and files made now might not load in later versions. In some cases it could be manually reconfigured to later version formatting by renaming the .graflic to .zip, repairing JSON files and re-packaging it to a ZIP.
+<b>About saves:</b> This is an early version of the format and many things are not set in stone. Things may change under the hood and files made now might not load in later versions. In some cases it could be manually reconfigured to later version formatting by renaming the .graflic to .zip, repairing JSON files and re-packaging it to a ZIP. If the JSON format changes too much, you can make a new file with the same dimensions and number of images, then swap out the .dat.gz channel files out of the /b bitmaps directory, and/or embeds out of /e.
 </p>
 <div class="GraFlic_f">
 <small>Copyright 2017, Compukaze LLC. <a href="https://github.com/GraFlic/GraFlic">GraFlic™ libraries and tools are available under the MIT license.</a> GraFlic™ and Compukaze™ are trademarks of Compukaze LLC</small>
