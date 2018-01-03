@@ -1,116 +1,154 @@
 {
-	"en":{
-		"1000":{
-			"🌐":"en",
-			"📝":"locale lang"
-		},
-		"1001":{
-			"🌐":"Title",
-			"📝":"Title"
-		},
-		"1002":{
-			"🌐":"Description",
-			"📝":"Description"
-		},
-		"1003":{
-			"🌐":"Author",
-			"📝":"Author"
-		},
-		"1004":{
-			"🌐":"Comment",
-			"📝":"Comment"
-		},
-		"1005":{
-			"🌐":"Copyright",
-			"📝":"Copyright"
-		},
-		"1006":{
-			"🌐":"Warning",
-			"📝":"Warning"
-		},
-		"1007":{
-			"🌐":"Disclaimer",
-			"📝":"Disclaimer"
-		},
-		"1008":{
-			"🌐":"Brute-force compression. Use excessive processor power to reduce file size.",
-			"📝":"Brute-force compression quick note."
-		}
-	},
-	"de":{
-		"1000":{
-			"🌐":"de",
-			"📝":"locale lang"
-		},
-		"1001":{
-			"🌐":"Titel",
-			"📝":"Title"
-		},
-		"1002":{
-			"🌐":"Beschreibung",
-			"📝":"Description"
-		},
-		"1003":{
-			"🌐":"Autor",
-			"📝":"Author"
-		},
-		"1004":{
-			"🌐":"Kommentar",
-			"📝":"Comment"
-		},
-		"1005":{
-			"🌐":"Copyright",
-			"📝":"Copyright"
-		},
-		"1006":{
-			"🌐":"Warnung",
-			"📝":"Warning"
-		},
-		"1007":{
-			"🌐":"Haftungsausschluss",
-			"📝":"Disclaimer"
-		},
-		"1008":{
-			"🌐":"Zwingen datenkompression.",
-			"📝":"Brute-force compression quick note 'zwingen'. to force/forcing data compression. TODO: and quick description."
-		}
-	},
-	"jp":{
-		"1000":{
-			"🌐":"jp",
-			"📝":"locale lang"
-		},
-		"1001":{
-			"🌐":"タイトル",
-			"📝":"Title"
-		},
-		"1002":{
-			"🌐":"説明",
-			"📝":"Description"
-		},
-		"1003":{
-			"🌐":"作家",
-			"📝":"Author (used this translation because it also includes artist)"
-		},
-		"1004":{
-			"🌐":"コメント",
-			"📝":"Comment"
-		},
-		"1005":{
-			"🌐":"著作権",
-			"📝":"Copyright"
-		},
-		"1006":{
-			"🌐":"警告",
-			"📝":"Warning"
-		},
-		"1007":{
-			"🌐":"免責条項",
-			"📝":"Disclaimer - menseki jookoo"
-		},
-		"1008":{
-			"🌐":"強制圧縮。",
-			"📝":"Brute-force compression quick note. - kyoosei asshuku. TODO: description about using more processing power."
-		}
-	}
+  "🗺": [
+    {
+      "🖇️": "en",
+      "📖": [
+        {
+          "🖇️": "1000",
+          "🌐": "en",
+          "📝": "locale lang"
+        },
+        {
+          "🖇️": "1001",
+          "🌐": "Title",
+          "📝": "Title"
+        },
+        {
+          "🖇️": "1002",
+          "🌐": "Description",
+          "📝": "Description"
+        },
+        {
+          "🖇️": "1003",
+          "🌐": "Author",
+          "📝": "Author"
+        },
+        {
+          "🖇️": "1004",
+          "🌐": "Comment",
+          "📝": "Comment"
+        },
+        {
+          "🖇️": "1005",
+          "🌐": "Copyright",
+          "📝": "Copyright"
+        },
+        {
+          "🖇️": "1006",
+          "🌐": "Warning",
+          "📝": "Warning"
+        },
+        {
+          "🖇️": "1007",
+          "🌐": "Disclaimer",
+          "📝": "Disclaimer"
+        },
+        {
+          "🖇️": "1008",
+          "🌐": "Brute-force compression. Use excessive processor power to reduce file size.",
+          "📝": "Brute-force compression quick note."
+        }
+      ]
+    },
+    {
+      "🖇️": "de",
+      "📖": [
+        {
+          "🖇️": "1000",
+          "🌐": "de",
+          "📝": "locale lang"
+        },
+        {
+          "🖇️": "1001",
+          "🌐": "Titel",
+          "📝": "Title"
+        },
+        {
+          "🖇️": "1002",
+          "🌐": "Beschreibung",
+          "📝": "Description"
+        },
+        {
+          "🖇️": "1003",
+          "🌐": "Autor",
+          "📝": "Author"
+        },
+        {
+          "🖇️": "1004",
+          "🌐": "Kommentar",
+          "📝": "Comment"
+        },
+        {
+          "🖇️": "1005",
+          "🌐": "Copyright",
+          "📝": "Copyright"
+        },
+        {
+          "🖇️": "1006",
+          "🌐": "Warnung",
+          "📝": "Warning"
+        },
+        {
+          "🖇️": "1007",
+          "🌐": "Haftungsausschluss",
+          "📝": "Disclaimer"
+        },
+        {
+          "🖇️": "1008",
+          "🌐": "Zwingen datenkompression.",
+          "📝": "Brute-force compression quick note 'zwingen'. to force/forcing data compression. TODO: and quick description."
+        }
+      ]
+    },
+    {
+      "🖇️": "jp",
+      "📖": [
+        {
+          "🖇️": "1000",
+          "🌐": "jp",
+          "📝": "locale lang"
+        },
+        {
+          "🖇️": "1001",
+          "🌐": "タイトル",
+          "📝": "Title"
+        },
+        {
+          "🖇️": "1002",
+          "🌐": "説明",
+          "📝": "Description"
+        },
+        {
+          "🖇️": "1003",
+          "🌐": "作家",
+          "📝": "Author (used this translation because it also includes artist)"
+        },
+        {
+          "🖇️": "1004",
+          "🌐": "コメント",
+          "📝": "Comment"
+        },
+        {
+          "🖇️": "1005",
+          "🌐": "著作権",
+          "📝": "Copyright"
+        },
+        {
+          "🖇️": "1006",
+          "🌐": "警告",
+          "📝": "Warning"
+        },
+        {
+          "🖇️": "1007",
+          "🌐": "免責条項",
+          "📝": "Disclaimer - menseki jookoo"
+        },
+        {
+          "🖇️": "1008",
+          "🌐": "強制圧縮。",
+          "📝": "Brute-force compression quick note. - kyoosei asshuku. TODO: description about using more processing power."
+        }
+      ]
+    }
+  ]
 }
