@@ -51,6 +51,7 @@ function GraFlicImage(v_fromArchive, v_params){
 	//1 = pen
 	//2 = fill bucket
 	//3 = wire bucket
+	//202 = swap channels bucket
 	//300 = lasso cutter
 	this.curToolState = 0;//tool state
 	//0 = inactive
@@ -205,8 +206,9 @@ function GraFlicImage(v_fromArchive, v_params){
 };
 GraFlicImage.TOOL_PEN = 1;//Simple single width line that ignores pressure.
 GraFlicImage.TOOL_BRUSH = 101;//Variable width pressure-aware line.
-GraFlicImage.TOOL_FLOOD_FILL = 2;
-GraFlicImage.TOOL_FLOOD_WIRE = 3;
+GraFlicImage.TOOL_FLOOD_FILL = 200;
+GraFlicImage.TOOL_FLOOD_WIRE = 201;
+GraFlicImage.TOOL_FLOOD_SWAP = 202;
 GraFlicImage.TOOL_CUT_LASSO = 300;
 GraFlicImage.TOOL_STATE_STOP = 0;
 GraFlicImage.TOOL_STATE_DRAW = 100;
@@ -240,6 +242,7 @@ GraFlicImage.prototype.initSaveJSON = function(){
 	return configInit;
 };
 GraFlicImage.prototype.getNextID = function(v_idStr, v_temp){
+	//Remember that the IDs must be JSON Strings, not numeric.
 	if(v_temp){//Do not increment the ID counter if it is a temp object that will get discarded after run time.
 		this.nextTempID++;
 		return 'temp_' + this.nextTempID.toString(16);//prefix so it does not collide with savable IDs.
@@ -382,6 +385,7 @@ GraFlicImage.prototype.initBitmapWAIFU = function(v_excludeFromArchive){
 	//NOTE: These could be switched to Uint8ClampedArray if issues are encountered. So far there have not been problems and Clamped might have extra overhead.
 	//Cann be called with (true) to exclude the bitmap from being part of the project archive. This can be used for things like temporary bitmaps used by the undo stack or cutting.
 	//TODO: .bitmap_mode could be used to make special mode bitmaps that instead of having pixel channels, maybe contain a user-loaded image, or reference a previous bitmap and recycle all or part of it. Some bitmaps could be defined as library items to be accessed by other bitmap objects, some of which might just be references to library items and instructions on where to draw them. However, for now it will stick to the basic mode. bitmap_mode being undefined should default to the default mode.
+	//WAIFU channel system bitmaps have the optional property z_index_w, which is initially undefined. It allow the wire to be on a separate (usually higher) z-index than the fill.
 	//This will create the bitmap binary dat files and link them via a string ID so that they are automatically associated
 	//when the archive is restored. This is better design than having it directly link to the object,
 	//because that would require special handling after it loads.
@@ -745,11 +749,36 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 	}
 	//Order any bitmaps sent in the [BMP_OBJ, opacity, ... ] pairs based on z_index
 	//Make a COPY of the images array and sort it properly for draw order.
-	v_images2Draw = Array.from(v_images2DrawUnordered).sort(
+	var imagesToDrawDetectSplitZs = [];
+	//images unordered is wrapped in an object that has the onion alpha level and a '.image' link to the image object
+	for(v_i = 0;v_i < v_images2DrawUnordered.length;v_i++){
+		var imageD = v_images2DrawUnordered[v_i];
+		var splitZ = imageD.image.z_index_w !== undefined;
+		v_obj = {};
+		v_obj.i = imageD;
+		v_obj.z = imageD.image.z_index;
+		v_obj.m = splitZ ? 1 : 0;//mode, 0 = normal draw all channels, 1 = draw fill, 2 = draw wire
+		imagesToDrawDetectSplitZs.push(v_obj);
+		if(splitZ){
+			v_obj = {};
+			v_obj.i = imageD;
+			v_obj.z = imageD.image.z_index_w;
+			v_obj.m = 2;//mode 2 = draw wire
+			imagesToDrawDetectSplitZs.push(v_obj);
+		}
+	}
+	v_images2Draw = Array.from(imagesToDrawDetectSplitZs).sort(
 		function(v_v1, v_v2){
-			return v_v1.image.z_index - v_v2.image.z_index;//-1 for 1st is less, 1 for 1st is more, 0 for equal.
+			return v_v1.z - v_v2.z;//-1 for 1st is less, 1 for 1st is more, 0 for equal.
 		}
 	);
+	/*for(v_i = 0;v_i < v_images2Draw.length;v_i++){
+		console.log('i2d id: ' + v_images2Draw[v_i].i.image.id);
+		console.log('i2d z: ' + v_images2Draw[v_i].z);
+		console.log('i2d m: ' + v_images2Draw[v_i].m);
+		console.log('------');
+	}*/
+	
 	//Clear ONLY the region that is being redrawn.
 	this.cxM.clearRect(rdX1, rdY1, rdW, rdH);
 	this.cxP.clearRect(rdX1, rdY1, rdW, rdH);
@@ -982,7 +1011,7 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 					this.a.f[this.curImage.chan_i].d[v_copyI] = 0;
 					this.a.f[this.curImage.chan_f].d[v_copyI] = 0;
 				}
-				v_rgbaI += 4;//4 bytes per pixel in the RBBA canvas data
+				v_rgbaI += 4;//4 bytes per pixel in the RGBA canvas data
 			}
 			this.requestRedraw();//The cut adds a bitmap for the cut area, so request a redraw.
 		}
@@ -992,12 +1021,25 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 	//Now use the palette indices and alpha values in the custom channel system
 	//To draw onto the main viewing canvas.
 	var curImageInView = false;//will be set to true when current image is drawn. If the current image is not visible, then a warning indicator will be shown on the current image preview.
+	
+	
+	if(this.canvasPreviewBitmap){//if the preview was configured
+		//Clear this preview first. There may be multiple draws that needed to handle this preview if there is a split z-index between fill and wire.
+		v_miniCX = this.canvasPreviewBitmap.getContext('2d');
+		v_miniCX.clearRect(rdX1 * v_miniScale, rdY1 * v_miniScale, rdW * v_miniScale, rdH * v_miniScale);
+		//TODO: make this only copy the updated region to reduce lag.
+	}
 	for(var v_bmpI = 0;v_bmpI < v_images2Draw.length;v_bmpI++){//images2Draw objects contain .image with the bitmap and other parameter options
 		this.cxB.clearRect(rdX1, rdY1, rdW, rdH);//0, 0, this.cvP.width, this.cvP.height);
 		v_rgbaI = 0;
-		var v_bmpObj = v_images2Draw[v_bmpI].image;
-		var v_onionAlpha = v_images2Draw[v_bmpI].onionAlpha;//Alpha, used for onion skinning.
+		//Object containing image and alpha setting was wrapped in anther object for ordering and handling split z-index
+		var imageBeingDrawn = v_images2Draw[v_bmpI].i;
+		var v_bmpObj = imageBeingDrawn.image;
+		var v_onionAlpha = imageBeingDrawn.onionAlpha;//Alpha, used for onion skinning.
 		if(v_bmpObj.type == 'WAIFU'){//===================================== bitmap ===========================================================
+		var zSplitMode = v_images2Draw[v_bmpI].m;//0 = all channels, 1 = fill, 2 = alpha
+		var zDrawFill = zSplitMode == 0 || zSplitMode == 1;
+		var zDrawWire = zSplitMode == 0 || zSplitMode == 2;
 		//console.log('getimagedata ' + rdX1 + ', ' + rdY1 + ', ' + rdW + ', ' + rdH + '...');
 		var v_dataB = this.cxB.getImageData(rdX1, rdY1, rdW, rdH);//0, 0, this.cvM.width, this.cvM.height);
 			//only get image data for the region being drawn on, to avoid lag.
@@ -1012,32 +1054,49 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 			v_copyI = h * canvW + w;
 			//Draw the fill channel first, any wire channel filled in will
 			//draw over/partially draw over the channel based on the alpha level it has
-			var v_fillIndex = chanFI[v_copyI];
-			var v_fillPalColor = this.curPalette.colors[v_fillIndex];
-			if(v_fillIndex){//if non-zero (index zero is always fully transparent)
-				//convert the palette index to RGBA in the canvas
-				v_dataB.data[v_rgbaI    ] = v_fillPalColor.r24;
-				v_dataB.data[v_rgbaI + 1] = v_fillPalColor.g24;
-				v_dataB.data[v_rgbaI + 2] = v_fillPalColor.b24;
-				if(v_drawStainedGlass){//v_drawOnion &&   previously was only allowing gem view with onion/ghosting on
-					v_dataB.data[v_rgbaI + 3] = Math.round(v_fillPalColor.a24 * 0.25);
+			var v_fillIndex;
+			var v_fillPalColor;
+			var v_fillDrawnAlpha;//May vary by if stained glass is on.
+			if(zDrawFill){
+				v_fillIndex = chanFI[v_copyI];
+				v_fillPalColor = this.curPalette.colors[v_fillIndex];
+				if(v_fillIndex){//if non-zero (index zero is always fully transparent)
+					//convert the palette index to RGBA in the canvas
+					v_dataB.data[v_rgbaI    ] = v_fillPalColor.r24;
+					v_dataB.data[v_rgbaI + 1] = v_fillPalColor.g24;
+					v_dataB.data[v_rgbaI + 2] = v_fillPalColor.b24;
+					if(v_drawStainedGlass){//v_drawOnion &&   previously was only allowing gem view with onion/ghosting on
+						v_fillDrawnAlpha = Math.round(v_fillPalColor.a24 * 0.25);
+					}else{
+						v_fillDrawnAlpha = v_fillPalColor.a24;
+					}
+					v_dataB.data[v_rgbaI + 3] = v_fillDrawnAlpha;
 				}else{
-					v_dataB.data[v_rgbaI + 3] = v_fillPalColor.a24;
+					v_fillDrawnAlpha = 0;//Nothing was drawn, so make sure this is zero.
 				}
+			}else{
+				//If fill is not being drawn on this z-index, the color behind is default transparent [0].
+				v_fillIndex = 0;
+				v_fillPalColor = this.curPalette.colors[0];
+				v_fillDrawnAlpha = 0;
 			}
 			
 			var v_wireIndex = chanWI[v_copyI];
 			var v_wireAlpha = chanWA[v_copyI];
+			var v_wirePalColor = this.curPalette.colors[v_wireIndex];
+			var zDrawWire4Pix = zDrawWire;
+			if(zSplitMode != 0 && !v_wirePalColor.zw){
+				zDrawWire4Pix = !zDrawWire4Pix;
+			}
 			//console.log('LCI ' + v_wireIndex);
-			if(v_wireIndex){//if non-zero (index zero is always fully transparent)
+			if(zDrawWire4Pix && v_wireIndex){//if non-zero (index zero is always fully transparent)
 				//It seems non-rounded float region coordinates were causing undefined errors?
 				/*try{
 					console.log(v_fillPalColor.a24);
 				}catch(er){
 					console.log(er + ' i: ' + v_fillIndex + ' at ' + w + ', ' + h)
 				}*/
-				var v_wirePalColor = this.curPalette.colors[v_wireIndex];
-				var v_pixelCurAlpha = v_fillPalColor.a24;//The alpha after fill is drawn.
+				var v_pixelCurAlpha = v_fillDrawnAlpha;//The alpha after fill is drawn.
 				//convert the palette index to RGBA in the canvas
 				var v_wirePalAlphaOver = v_wireAlpha;//can stay the same if alpha is 255 in wire palette.
 				if(v_wirePalColor.a24 < 255){
@@ -1148,9 +1207,7 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 		}//================================================================================================
 		
 		if(v_bmpObj == this.curImage && this.canvasPreviewBitmap){//if the preview was configured
-			//If this is the current layer, use it to make a thumbnail of current layer being edited.
-			v_miniCX = this.canvasPreviewBitmap.getContext('2d');
-			v_miniCX.clearRect(rdX1 * v_miniScale, rdY1 * v_miniScale, rdW * v_miniScale, rdH * v_miniScale);
+			//If this is the current image, use it to make a thumbnail of current image being edited.
 			//TODO: make this only copy the updated region to reduce lag.
 			v_miniCX.drawImage(this.cvB, rdX1, rdY1, rdW, rdH, rdX1 * v_miniScale, rdY1 * v_miniScale, rdW * v_miniScale, rdH * v_miniScale);
 			//also draw the preview for things being drawn in real time.
@@ -1303,13 +1360,25 @@ GraFlicImage.prototype.bucketFillUnbound = function(v_x, v_y){//alert('fillcall'
 		np.r = 0;//Alpha Repeat
 		nextPix = [np];
 		v_colorToUse = this.curDrawMode ? this.a.j.save.selected_color_index : 0;//color to fill with
-		if(this.curTool == 2){//fill bucket
+		if(this.curTool == GraFlicImage.TOOL_FLOOD_FILL){//fill bucket
 			v_color2Replace = this.bucketFI[v_pixI];
-		}else if(this.curTool == 3){//wire bucket
+		}else if(this.curTool == GraFlicImage.TOOL_FLOOD_WIRE){//wire bucket
 			v_color2Replace = this.bucketWI[v_pixI];
-			if(v_color2Replace == 0){
-				return;//Any wire pixel set to [0] transparent is ERASED, and this should exit. Most likely the user click missed the line.
+			if(v_color2Replace == 0 && !this.curDrawMode){
+				return;//Any wire pixel set to [0] transparent is ERASED already, and this should exit. Most likely the user click missed the wire.
+				//However in some cases, the user may want to wire-channel fill in between wires to make a thick stylized wire.
 			}
+		}else if(this.curTool == GraFlicImage.TOOL_FLOOD_SWAP){//swap bucket
+			v_color2Replace = this.bucketFI[v_pixI];
+			v_colorToUse = -1;//color to use does not apply to swap, -1 so it does not exit.
+			if(v_color2Replace == 0){
+				return;//Must have a color in the fill that is being converted to line.
+			}
+			/*if(this.bucketWI[v_pixI]){
+				//Wire is visually on top of fill so it will get hit if both channels
+			}else{
+				
+			}*/
 		}
 		if(v_color2Replace == v_colorToUse){//Trying to color the same color as itself, makes no sense, and will crash.
 			return;
@@ -1336,17 +1405,17 @@ GraFlicImage.prototype.bucketFillUnbound = function(v_x, v_y){//alert('fillcall'
 	//this.antiBucketOverload++;
 	v_pixI = (v_maxX * v_y + v_x);
 		//OLD: * 4;//get the corresponding pixel in RGBA array.
-	if(this.curTool == 2){//====================== FILL Bucket ==================
+	if(this.curTool == GraFlicImage.TOOL_FLOOD_FILL){//====================== FILL Bucket ==================
 	//ANYTHING under 255 should be filled under. Otherwise it leaves ugly transparent holes
 	//that can mess up the Animated PNG compression with unneeded frame region update due to changing trans pixels
 	//The wire alpha being zero, and the index being non-zero(anything other than reserved [0] fully transparent)
 	//will be considered opaque for the purpose of containing fills within wires. This triggers special handling for wires intersecting off different colors to correct their blending and appearance. That case should be blocked from considered transparent with && !(...)
-	if(this.bucketWA[v_pixI] < alphaMax * 0.85){
+	if(this.bucketWA[v_pixI] < alphaMax){// * 0.85){//<--this threshold adjusting does not seem to be effective. Dropping this and adding diagonal recursions seems to have made reliable fills for tight corners. The alpha repeat counter may or may not be helping and could possilbly be removed...
 		exitPix = true;//If the alpha goes down from what has been encountered before, the center of the line has been reached and it should not bleed past the edge.
 	}
 	if(this.bucketWA[v_pixI] <= alphaMax){
 		alphaRep++;//AlphaRep will count anything at or below alpha max. Being only slightly below alphaMax does not exit because there are situations where tight corners need to be filled and a strict cutoff would stop too soon.
-		if(alphaRep >= 16 && alphaMax){
+		if(alphaRep >= 16 && alphaMax){// && this.bucketWA[v_pixI] >= 192){
 			//It may have hit a place where two ends of the line are loosely connected with alpha transparent pixels. Do not let it wrap all around the line on the outside.
 			//However, DO NOT, exit if the alphaMax is still 0 and no wires have been encountered. 
 			exitPix = true;
@@ -1355,7 +1424,7 @@ GraFlicImage.prototype.bucketFillUnbound = function(v_x, v_y){//alert('fillcall'
 		alphaRep = 1;
 	}
 	var nObj;//Used for nextPixels		
-	alphaMax = this.bucketWA[v_pixI];
+	alphaMax = Math.max(alphaMax, this.bucketWA[v_pixI]);
 	if(!exitPix && (this.bucketWA[v_pixI] < 255 && !(!this.bucketWA[v_pixI] && this.bucketWI[v_pixI]) )
 	 && this.bucketFI[v_pixI] == v_color2Replace
 		){
@@ -1367,6 +1436,54 @@ GraFlicImage.prototype.bucketFillUnbound = function(v_x, v_y){//alert('fillcall'
 			nextPix.push({"x":(v_x - 1), "y":v_y, "m":alphaMax, "r":alphaRep});
 			nextPix.push({"x":v_x, "y":(v_y + 1), "m":alphaMax, "r":alphaRep});
 			nextPix.push({"x":v_x, "y":(v_y - 1), "m":alphaMax, "r":alphaRep});
+			//Diagonals:
+			nextPix.push({"x":(v_x + 1), "y":(v_y + 1), "m":alphaMax, "r":alphaRep});
+			nextPix.push({"x":(v_x - 1), "y":(v_y - 1), "m":alphaMax, "r":alphaRep});
+			nextPix.push({"x":(v_x - 1), "y":(v_y + 1), "m":alphaMax, "r":alphaRep});
+			nextPix.push({"x":(v_x + 1), "y":(v_y - 1), "m":alphaMax, "r":alphaRep});
+			
+			//Extended reach not currently seeming to be beneficial...
+			//Extended reach:
+			/*
+			nextPix.push({"x":(v_x + 2), "y":v_y, "m":alphaMax, "r":alphaRep});
+			nextPix.push({"x":(v_x - 2), "y":v_y, "m":alphaMax, "r":alphaRep});
+			nextPix.push({"x":v_x, "y":(v_y + 2), "m":alphaMax, "r":alphaRep});
+			nextPix.push({"x":v_x, "y":(v_y - 2), "m":alphaMax, "r":alphaRep});
+			*/
+			/*
+			//Extended reach Diagonals:
+			nextPix.push({"x":(v_x + 2), "y":(v_y + 2), "m":alphaMax, "r":alphaRep});
+			nextPix.push({"x":(v_x - 2), "y":(v_y - 2), "m":alphaMax, "r":alphaRep});
+			nextPix.push({"x":(v_x - 2), "y":(v_y + 2), "m":alphaMax, "r":alphaRep});
+			nextPix.push({"x":(v_x + 2), "y":(v_y - 2), "m":alphaMax, "r":alphaRep});
+			*/
+			/*
+			//Extended reach Diagonals, revised style:
+			nextPix.push({"x":(v_x + 2), "y":(v_y + 1), "m":alphaMax, "r":alphaRep});
+			nextPix.push({"x":(v_x - 2), "y":(v_y - 1), "m":alphaMax, "r":alphaRep});
+			nextPix.push({"x":(v_x - 2), "y":(v_y + 1), "m":alphaMax, "r":alphaRep});
+			nextPix.push({"x":(v_x + 2), "y":(v_y - 1), "m":alphaMax, "r":alphaRep});
+			nextPix.push({"x":(v_x + 1), "y":(v_y + 2), "m":alphaMax, "r":alphaRep});
+			nextPix.push({"x":(v_x - 1), "y":(v_y - 2), "m":alphaMax, "r":alphaRep});
+			nextPix.push({"x":(v_x - 1), "y":(v_y + 2), "m":alphaMax, "r":alphaRep});
+			nextPix.push({"x":(v_x + 1), "y":(v_y - 2), "m":alphaMax, "r":alphaRep});*/
+/*
+* = current pixel
+o = contiguous check
+O = contiguous check extended reach
+x = diagonal check
+X = diagonal check extended reach
+Z = diagonal check extended reach, revised style
+X|Z|O|Z|X
+-+-+-+-+-
+Z|x|o|x|Z
+-+-+-+-+-
+O|o|*|o|O
+-+-+-+-+-
+Z|x|o|x|Z
+-+-+-+-+-
+X|Z|O|Z|X
+*/
 			//Do diagonal corners. Some tight spots around sharp points are having trouble getting filled.
 			//Diagonals could cause leaks with 1x1 lines, but since things are anti-aliased, that should not happen unless the line is extremely thin in which case it is probably just a textural thing, not a boundary for containing fills.
 			//Diagonals are not helping it seems...
@@ -1376,23 +1493,76 @@ GraFlicImage.prototype.bucketFillUnbound = function(v_x, v_y){//alert('fillcall'
 			this.fillRecur(v_x + 1, v_y - 1, v_maxX, v_maxY, v_colorToUse, v_color2Replace, alphaMax, alphaRep);*/
 		}
 	}
-	}else if(this.curTool == 3){//====================== WIRE Bucket ===================
-		if(this.bucketWI[v_pixI] == v_color2Replace){
+	}else if(this.curTool == GraFlicImage.TOOL_FLOOD_WIRE){//====================== WIRE Bucket ===================
+		if(v_color2Replace){
+			if(this.bucketWI[v_pixI] == v_color2Replace){
 				// && this.a.f[this.curImage.chan_a].d[v_pixI]){
 				//deleted wire pixels should always be set to reserved transparent [0]
 				//that way wires in wire intersect correction mode can be processed here (0 alpha, index non-zero)
 				//Filling a wire with reserved [0] transparent will totally erase it.
 				//If wanting to fill with transparent wire that can be recolored/replaced, make an extra palette entry with 0 alpha.
-			if(this.curDrawMode){
-				this.bucketWI[v_pixI] = v_colorToUse;
-			}else{
-				this.bucketWI[v_pixI] = 0;
-				this.bucketWA[v_pixI] = 0;
+				if(this.curDrawMode){
+					this.bucketWI[v_pixI] = v_colorToUse;
+				}else{
+					this.bucketWI[v_pixI] = 0;
+					this.bucketWA[v_pixI] = 0;
+				}
+				//This style of simply changing the color index of contiguous wire fill pixels
+				//does not seem to struggle completing thoroughly and probably does not need diagonals.
+				nextPix.push({"x":(v_x + 1), "y":v_y, "m":alphaMax, "r":alphaRep});
+				nextPix.push({"x":(v_x - 1), "y":v_y, "m":alphaMax, "r":alphaRep});
+				nextPix.push({"x":v_x, "y":(v_y + 1), "m":alphaMax, "r":alphaRep});
+				nextPix.push({"x":v_x, "y":(v_y - 1), "m":alphaMax, "r":alphaRep});
 			}
+		}else{//End replacing non-transparent
+			//Wire can fill in fully transparent areas with wire channel fill if both wire and fill are transparent where the flood is clicked.
+			if(this.bucketFI[v_pixI] == v_color2Replace){
+					//Currently will always be replacing [0] in this mode.
+
+				//see alpha max/rep comments in fill flood section, this is modeled after that.
+				if(this.bucketWA[v_pixI] == 255 || this.bucketWA[v_pixI] < alphaMax){
+					//obviously exit if wire is fully opaque already.
+					exitPix = true;
+				}
+				if(alphaMax && this.bucketWA[v_pixI] <= alphaMax){
+					//For wire fill over fully transparent sections it can do unlimited repeats as long as wire alpha stays at 0, so do not increment alphaRep in that case.
+					alphaRep++;
+					if(alphaRep >= 16 && alphaMax){
+						exitPix = true;
+					}
+				}else{
+					alphaRep = 1;
+				}
+				alphaMax = Math.max(alphaMax, this.bucketWA[v_pixI]);
+				if(!exitPix){
+					this.bucketWI[v_pixI] = v_colorToUse;
+					this.bucketWA[v_pixI] = 255;
+					nextPix.push({"x":(v_x + 1), "y":v_y, "m":alphaMax, "r":alphaRep});
+					nextPix.push({"x":(v_x - 1), "y":v_y, "m":alphaMax, "r":alphaRep});
+					nextPix.push({"x":v_x, "y":(v_y + 1), "m":alphaMax, "r":alphaRep});
+					nextPix.push({"x":v_x, "y":(v_y - 1), "m":alphaMax, "r":alphaRep});
+					//Diagonals:
+					nextPix.push({"x":(v_x + 1), "y":(v_y + 1), "m":alphaMax, "r":alphaRep});
+					nextPix.push({"x":(v_x - 1), "y":(v_y - 1), "m":alphaMax, "r":alphaRep});
+					nextPix.push({"x":(v_x - 1), "y":(v_y + 1), "m":alphaMax, "r":alphaRep});
+					nextPix.push({"x":(v_x + 1), "y":(v_y - 1), "m":alphaMax, "r":alphaRep});
+				}
+			}
+		}//End replacing transparent [0]
+	}else if(this.curTool == GraFlicImage.TOOL_FLOOD_SWAP){//====================== SWAP Bucket ===================
+		if(this.bucketFI[v_pixI] == v_color2Replace){
+			this.bucketWA[v_pixI] = 255;
+			this.bucketWI[v_pixI] = v_color2Replace;
+			this.bucketFI[v_pixI] = 0;
 			nextPix.push({"x":(v_x + 1), "y":v_y, "m":alphaMax, "r":alphaRep});
 			nextPix.push({"x":(v_x - 1), "y":v_y, "m":alphaMax, "r":alphaRep});
 			nextPix.push({"x":v_x, "y":(v_y + 1), "m":alphaMax, "r":alphaRep});
 			nextPix.push({"x":v_x, "y":(v_y - 1), "m":alphaMax, "r":alphaRep});
+			//Diagonals:
+			nextPix.push({"x":(v_x + 1), "y":(v_y + 1), "m":alphaMax, "r":alphaRep});
+			nextPix.push({"x":(v_x - 1), "y":(v_y - 1), "m":alphaMax, "r":alphaRep});
+			nextPix.push({"x":(v_x - 1), "y":(v_y + 1), "m":alphaMax, "r":alphaRep});
+			nextPix.push({"x":(v_x + 1), "y":(v_y - 1), "m":alphaMax, "r":alphaRep});
 		}
 	}//==========================================================================
 	}//end if in bitmap bounds
@@ -1617,7 +1787,7 @@ GraFlicImage.prototype.mMove = function(v_evt){
 			//-1 to avoid out of bounds error
 			this.requestRedraw(this.minRegionX, this.minRegionY, this.maxRegionX, this.maxRegionY);
 		}
-		if(this.curTool == 300 && this.isDragging){
+		if(this.curTool == GraFlicImage.TOOL_CUT_LASSO && this.isDragging){
 			this.cutX = Math.round(this.wasX + v_x - this.dragStartX);
 			this.cutY = Math.round(this.wasY + v_y - this.dragStartY);
 			//console.log(this.cutX + ', ' + this.cutY)
@@ -1640,7 +1810,8 @@ GraFlicImage.prototype.mUp = function(v_evt){
 				this.requestRedraw(this.minRegionX, this.minRegionY, this.maxRegionX, this.maxRegionY);
 			}
 		}//end pen
-		if(this.curTool == GraFlicImage.TOOL_FLOOD_FILL || this.curTool == GraFlicImage.TOOL_FLOOD_WIRE){//bucket
+		if(this.curTool >= 200 && this.curTool < 300){//bucket
+			//flood tool range reserved from 200-299
 			this.bucketFill(v_x, v_y);
 		}
 	}//end bitmap

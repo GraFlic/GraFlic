@@ -44,20 +44,26 @@ SOFTWARE.
 <tr>
 <td colspan="2">
 <div style="display:inline-block;width:75vw;height:75vh;overflow:scroll;">
-<!--It is important to have the style border, since part of the canvas in DOM it keeps the events handled when drawing over the edge of the image.-->
+<!--It is important to have the style border, since part of the canvas is in DOM it keeps the events handled when drawing over the edge of the image.-->
 <!--Currently, padding seems to throw off the coords on Firefox, border throws it off on Safari.-->
 <canvas id="GraFlicC_main_canvas" style="border: 0px solid rgba(0, 0, 0, 0.25);box-shadow: 5px 5px 5px #AFAFAF, 7px 7px 7px #FFFFFF;">
 </canvas>
 </div>
 
-<div style="display:inline-block;overflow:hidden;width:15vw;height:50vh;">
-<div style="height:20%;" class="GraFlic_j">
+<div style="display:inline-block;overflow:hidden;width:15vw;height:75vh;">
+<div style="height:10%;" class="GraFlic_j">
 <a href="de.html">🇩🇪</a><a href="jp.html">🇯🇵</a><a href="en.html">🇺🇸</a>⋯
 </div>
-<div style="height:40%;overflow:hidden;">
+<div style="height:45%;overflow:hidden;">
+<div style="position:absolute;z-index:9;opacity:0.67;" class="GraFlic_j">
+📝🖼
+</div>
 <canvas id="GraFlicC_mini_editing_canvas" width="200" height="400" style="width:100%;"></canvas>
 </div>
-<div style="height:40%;overflow:hidden;">
+<div style="height:45%;overflow:hidden;">
+<div style="position:absolute;z-index:9;opacity:0.67;" class="GraFlic_j">
+👁🎞
+</div>
 <canvas id="GraFlicC_mini_canvas" width="200" height="400" style="width:100%;"></canvas>
 </div>
 </div><!--end holder-->
@@ -95,10 +101,12 @@ Visit <a href="http://AnimatedPNGs.com" target="_blank">AnimatedPNGs.com</a> for
 <label for="GraFlicC_tool_pen_rad" class="GraFlic_j">🖊</label>
 &nbsp;<input type="radio" name="GraFlicC_tool_rad" value="101" id="GraFlicC_tool_brush_rad"/>
 <label for="GraFlicC_tool_brush_rad" class="GraFlic_j">🖋</label>
-&nbsp;<input type="radio" name="GraFlicC_tool_rad" value="2" id="GraFlicC_tool_fill_bucket_rad"/>
-<label for="GraFlicC_tool_fill_bucket_rad" class="GraFlic_j">🕳🌊</label>
-&nbsp;<input type="radio" name="GraFlicC_tool_rad" value="3" id="GraFlicC_tool_wire_bucket_rad"/>
-<label for="GraFlicC_tool_wire_bucket_rad" class="GraFlic_j">⌇🌊</label>
+&nbsp;<input type="radio" name="GraFlicC_tool_rad" value="200" id="GraFlicC_tool_fill_bucket_rad"/>
+<label for="GraFlicC_tool_fill_bucket_rad" class="GraFlic_j">🌊</label>
+&nbsp;<input type="radio" name="GraFlicC_tool_rad" value="201" id="GraFlicC_tool_wire_bucket_rad"/>
+<label for="GraFlicC_tool_wire_bucket_rad" class="GraFlic_j">⌇&#xFEFF;🌊</label>
+&nbsp;<input type="radio" name="GraFlicC_tool_rad" value="202" id="GraFlicC_tool_swap_bucket_rad"/>
+<label for="GraFlicC_tool_swap_bucket_rad" class="GraFlic_j">🔃&#xFEFF;🌊</label>
 &nbsp;<input type="radio" name="GraFlicC_tool_rad" value="300" id="GraFlicC_tool_lasso_rad"/>
 <label for="GraFlicC_tool_lasso_rad" class="GraFlic_j">✂️</label>
 &nbsp;<button id="GraFlicC_plug_wires_btn" title="Plu[g] Wires">🔌</button>
@@ -123,6 +131,7 @@ x
 <button id="GraFlicC_new_bitmap_btn">➕🖼</button>
 <input type="text" id="GraFlicC_bitmap_title_txt" value="🖼" style="width:16em;"/>
 &nbsp;<input type="text" id="GraFlicC_bitmap_z_index_txt" value="0" style="width:5em;"/><span class="GraFlic_j">🕴</span>
+&nbsp;<input type="text" id="GraFlicC_bitmap_z_index_w_txt" value="" style="width:5em;" placeholder="--"/><span class="GraFlic_j">⌇&#xFEFF;🕴</span>
 </td>
 <td rowspan="2">
 <select id="GraFlicC_plays_on_frames_sel" multiple>
@@ -148,7 +157,8 @@ x
 <a id="GraFlicC_download_image_link" target="_blank" href="#"></a>
 <br/>
 <button id="GraFlicC_save_work_btn" class="GraFlic_j">💾🗂</button>
-<input type="file" id="GraFlicC_load_work_btn" accept=".graflic,.zip,image/graflic,application/zip"/>
+<input type="file" id="GraFlicC_load_work_btn" accept=".graflic,.zip"/>
+<!-- ,image/graflic,application/zip NOTE: some browsers will not allow file selects for custom extensions if extensions AND mime types are listed. It treats it as needing to match extension AND mime apparently. Since custom types are not going to have a mime-type defined on user devices it will leave those unelectable. -->
 <a id="GraFlicC_download_work_link" target="_blank" href="#"></a>
 </td>
 <td rowspan="2" style="text-align:center;vertical-align:middle;">
@@ -257,6 +267,13 @@ x
 </td>
 <td>
 <input type="text" id="GraFlicC_palette_lum_txt" value="0" style="width:7em;"/>
+</td>
+</tr>
+
+<tr>
+<td colspan="3">
+<input type="checkbox" id="GraFlicC_palette_zw_chk"/>
+<label for="GraFlicC_palette_zw_chk" class="GraFlic_j">⌇&#xFEFF;🕴</label>
 </td>
 </tr>
 
@@ -431,6 +448,7 @@ function f_paletteColorChange(v_evt){
 	GraFlicC_palette_sat_txt.disabled = v_palLocked;
 	GraFlicC_palette_lum_txt.disabled = v_palLocked;
 	GraFlicC_palette_color_title_txt.disabled = v_palLocked;
+	GraFlicC_palette_zw_chk.disabled = v_palLocked;
 	f_rebuildPaletteEditorUI();
 	f_rebuildPaletteSelectUI();
 }
@@ -487,6 +505,15 @@ function f_palFloatValid(v_chanVal){
 	//See if this is valid input for adjusting the color. If not the calling function can exit and leave it as is.
 	return !isNaN(v_chanVal) && v_chanVal >= 0 && v_chanVal <= 1;
 }
+function f_paletteToggleZW(evt){
+	//Configure the color to be on the wire z-index if the Zs are split.
+	if(evt.target.checked){
+		v_curGraFlic.curPaletteColor.zw = true;
+	}else if(v_curGraFlic.curPaletteColor.zw){
+		delete v_curGraFlic.curPaletteColor.zw;
+	}
+	f_requestRedraw();
+}
 function f_rebuildEmbedListUI(){
 	while(GraFlicC_embed_sel.firstChild){GraFlicC_embed_sel.removeChild(GraFlicC_embed_sel.firstChild);}
 	var eFiles = v_curGraFlic.a.listDir('e/');
@@ -513,6 +540,22 @@ function f_bitmapEditZIndex(v_evt){
 	v_zCheck = parseFloat(v_zCheck);
 	if(isNaN(v_zCheck)){return;}
 	v_curGraFlic.curImage.z_index = v_zCheck;
+	f_requestRedraw();//z-index may change what is drawn on top of what.
+}
+function f_bitmapEditZWIndex(v_evt){//Z index Wire
+	//z_index_w is an optional property that is usually undefined. If it is defined the wire portion of the WAIFU should be drawn on a separate z-index than the fill. The wire would usually be set to be above the fill to show over things that cover the fill portion. If the fill is above, jagged edges without anti-aliasing could show. This does not apply to non-WAIFU images such as RGB channel bitmaps or embeds.
+	var v_zCheck = GraFlicC_bitmap_z_index_w_txt.value;
+	if(!v_zCheck.length){//If deleted into an empty string, remove the property if there and exit.
+		if(v_curGraFlic.curImage.z_index_w !== undefined){//Note that 0 is a valid value for this and would evaluate == false.
+			delete v_curGraFlic.curImage.z_index_w;
+		}
+		f_requestRedraw();
+		return;
+	}
+	if(v_zCheck.match(/\.$/)){v_zCheck += '0';}//If partially typed, but the number after the decimal point not put yet.
+	v_zCheck = parseFloat(v_zCheck);
+	if(isNaN(v_zCheck)){return;}
+	v_curGraFlic.curImage.z_index_w = v_zCheck;
 	f_requestRedraw();//z-index may change what is drawn on top of what.
 }
 function f_togglePlayPause(v_evt){
@@ -563,6 +606,7 @@ function f_rebuildPaletteEditorUI(){
 	GraFlicC_palette_lum_txt.value = v_curGraFlic.curPaletteColor.l.toString();
 	GraFlicC_palette_color_preview.style.backgroundColor = GraFlicImage.getPaletteCSSRGBA(v_curGraFlic.curPaletteColor);
 	GraFlicC_palette_color_title_txt.value = v_curGraFlic.curPaletteColor.title;
+	GraFlicC_palette_zw_chk.checked = v_curGraFlic.curPaletteColor.zw;
 	f_rebuildPaletteSelectUI();//update this when the editor edits a palette color, DO NOT updated editor after switching colors from those already built, or it will loop.
 }
 
@@ -588,6 +632,8 @@ function f_rebuildBitmapAndFrameUI(){
 	}
 	GraFlicC_bitmap_title_txt.value = v_curGraFlic.curImage.title;
 	GraFlicC_bitmap_z_index_txt.value = v_curGraFlic.curImage.z_index.toString();
+	GraFlicC_bitmap_z_index_w_txt.value = v_curGraFlic.curImage.z_index_w === undefined ?
+						'' : v_curGraFlic.curImage.z_index_w.toString();
 	GraFlicC_frame_title_txt.value = v_curGraFlic.curFrame.title;
 	while(v_imageSel.firstChild){v_imageSel.removeChild(v_imageSel.firstChild);}
 	while(v_frameSel.firstChild){v_frameSel.removeChild(v_frameSel.firstChild);}
@@ -963,6 +1009,7 @@ function f_init(){
 	GraFlicC_tool_brush_rad.addEventListener('change', f_toolSelect);
 	GraFlicC_tool_fill_bucket_rad.addEventListener('change', f_toolSelect);
 	GraFlicC_tool_wire_bucket_rad.addEventListener('change', f_toolSelect);
+	GraFlicC_tool_swap_bucket_rad.addEventListener('change', f_toolSelect);
 	GraFlicC_tool_lasso_rad.addEventListener('change', f_toolSelect);
 	GraFlicC_tool_erase_chk.addEventListener('change', f_toolEraseSelect);
 	GraFlicC_plug_wires_btn.addEventListener('click', f_plugWires);
@@ -974,6 +1021,7 @@ function f_init(){
 	GraFlicC_new_frame_btn.addEventListener('click', f_frameNew);
 	GraFlicC_bitmap_title_txt.addEventListener('input', f_bitmapChangeTitle);
 	GraFlicC_bitmap_z_index_txt.addEventListener('input', f_bitmapEditZIndex);
+	GraFlicC_bitmap_z_index_w_txt.addEventListener('input', f_bitmapEditZWIndex);
 	GraFlicC_frame_title_txt.addEventListener('input', f_frameChangeTitle);
 	GraFlicC_frame_ms_txt.addEventListener('input', f_frameEditMS);
 	GraFlicC_frame_global_ms_txt.addEventListener('input', f_frameEditGlobalMS);
@@ -1000,6 +1048,7 @@ function f_init(){
 	GraFlicC_palette_color_title_txt.addEventListener('input', f_paletteChangeTitle);
 	GraFlicC_palette_revert_btn.addEventListener('click', f_revertPaletteEdit);
 	GraFlicC_palette_new_color_btn.addEventListener('click', f_newPaletteColor);
+	GraFlicC_palette_zw_chk.addEventListener('change', f_paletteToggleZW);
 	
 	GraFlicC_metadata_sel.addEventListener('input', f_metadataRefreshUI);
 	GraFlicC_metadata_txt.addEventListener('input', f_metadataInput);
