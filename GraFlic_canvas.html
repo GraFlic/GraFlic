@@ -52,11 +52,11 @@ SOFTWARE.
 
 <div style="display:inline-block;overflow:hidden;width:15vw;height:75vh;">
 <div style="height:10%;" class="GraFlic_j">
-<a href="de.html">🇩🇪</a><a href="jp.html">🇯🇵</a><a href="en.html">🇺🇸</a>⋯
+<a href="de">🇩🇪</a><a href="jp">🇯🇵</a><a href="en">🇺🇸</a>⋯
 </div>
 <div style="height:45%;overflow:hidden;">
 <div style="position:absolute;z-index:9;opacity:0.67;" class="GraFlic_j">
-📝🖼
+<span id="GraFlicC_current_tool_icon">🖊</span>🖼
 </div>
 <canvas id="GraFlicC_mini_editing_canvas" width="200" height="400" style="width:100%;"></canvas>
 </div>
@@ -81,7 +81,7 @@ Visit <a href="http://AnimatedPNGs.com" target="_blank">AnimatedPNGs.com</a> for
 <td>
 <input type="checkbox" id="GraFlicC_onion_skin_chk"/>
 <label for="GraFlicC_onion_skin_chk" class="GraFlic_j">🍃</label>
-<input type="checkbox" id="GraFlicC_onion_skin_stain_glass_chk"/>
+┆<input type="checkbox" id="GraFlicC_onion_skin_stain_glass_chk"/>
 <label for="GraFlicC_onion_skin_stain_glass_chk" class="GraFlic_j">💎</label>
 <input type="range" id="GraFlicC_zoom_rng" value="50" min="20" max="500" step="5" style="float:right;width:60%;"/>
 </td>
@@ -91,30 +91,31 @@ Visit <a href="http://AnimatedPNGs.com" target="_blank">AnimatedPNGs.com</a> for
 </tr>
 
 <tr>
-<td>
+<td colspan="2">
 <span id="GraFlicC_palette_color_clr" style="font-family:'Courier New',courier,monospace;background-color:black;border:2px solid #7F7F7F;padding:2px;" class="GraFlic_j">🎨</span>
 <select id="palette_color_sel">
 </select>
-&nbsp;<input type="checkbox" id="GraFlicC_tool_erase_chk"/>
+<input type="checkbox" id="GraFlicC_tool_erase_chk"/>
 <label for="GraFlicC_tool_erase_chk" class="GraFlic_j">❌</label>
-&nbsp;<input type="radio" name="GraFlicC_tool_rad" value="1" id="GraFlicC_tool_pen_rad" checked/>
+┆<input type="radio" name="GraFlicC_tool_rad" value="1" id="GraFlicC_tool_pen_rad" checked/>
 <label for="GraFlicC_tool_pen_rad" class="GraFlic_j">🖊</label>
-&nbsp;<input type="radio" name="GraFlicC_tool_rad" value="101" id="GraFlicC_tool_brush_rad"/>
+┆<input type="radio" name="GraFlicC_tool_rad" value="101" id="GraFlicC_tool_brush_rad"/>
 <label for="GraFlicC_tool_brush_rad" class="GraFlic_j">🖋</label>
-&nbsp;<input type="radio" name="GraFlicC_tool_rad" value="200" id="GraFlicC_tool_fill_bucket_rad"/>
+┆<input type="radio" name="GraFlicC_tool_rad" value="200" id="GraFlicC_tool_fill_bucket_rad"/>
 <label for="GraFlicC_tool_fill_bucket_rad" class="GraFlic_j">🌊</label>
-&nbsp;<input type="radio" name="GraFlicC_tool_rad" value="201" id="GraFlicC_tool_wire_bucket_rad"/>
+┆<input type="radio" name="GraFlicC_tool_rad" value="201" id="GraFlicC_tool_wire_bucket_rad"/>
 <label for="GraFlicC_tool_wire_bucket_rad" class="GraFlic_j">⌇&#xFEFF;🌊</label>
-&nbsp;<input type="radio" name="GraFlicC_tool_rad" value="202" id="GraFlicC_tool_swap_bucket_rad"/>
+┆<input type="radio" name="GraFlicC_tool_rad" value="202" id="GraFlicC_tool_swap_bucket_rad"/>
 <label for="GraFlicC_tool_swap_bucket_rad" class="GraFlic_j">🔃&#xFEFF;🌊</label>
-&nbsp;<input type="radio" name="GraFlicC_tool_rad" value="300" id="GraFlicC_tool_lasso_rad"/>
+┆<input type="radio" name="GraFlicC_tool_rad" value="300" id="GraFlicC_tool_lasso_rad"/>
 <label for="GraFlicC_tool_lasso_rad" class="GraFlic_j">✂️</label>
-&nbsp;<button id="GraFlicC_plug_wires_btn" title="Plu[g] Wires">🔌</button>
+┆<input type="radio" name="GraFlicC_tool_rad" value="400" id="GraFlicC_tool_crop_rad"/>
+<label for="GraFlicC_tool_crop_rad" class="GraFlic_j">🔪</label>
+┆<input type="radio" name="GraFlicC_tool_rad" value="401" id="GraFlicC_tool_move_rad"/>
+<label for="GraFlicC_tool_move_rad" class="GraFlic_j">📌</label>
+<!--button id="GraFlicC_plug_wires_btn" title="Plu[g] Wires">🔌</button-->
 </td>
 
-<td>
-x
-</td>
 </tr>
 
 <tr>
@@ -132,6 +133,16 @@ x
 <input type="text" id="GraFlicC_bitmap_title_txt" value="🖼" style="width:16em;"/>
 &nbsp;<input type="text" id="GraFlicC_bitmap_z_index_txt" value="0" style="width:5em;"/><span class="GraFlic_j">🕴</span>
 &nbsp;<input type="text" id="GraFlicC_bitmap_z_index_w_txt" value="" style="width:5em;" placeholder="--"/><span class="GraFlic_j">⌇&#xFEFF;🕴</span>
+<span style="display:none;">
+<select id="GraFlicC_bitmap_blend_sel">
+<option value="normal" selected>🎨</option>
+<option value="lum">🌔</option>
+</select>🖥
+<input type="text" id="GraFlicC_bitmap_x_txt" value="" style="width:5em;" placeholder="x"/>
+<input type="text" id="GraFlicC_bitmap_y_txt" value="" style="width:5em;" placeholder="y"/>
+<input type="text" id="GraFlicC_bitmap_w_txt" value="" style="width:5em;" placeholder="↔"/>
+<input type="text" id="GraFlicC_bitmap_h_txt" value="" style="width:5em;" placeholder="↕"/>
+</span>
 </td>
 <td rowspan="2">
 <select id="GraFlicC_plays_on_frames_sel" multiple>
@@ -176,6 +187,8 @@ x
 ,
 <input type="text" id="GraFlicC_canvas_size_crop_y_txt" value="0" style="width:7em;"/>
 <button id="GraFlicC_canvas_size_btn">Change Canvas Size</button>
+<br/>
+<span class="GraFlic_x">Negative crop values will push the existing pixels rightwards, downwards.</span>
 </td>
 </tr>
 
@@ -297,7 +310,7 @@ x
 <tr>
 <td>
 <select id="GraFlicC_metadata_sel" style="vertical-align:top;">
-<option value="meta_Title">🖇1001📝Title🌐</option>
+<option value="meta_Title" selected>🖇1001📝Title🌐</option>
 <option value="meta_Author">🖇1003📝Author🌐</option>
 <option value="meta_Copyright">🖇1005📝Copyright🌐</option>
 <option value="meta_Description">🖇1002📝Description🌐</option>
@@ -369,8 +382,8 @@ function f_requestRedraw(){
 var v_paletteRevertCol;//A palette color object that is a saved copy of the color being edited. The color being edited is kept live so changes take effect immediately. However, this saves a copy of how it was before being edited, so that it can be reverted to if the change did not work out. In the future may edit a component, like part of a gradient.
 //If a non-flat color like a gradient is selected, this should be filled with a color component from the gradient. There should then be a selector to switch to a differtent component. That functionality could be added in the future. If it is, there may be other logic needed in the commit/revert color change code. A gradient would need to have a fixed start and end point and each instance would need to be on its own channel or color index. The flood fill code is very slow and not suited to calculating continuous areas and making the gradient effect in them. Another non-flat color index type to add in the future may be a texture.
 
-function f_changeCanvasSize(v_csW, v_csH, v_csCropMode, v_startX, v_startY){
-	v_curGraFlic.changeCanvasSize(v_csW, v_csH, v_csCropMode, v_startX, v_startY);
+function f_changeCanvasSize(v_csW, v_csH, v_startX, v_startY){
+	v_curGraFlic.changeCanvasSize(v_csW, v_csH, v_startX, v_startY);
 	//After the adjustments are made and the old size is not need for conversion, set it to what the size is now.
 	f_adjustCanvasUI();
 	f_requestRedraw();
@@ -533,6 +546,15 @@ function f_bitmapChangeTitle(v_evt){
 	v_curGraFlic.curImage.title = GraFlicC_bitmap_title_txt.value;
 	f_rebuildBitmapAndFrameUI();
 }
+function f_bitmapChangeBlend(v_evt){
+	var bType = GraFlicC_bitmap_blend_sel.value;
+	if(bType == 'normal'){//The property should only exist if NOT the default normal draw mode.
+		delete v_curGraFlic.curImage.blend;
+	}else{
+		v_curGraFlic.curImage.blend = bType;
+	}
+	f_requestRedraw();
+}
 function f_bitmapEditZIndex(v_evt){
 	//Let z-index be a float, enabling more spots to squeeze things between stuff if needed without having to adjust every other frame.
 	var v_zCheck = GraFlicC_bitmap_z_index_txt.value;
@@ -557,6 +579,19 @@ function f_bitmapEditZWIndex(v_evt){//Z index Wire
 	if(isNaN(v_zCheck)){return;}
 	v_curGraFlic.curImage.z_index_w = v_zCheck;
 	f_requestRedraw();//z-index may change what is drawn on top of what.
+}
+function f_bitmapEditBounds(v_evt){
+	var eProp = v_evt.target.id.match(/_([a-z])_txt$/)[1];//get name the _x_, _y_, etc...
+	var eValue = v_evt.target.value;
+	if(eValue.length){//not empty string
+		if(isNaN(eValue)){
+			return;
+		}
+		v_curGraFlic.curImage[eProp] = parseInt(eValue);
+	}else{
+		delete v_curGraFlic.curImage[eProp];
+	}
+	f_requestRedraw();
 }
 function f_togglePlayPause(v_evt){
 	v_curGraFlic.togglePlay();
@@ -634,6 +669,15 @@ function f_rebuildBitmapAndFrameUI(){
 	GraFlicC_bitmap_z_index_txt.value = v_curGraFlic.curImage.z_index.toString();
 	GraFlicC_bitmap_z_index_w_txt.value = v_curGraFlic.curImage.z_index_w === undefined ?
 						'' : v_curGraFlic.curImage.z_index_w.toString();
+	GraFlicC_bitmap_x_txt.value = v_curGraFlic.curImage.x === undefined ? '' : v_curGraFlic.curImage.x.toString();
+	GraFlicC_bitmap_y_txt.value = v_curGraFlic.curImage.y === undefined ? '' : v_curGraFlic.curImage.y.toString();
+	GraFlicC_bitmap_w_txt.value = v_curGraFlic.curImage.w === undefined ? '' : v_curGraFlic.curImage.w.toString();
+	GraFlicC_bitmap_h_txt.value = v_curGraFlic.curImage.h === undefined ? '' : v_curGraFlic.curImage.h.toString();
+	/*if(){
+	//TODO: need to update selected blend mode on bitmap select change.	
+	}else{
+		
+	}*/
 	GraFlicC_frame_title_txt.value = v_curGraFlic.curFrame.title;
 	while(v_imageSel.firstChild){v_imageSel.removeChild(v_imageSel.firstChild);}
 	while(v_frameSel.firstChild){v_frameSel.removeChild(v_frameSel.firstChild);}
@@ -755,7 +799,7 @@ function f_canvasSizeClick(v_evt){
 		console.log("Crop Y invalid.");
 		return;
 	}
-	f_changeCanvasSize( v_newW, v_newH, 0, v_cropX, v_cropY);
+	f_changeCanvasSize( v_newW, v_newH, v_cropX, v_cropY);
 	f_requestRedraw();
 }
 function f_toolSelect(v_evt){
@@ -765,13 +809,15 @@ function f_toolSelect(v_evt){
 		//Also if clicking the cut option again it may commit the cut move.
 		v_curGraFlic.commitCutMove();
 	}
+	//Show the icon for the current tool over the current image preview.
+	GraFlicC_current_tool_icon.innerHTML = document.body.querySelector('label[for=\''+v_evt.target.id+'\']').innerHTML;
 }
 function f_toolEraseSelect(v_evt){
 	v_curGraFlic.curDrawMode = v_evt.target.checked ? 0 : 1;//parseInt(v_evt.target.value);
 }
-function f_plugWires(v_evt){
-	v_curGraFlic.plugWires();
-}
+//function f_plugWires(v_evt){
+//	v_curGraFlic.plugWires();
+//}
 function f_metadataRefreshUI(v_evt){
 	//update the textarea to match what is in the selected metadata
 	//(Can be called with no parameter to just refresh whatever is selected.)
@@ -819,9 +865,9 @@ function f_kUp(v_evt){
 		case 57:
 			v_curGraFlic.a.j.save.selected_color_index = Math.min(v_evt.keyCode - 48, v_curGraFlic.curPalette.colors.length - 1);
 			break;
-		case 71://Plu(g) Wires
-			f_plugWires();
-			break;
+		//case 71://Plu(g) Wires
+		//	f_plugWires();
+		//	break;
 		case 80://(P)en
 			v_curGraFlic.curTool = 1;
 			v_curGraFlic.curToolState = 0;//inactive, not started drawing yet
@@ -849,13 +895,15 @@ function f_kUp(v_evt){
 			break;
 	}//end switch
 }
-function f_redo(){
-	v_curGraFlic.redo();
-	f_requestRedraw();
-}
 function f_undo(){
 	v_curGraFlic.undo();
 	f_requestRedraw();
+	f_zoomChange();//Zoom change must be done in case undoing/redoing canvas size change, otherwise display could be distorted.
+}
+function f_redo(){
+	v_curGraFlic.redo();
+	f_requestRedraw();
+	f_zoomChange();
 }
 function f_addToUndoStack(){
 	//Call this before committing a change to the current bitmap.
@@ -1012,7 +1060,10 @@ function f_init(){
 	GraFlicC_tool_swap_bucket_rad.addEventListener('change', f_toolSelect);
 	GraFlicC_tool_lasso_rad.addEventListener('change', f_toolSelect);
 	GraFlicC_tool_erase_chk.addEventListener('change', f_toolEraseSelect);
-	GraFlicC_plug_wires_btn.addEventListener('click', f_plugWires);
+	//GraFlicC_plug_wires_btn.addEventListener('click', f_plugWires);
+	
+	GraFlicC_tool_crop_rad.addEventListener('change', f_toolSelect);
+	GraFlicC_tool_move_rad.addEventListener('change', f_toolSelect);
 	
 	v_imageSel.addEventListener('input', f_imageSelect);
 	v_frameSel.addEventListener('input', f_frameSelect);
@@ -1022,6 +1073,11 @@ function f_init(){
 	GraFlicC_bitmap_title_txt.addEventListener('input', f_bitmapChangeTitle);
 	GraFlicC_bitmap_z_index_txt.addEventListener('input', f_bitmapEditZIndex);
 	GraFlicC_bitmap_z_index_w_txt.addEventListener('input', f_bitmapEditZWIndex);
+	GraFlicC_bitmap_x_txt.addEventListener('input', f_bitmapEditBounds);
+	GraFlicC_bitmap_y_txt.addEventListener('input', f_bitmapEditBounds);
+	GraFlicC_bitmap_w_txt.addEventListener('input', f_bitmapEditBounds);
+	GraFlicC_bitmap_h_txt.addEventListener('input', f_bitmapEditBounds);
+	GraFlicC_bitmap_blend_sel.addEventListener('input', f_bitmapChangeBlend);
 	GraFlicC_frame_title_txt.addEventListener('input', f_frameChangeTitle);
 	GraFlicC_frame_ms_txt.addEventListener('input', f_frameEditMS);
 	GraFlicC_frame_global_ms_txt.addEventListener('input', f_frameEditGlobalMS);
@@ -1155,6 +1211,8 @@ function f_onRedrawn(){
 <tr><td class="GraFlic_j">🍃</td><td>Breeze. Show other frames in translucent mode to help as a drawing guide.</td></tr>
 <tr><td class="GraFlic_j">💎</td><td>Stained glass. Show fill sections with less opacity than line sections to aid as a drawing guide.</td></tr>
 <tr><td class="GraFlic_j">❌</td><td>Erase mode. Erases things instead of drawing.</td></tr>
+<tr><td class="GraFlic_j">⌇</td><td>Wire. The strokes create wire pixels that can be filled in between with flooding.</td></tr>
+<tr><td>WAIFU</td><td>Wire Alpha/Index, Fill, Unallocated. The custom channel system used by GraFlic bitmaps.</td></tr>
 <tr><td>.graflic</td><td>This is the file format for saving/restoring a project.</td></tr>
 </tbody>
 </table>

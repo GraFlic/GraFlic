@@ -59,6 +59,9 @@ function GraFlicImage(v_fromArchive, v_params){
 	//200 = finished and/or ready to transfer to custom bitmap channels (wire_index/wire_alpha/fill_index)
 	this.curDrawMode = 1;//0 for erase, 1 for draw
 
+	this.undoStack = [];
+	this.redoStack = [];
+	
 	if(v_params.canvasPlayback){
 		this.cvM = v_params.canvasPlayback;
 	}else{
@@ -121,7 +124,8 @@ function GraFlicImage(v_fromArchive, v_params){
 	this.curImage = this.initBitmapWAIFU();//bitmap currently being operated on
 	this.a.j.save.images.push(this.curImage);
 	//Note that this curBMP must be there for changeCanvasSize to init the undo stack.
-	this.changeCanvasSize(512, 512, 0);//Make sure the size is initialized to with all the things that need to be set.
+	//Send the flags for size change AND bitmap pixels, so that it will now to copy the pixels for ALL images. Each image must start with something to undo to when the image is started or restored.
+	this.systemChangeCanvasSize(GraFlicImage.UNDO_IMAGE_ALL | GraFlicImage.UNDO_BITMAP_PIXELS, 512, 512);//Make sure the size is initialized to with all the things that need to be set. Make sure trackUndo is set to true so that the initial undo state is created.
 	this.a.j.save.save_scale = 0.5;
 	//============ set global variables that reset on new image ============
 	//colors are drawn by inserting an index to a palette entry, rather than a color code, that way palette colors can be swapped and updated dynamically.
@@ -131,7 +135,6 @@ function GraFlicImage(v_fromArchive, v_params){
 	this.curPalette.default = true;//Non-default palettes may only override some colors and rely on the default to ensure every used index has a color.
 	this.a.j.save.palettes = [this.curPalette];//Init palette array.
 	this.a.j.save.selected_palette_index = 0;
-	this.fillBucketNextPixels = [];//used to handle area fills that have trouble with JS call-stack limits.
 	this.a.j.save.onion_skin_on = false;
 	this.a.j.save.stain_glass_on = false;//Makes fill areas more see-thru so that multiple layers are easier to see.
 	
@@ -156,14 +159,14 @@ function GraFlicImage(v_fromArchive, v_params){
 	//==============================================================================================================
 	
 	
-	this.wasX;//Used for dragging.
-	this.wasY;
+	//this.wasX;//Used for dragging. (Not currently needed...)
+	//this.wasY;
 	this.dragStartX;
 	this.dragStartY;
 	this.isDragging = false;
 	this.cutBitmap = null;//For cut-paste functionality. null if nothing pasted.
-	this.cutX = 0;//allows the dragging of the cut section.
-	this.cutY = 0;
+	//this.cutX = 0;//allows the dragging of the cut section.
+	//this.cutY = 0;//(removed, use the x/y properties on the bitmap object now.)
 	
 	//Now setup playback.
 	this.updateCanvasVisuals = this.updateCanvasVisualsUnbound.bind(this);//binding needed for it to handle this keyword correctly.
@@ -210,6 +213,8 @@ GraFlicImage.TOOL_FLOOD_FILL = 200;
 GraFlicImage.TOOL_FLOOD_WIRE = 201;
 GraFlicImage.TOOL_FLOOD_SWAP = 202;
 GraFlicImage.TOOL_CUT_LASSO = 300;
+GraFlicImage.TOOL_BOUNDS_CROP = 400;
+GraFlicImage.TOOL_BOUNDS_MOVE = 401;
 GraFlicImage.TOOL_STATE_STOP = 0;
 GraFlicImage.TOOL_STATE_DRAW = 100;
 GraFlicImage.TOOL_STATE_DONE = 200;
@@ -274,8 +279,10 @@ GraFlicImage.prototype.initMetadata = function(){
 
 GraFlicImage.prototype.calcBitmapSizes = function(){
 	//TODO: Additional logic will be needed her if supporting 16 bit depth for more palette entries or 48 bit color with 16 bit alpha.
-	//use this.a.j.save.index_bit_depth, this.a.j.save.alpah_bit_depth ( / 8 for number of bytes per pixel)
+	//use this.a.j.save.index_bit_depth, this.a.j.save.alpha_bit_depth ( / 8 for number of bytes per pixel)
 	//NOTE: In some cases if bit depth is increased only some channels will be increased. For example 16 bit depth for more palette indices than 255, but NOT moving to 16 bit alpha to support 48 bit color.
+	//TODO: phase these globals out for bitmapBytes, each bitmap should have own adjustable dimensions.
+		//The things will full canvas size may use these (preview canvas, draw canvas, but not individual bitmaps)
 	this.channelBitmapBytes = this.a.j.save.canvas_width * this.a.j.save.canvas_height;
 	this.rgba32BitmapBytes = this.a.j.save.canvas_width * this.a.j.save.canvas_height * 4;//Each custom channel will be on its own array of W*H.
 	//A channel for wire color index,
@@ -284,13 +291,64 @@ GraFlicImage.prototype.calcBitmapSizes = function(){
 	//With each channel on its own array, other channels can be added later if needed.
 	//TODO: Supporting channels that can contain extra data that is context-dependent on palette type, like representing the position in the gradient blended between two colors.
 };
+GraFlicImage.prototype.cropBitmap = function(cropB, cropX, cropY, cropW, cropH){
+	//Note: currently only supports custom channel system WAIFU, additional logic would be needed if RGBA bitmaps added.
+	//This function crops the bitmap UInt array, it does not move the object (x, y) position. That should be done separately if needed.
+	//cropX/Y is the position to start copying from (if negative, copy will be ignored until in range)
+	var v_wOld;
+	var v_hOld;
+	var v_oldPixI = 0;
+	var v_newPixI = 0;
+	
+	var v_canvasWidthOld = cropB.w;
+	var v_canvasHeightOld = cropB.h;
+	
+	var v_oldWireA = this.a.f[cropB.chan_a].d;
+	var v_oldWireI = this.a.f[cropB.chan_i].d;
+	var v_oldFillI = this.a.f[cropB.chan_f].d;
 
-GraFlicImage.prototype.changeCanvasSize = function(v_csW, v_csH, v_csCropMode, v_startX, v_startY){
-	this.undoStack = [];//Clear this since the sizes won't match. TODO: Could adjust this to make redos available after a canvas size change.
-	this.redoStack = [];
-	this.pushUndoStack();//Make the initial state to undo to before anything is drawn.
-	var v_canvasWidthOld = this.a.j.save.canvas_width;
-	var v_canvasHeightOld = this.a.j.save.canvas_height;
+	cropW = Math.round(cropW);//Initializing the Uint8Array with a non-integer can cause errors and bugs.
+	cropH = Math.round(cropH);
+	cropX = Math.round(cropX);
+	cropY = Math.round(cropY);
+	var chanBytesWAIFU = cropW * cropH;//Currently 1 byte per pixel, TODO: may optionally expand to 2 if 16-bit supported later.
+	//Log check for error conditions when cropping. Occasionally a crop ends up in bugs and broken behavior.
+	console.log('crop done... X ' + cropX + ' Y ' + cropY + ' W ' + cropW + ' H ' + cropH + ' b: ' + chanBytesWAIFU);
+	this.a.f[cropB.chan_a].d = new Uint8Array(new ArrayBuffer(chanBytesWAIFU));
+	this.a.f[cropB.chan_i].d = new Uint8Array(new ArrayBuffer(chanBytesWAIFU));
+	this.a.f[cropB.chan_f].d = new Uint8Array(new ArrayBuffer(chanBytesWAIFU));
+	//alert('a');
+	for(var v_h = 0;v_h < cropH;v_h++){
+		for(var v_w = 0;v_w < cropW;v_w++){
+			v_newPixI = v_h * cropW + v_w;
+			v_wOld = v_w + cropX;
+			v_hOld = v_h + cropY;
+			v_oldPixI = v_hOld * v_canvasWidthOld + v_wOld;
+			//alert(v_newPixI + ' -- ' + v_oldPixI + ' ' +v_wOld + ', ' + v_hOld +' ... ' + v_canvasWidthOld);return;
+			if(v_wOld >= 0 && v_hOld >= 0 && v_wOld < v_canvasWidthOld && v_hOld < v_canvasHeightOld){
+				this.a.f[cropB.chan_a].d[v_newPixI] = v_oldWireA[v_oldPixI];
+				this.a.f[cropB.chan_i].d[v_newPixI] = v_oldWireI[v_oldPixI];
+				this.a.f[cropB.chan_f].d[v_newPixI] = v_oldFillI[v_oldPixI];
+			}else{//init to zero anything that is not in the copied region
+				this.a.f[cropB.chan_a].d[v_newPixI] = 0;
+				this.a.f[cropB.chan_i].d[v_newPixI] = 0;
+				this.a.f[cropB.chan_f].d[v_newPixI] = 0;
+			}
+		}
+		//v_oldPixI += this.a.j.save.canvas_widthOld;//old value before this var is changed
+		//v_newPixI += cropW;
+	}
+	
+	cropB.w = cropW;//Updated the JSON to match the new dimensions.
+	cropB.h = cropH;
+};
+GraFlicImage.prototype.changeCanvasSize = function(v_csW, v_csH, v_startX, v_startY){
+	//The general change canvas size will always track changes in the undo stack
+	this.systemChangeCanvasSize(GraFlicImage.UNDO_IMAGE_ALL, v_csW, v_csH, v_startX, v_startY);
+};
+GraFlicImage.prototype.systemChangeCanvasSize = function(v_csUndoFlags, v_csW, v_csH, v_startX, v_startY){
+	//Note: be sure to set v_csUndoFlags to 0 if being used by an undo/redo reconstruction otherwise it will break the undo system.
+	//If no undo flags are set (0) it will exclude from undo state. If it is the initial action when creating an image, the flags for change canvas size AND bitmap pixels should be set.
 	//alert(v_canvasWidthOld + ' x ' + v_canvasHeightOld);
 	this.a.j.save.canvas_width = v_csW;
 	this.a.j.save.canvas_height = v_csH;
@@ -300,51 +358,28 @@ GraFlicImage.prototype.changeCanvasSize = function(v_csW, v_csH, v_csCropMode, v
 	//var v_minCropY = 0;
 	//var v_maxCropX = v_csW;
 	//var v_maxCropY = v_csH;
-	var v_oldWAdjust = 0;//position to start copying from (if negative, copy will be ignored until in range)
-	var v_oldHAdjust = 0;
+	var v_posCropW = 0;
+	var v_posCropH = 0;
 	if(v_startX !== undefined){//if start x/y are defined, they are integers of where to start cropping from. If negative, it shift pixels right/down instead of crop.
-		v_oldWAdjust = v_startX;
+		v_posCropW = v_startX;
 	}
 	if(v_startY !== undefined){
-		v_oldHAdjust = v_startY;
+		v_posCropH = v_startY;
 	}
-	var v_wOld;
-	var v_hOld;
-	var v_oldPixI = 0;
-	var v_newPixI = 0;
 	for(var v_i = 0;v_i < this.a.j.save.images.length;v_i++){
 		var v_changeB = this.a.j.save.images[v_i];
+		v_changeB.x -= v_posCropW;//position based cropping if x/y was set. (The pixels are still there in the individual image/bitmap, but out of view)
+		v_changeB.y -= v_posCropH;
+		/*//OLD: The bitmaps all have their own x/y/w/h settings independent of canvas size now (though new ones may be inited at canvas size).
 		if(v_changeB.type == 'WAIFU'){//=== only bitmaps need channels adjusted =============================================
-		var v_oldLineA = this.a.f[v_changeB.chan_a].d;
-		var v_oldLineI = this.a.f[v_changeB.chan_i].d;
-		var v_oldFillI = this.a.f[v_changeB.chan_f].d;
-		this.a.f[v_changeB.chan_a].d = new Uint8Array(new ArrayBuffer(this.channelBitmapBytes));
-		this.a.f[v_changeB.chan_i].d = new Uint8Array(new ArrayBuffer(this.channelBitmapBytes));
-		this.a.f[v_changeB.chan_f].d = new Uint8Array(new ArrayBuffer(this.channelBitmapBytes));
-		//alert('a');
-		for(var v_h = 0;v_h < v_csH;v_h++){
-			for(var v_w = 0;v_w < v_csW;v_w++){
-				v_newPixI = v_h * v_csW + v_w;
-				v_wOld = v_w + v_oldWAdjust;
-				v_hOld = v_h + v_oldHAdjust;
-				v_oldPixI = v_hOld * v_canvasWidthOld + v_wOld;
-				//alert(v_newPixI + ' -- ' + v_oldPixI + ' ' +v_wOld + ', ' + v_hOld +' ... ' + v_canvasWidthOld);return;
-				if(v_wOld >= 0 && v_hOld >= 0 && v_wOld < v_canvasWidthOld && v_hOld < v_canvasHeightOld){
-					this.a.f[v_changeB.chan_a].d[v_newPixI] = v_oldLineA[v_oldPixI];
-					this.a.f[v_changeB.chan_i].d[v_newPixI] = v_oldLineI[v_oldPixI];
-					this.a.f[v_changeB.chan_f].d[v_newPixI] = v_oldFillI[v_oldPixI];
-				}else{//init to zero anything that is not in the copied region
-					this.a.f[v_changeB.chan_a].d[v_newPixI] = 0;
-					this.a.f[v_changeB.chan_i].d[v_newPixI] = 0;
-					this.a.f[v_changeB.chan_f].d[v_newPixI] = 0;
-				}
-			}
-			//v_oldPixI += this.a.j.save.canvas_widthOld;//old value before this var is changed
-			//v_newPixI += v_csW;
-		}
+			this.cropBitmap(v_changeB, v_posCropW, v_posCropH, v_csW, v_csH)
 		}//=================================================== end bitmap ===================================================
+		*/
 	}
-	
+	if(v_csUndoFlags){//Do not want undo/redo processing to duplicate itself in the stack and break everything.
+		this.pushUndoStack(v_csUndoFlags);//Make the initial state to undo to before anything is drawn/changed.
+	}
+
 	this.cvM.width = this.a.j.save.canvas_width;
 	this.cvM.height = this.a.j.save.canvas_height;
 	this.cvB.width = this.a.j.save.canvas_width;
@@ -360,7 +395,7 @@ GraFlicImage.prototype.changeCanvasSize = function(v_csW, v_csH, v_csCropMode, v
 	v_miniCX = this.canvasPreviewFrame.getContext('2d');
 	v_miniCX.clearRect(0, 0, this.canvasPreviewFrame.width, this.canvasPreviewFrame.height);
 };//end change canvas size
-GraFlicImage.prototype.initImage = function(v_excludeFromArchive){
+GraFlicImage.prototype.initImage = function(v_excludeFromArchive, initX, initY, initW, initH){
 	//Initializes the shared properties that different types of image all have (bitmaps, embeds...)
 	var initI = {};
 	//defaults
@@ -372,7 +407,21 @@ GraFlicImage.prototype.initImage = function(v_excludeFromArchive){
 	initI.title = '🖼';//picture graphic char
 	return initI;
 };
-GraFlicImage.prototype.initBitmapWAIFU = function(v_excludeFromArchive){
+GraFlicImage.prototype.initBitmapGeneral = function(v_excludeFromArchive, initX, initY, initW, initH){
+	//Things that apply to the various types of Bitmaps (WAIFU, RGBA, ...)
+	var v_initB = this.initImage(v_excludeFromArchive, initX, initY, initW, initH);
+	//Make each bitmap have bounds, so that images that only have a small section drawn on do not consume huge amounts of memory.
+	v_initB.x = 0;
+	v_initB.y = 0;
+	v_initB.w = this.a.j.save.canvas_width;
+	v_initB.h = this.a.j.save.canvas_height;
+	if(initX){v_initB.x = initX;}//undefined evaluates 0/false which is either the default(x/y) or invalid(w/h)
+	if(initY){v_initB.y = initY;}
+	if(initW){v_initB.w = initW;}
+	if(initH){v_initB.h = initH;}
+	return v_initB;
+};
+GraFlicImage.prototype.initBitmapWAIFU = function(v_excludeFromArchive, initX, initY, initW, initH){
 	//Creates a bitmap in the WAIFU (Wire Alpha / Index, Fill, Unallocated) format.
 	//W is more distinguishable than L for line in lowercase. l can be confused with number 1 or uppercase i(I).
 	//Wire like the Wire-looking effects when in stained glass view with the fills partially transparent for analysis and to guide by surrounding animation frames.
@@ -380,7 +429,7 @@ GraFlicImage.prototype.initBitmapWAIFU = function(v_excludeFromArchive){
 	//Supporting channels are initially unallocated, but may be added as needed. Currently not implemented yet.
 	//Supporting channels would be used for assigning things like gradients or textures to assign to an index.
 	//Other types of bitmaps like traditional RGBA could be added later, but WAIFU is the focus for now to handle the cell-based graphics that Animated PNGs are good at.
-	var v_initB = this.initImage(v_excludeFromArchive);
+	var v_initB = this.initBitmapGeneral(v_excludeFromArchive, initX, initY, initW, initH);
 	v_initB.type = 'WAIFU';
 	//NOTE: These could be switched to Uint8ClampedArray if issues are encountered. So far there have not been problems and Clamped might have extra overhead.
 	//Cann be called with (true) to exclude the bitmap from being part of the project archive. This can be used for things like temporary bitmaps used by the undo stack or cutting.
@@ -392,10 +441,10 @@ GraFlicImage.prototype.initBitmapWAIFU = function(v_excludeFromArchive){
 	//Make an ID for each bitmap because if the order of them gets changed and the ID was based off of the original index, it could have problems.
 	//TODO: what if multiple bitmaps are initialized at the exact same millisecond??
 	var v_bitmapFolder = 'b/' + v_initB.id + '/';
-	
-	var v_chanWI = new Uint8Array(new ArrayBuffer(this.channelBitmapBytes));
-	var v_chanWA = new Uint8Array(new ArrayBuffer(this.channelBitmapBytes));
-	var v_chanFI = new Uint8Array(new ArrayBuffer(this.channelBitmapBytes));
+	var newBitmapByteCount = v_initB.w * v_initB.h;
+	var v_chanWI = new Uint8Array(new ArrayBuffer(newBitmapByteCount));
+	var v_chanWA = new Uint8Array(new ArrayBuffer(newBitmapByteCount));
+	var v_chanFI = new Uint8Array(new ArrayBuffer(newBitmapByteCount));
 	/*if(v_excludeFromArchive){
 		//For the temporary bitmaps such as undo/cut holders, they will not be part of the virtual archive and will link directly to the data instead of having a string linking to the place in the archive.
 		v_initB.chan_a = v_chanWA;
@@ -476,15 +525,18 @@ GraFlicImage.prototype.undoRedoCopy = function(v_undoBMP, v_revert){
 	var v_tempWA = this.a.f[v_undoBMP.chan_a].d;
 	var v_tempFI = this.a.f[v_undoBMP.chan_f].d;
 	var v_copyI;
+	var chanBytesWAIFU;
 	if(v_revert){//Revert to a previous state.
-		for(v_copyI = 0;v_copyI < this.channelBitmapBytes;v_copyI++){
+		chanBytesWAIFU = v_undoBMP.undo_copied_from.w * v_undoBMP.undo_copied_from.h;
+		for(v_copyI = 0;v_copyI < chanBytesWAIFU;v_copyI++){
 			//copy the state of the bitmap before it was changed.
 			v_liveWI[v_copyI] = v_tempWI[v_copyI];
 			v_liveWA[v_copyI] = v_tempWA[v_copyI];
 			v_liveFI[v_copyI] = v_tempFI[v_copyI];
 		}
 	}else{//Copy an existing state to add to the stack.
-		for(v_copyI = 0;v_copyI < this.channelBitmapBytes;v_copyI++){
+		chanBytesWAIFU = v_undoBMP.w * v_undoBMP.h;
+		for(v_copyI = 0;v_copyI < chanBytesWAIFU;v_copyI++){
 			//copy the state of the bitmap before it was changed.
 			v_tempWI[v_copyI] = v_liveWI[v_copyI];
 			v_tempWA[v_copyI] = v_liveWA[v_copyI];
@@ -492,30 +544,82 @@ GraFlicImage.prototype.undoRedoCopy = function(v_undoBMP, v_revert){
 		}
 	}
 };
-GraFlicImage.prototype.pushUndoStack = function(){
-	//Call this before committing a change to the current bitmap.
-	if(this.curImage.type != 'WAIFU'){
-		return;//Currently only supports unto to the Bitmap type image.
-	}
+//These bits can be combined with boolean | if an action applies to multiple.
+GraFlicImage.UNDO_BITMAP_PIXELS = 0x1;//Pixels drawn/erased/changed. (including crop, that changes pixels and the must be copied and added to the stack to have a place to redo to after a stroke is made onto the newly cropped bitmap)
+GraFlicImage.UNDO_IMAGE_ALL = 0x2;//An action that can affect all images such as Canvas size changed.
+GraFlicImage.UNDO_IMAGE_PROPS = 0x4;//JSON properties for image/ bitmap changed
+GraFlicImage.prototype.pushUndoStack = function(undoType){
+	var undoObj = {}, i, i2, uObj1, iObj1;
+	undoObj.type = undoType;
 	this.redoStack = [];//Cannot redo on top of a change that was done after undoing.
-	var v_undoBMP = this.initBitmapWAIFU(true);
-	v_undoBMP.undo_copied_from = this.curImage;
-	//v_undoBMP.name = Math.random();
-	this.undoRedoCopy(v_undoBMP, false);
-	/*for(var v_copyI = 0;v_copyI < this.channelBitmapBytes;v_copyI++){
-		//copy the state of the bitmap before it was changed.
-		v_undoBMP.chan_a[v_copyI] = this.curImage.chan_a[v_copyI];
-		v_undoBMP.chan_i[v_copyI] = this.curImage.chan_i[v_copyI];
-		v_undoBMP.chan_f[v_copyI] = this.curImage.chan_f[v_copyI];
+	//-----------------------------------------------------------------
+	/*if( !(undoType | GraFlicImage.UNDO_IMAGE_ALL) ){//Targets a specific image.
+		//Save the position it was moved to. Since there is no bitmap_copy (pixel copying for a move would waste resources) the bounds must be tracked this way.
+		//Should not be needed. Image should simply exist in the array of affected images ifs affected.
+		undoObj.targ = this.curImage;//target bitmap
 	}*/
-	this.undoStack.push(v_undoBMP);
-	if(this.undoStack.length > 20){//Limit stack size to keep resources reasonable.
+	undoObj.cw = this.a.j.save.canvas_width;
+	undoObj.ch = this.a.j.save.canvas_height;
+	//Some actions (change canvas size with cropping adjustments) may change the position of multiple images, so all coordinates must be tracked.
+	undoObj.imageStatesList = [];
+	undoObj.imageStatesById = [];
+	for(i = 0;i < this.a.j.save.images.length;i++){//Save the properties of the different images at the state in case a change affected multiple images.
+		iObj1 = this.a.j.save.images[i];
+		uObj1 = {};
+		uObj1.up_targ = iObj1;//Link target to undo properties.
+		uObj1.x = iObj1.x;
+		uObj1.y = iObj1.y;
+		uObj1.w = iObj1.w;
+		uObj1.h = iObj1.h;
+		if( (iObj1 == this.curImage || (undoType | GraFlicImage.UNDO_IMAGE_ALL) )
+		 && (undoType | GraFlicImage.UNDO_BITMAP_PIXELS)
+			){
+			//If the flag that this affects pixels is set copy pixels. If all images flag set, do this for ALL images. (On initialization/reconstruction from file all images must have a point to be able to undo back to.)
+			//TODO: Support other channel systems later? RGBA?
+			var v_undoBMP = this.initBitmapWAIFU(true, iObj1.x, iObj1.y, iObj1.w, iObj1.h);
+			v_undoBMP.undo_copied_from = iObj1;
+			//v_undoBMP.name = Math.random();
+			this.undoRedoCopy(v_undoBMP, false);
+			uObj1.bitmap_copy = v_undoBMP;
+		}
+		undoObj.imageStatesList.push(uObj1);
+		undoObj.imageStatesById[iObj1.id] = uObj1;
+	}
+	//-----------------------------------------------------------------
+	this.undoStack.push(undoObj);
+	if(this.undoStack.length > 50){//Limit stack size to keep resources reasonable.
 		//clear the bitmap from the undo stack array and delete it from the archive.
-		var sDel = this.undoStack.shift();
-		this.a.deleteFile(sDel.chan_a);
-		this.a.deleteFile(sDel.chan_i);
-		this.a.deleteFile(sDel.chan_f);
-		this.a.deleteFile('b/' + sDel.id + '/');
+		//TODO: There could be an issue where once the last pixel-changing action falls out of the stack, if there are a bunch of non-changing things like moves it will not be able to find the last pixel state to copy it over. Push the pixel state into the next state in the stack where that image does not have one.
+		var sDel = this.undoStack.shift(), delState, delBitmap;
+		for(i = 0;i < sDel.imageStatesList.length;i++){
+			delBitmap = null;
+			delState = sDel.imageStatesList[i];
+			if(delState.bitmap_copy){//Remove resources from old pixel state
+				delBitmap = delState.bitmap_copy;
+				//Find the next state in the list within the stack that has the image that had a pixel bitmap_copy scrapped.
+				//Ensure that the bitmap copy is passed on to that image state so that any strokes/pixel changes have a copy to undo back to.
+				//(Some undo states omit the bitmap copy because the are simply an x/y coordinate change for example.) 
+				uObj1 = this.undoStack[0];
+				if(uObj1.imageStatesById[delState.id]){
+					if(!uObj1.imageStatesById[delState.id].bitmap_copy){
+						//Move the pixel save to the next state instead of deleting it.
+						//If the next state in the stack already has a bitmap_copy pixel state, let the delete continue.
+						//(This kind of logic should only be needed for undos, not redos. Redos are only created by redoing after an undo.)
+						uObj1.imageStatesById[delState.id].bitmap_copy = delBitmap;
+						delBitmap = null;
+					}
+				}
+			}
+			if(delState.bitmap_deleted){//or remove resources from deleted image that has hit the max stack cutoff.
+				delBitmap = delState.bitmap_deleted;//(If a delete-an-image action falls out of the stack, it is simply unreachable ever again.)
+			}
+			if(delBitmap){
+				this.a.deleteFile(delBitmap.chan_a);
+				this.a.deleteFile(delBitmap.chan_i);
+				this.a.deleteFile(delBitmap.chan_f);
+				this.a.deleteFile('b/' + delBitmap.id + '/');
+			}
+		}
 	}
 	console.log('undo stack: ' + this.undoStack.length);// + ' n: ' + v_undoBMP.name);
 };
@@ -523,21 +627,78 @@ GraFlicImage.prototype.undo = function(){
 	console.log('undo called. stack: ' + this.undoStack.length);
 	if(this.undoStack.length < 2){return;}//must have initial state, plus something drawn since then.
 	this.redoStack.push(this.undoStack.pop());//put the current state in the redo stack
-	var v_undoBMP = this.undoStack[this.undoStack.length - 1];//undo it to the state that is now at the top of the stack.
-	this.undoRedoCopy(v_undoBMP, true);
+	var v_undoObj = this.undoStack[this.undoStack.length - 1];//undo it to the state that is now at the top of the stack.
+	this.undoRedoExec(v_undoObj, false);
 	//redo stack will not get too large because it has to come out of the undo stack, which is already limited.
-	console.log('redo stack: ' + this.redoStack.length);
+	console.log('redo stack: ' + this.redoStack.length + ' undid code: ' + v_undoObj.type);
 };
 GraFlicImage.prototype.redo = function(){
 	console.log('redo called');
 	if(!this.redoStack.length){return;}
-	var v_undoBMP = this.redoStack.pop();
-	//console.log('redoing ' + v_undoBMP.name);
-	this.undoRedoCopy(v_undoBMP, true);
-	this.undoStack.push(v_undoBMP);
-	console.log('undo stack: ' + this.undoStack.length);
+	var v_undoObj = this.redoStack.pop();
+	this.undoRedoExec(v_undoObj, true);
+	this.undoStack.push(v_undoObj);
+	console.log('undo stack: ' + this.undoStack.length + ' redid code: ' + v_undoObj.type);
 };
-
+GraFlicImage.prototype.undoRedoExec = function(v_undoObj, isRedo){
+	//if(v_undoObj.type == GraFlicImage.UNDO_BITMAP_PIXELS){//Pixel changing actions undone (stroke, fill, crop)
+	var imageState, targImage, i, uObj1;
+	console.log('Undo/Redo Exec code: ' + v_undoObj.type + ' targImage?: ' + targImage);
+	var uX, uY, uW, uH;//These will be set if x/y/w/h have been changed, signaling it to reposition or crop.
+	for(i = 0;i < v_undoObj.imageStatesList.length;i++){
+		imageState = v_undoObj.imageStatesList[i];
+		targImage = imageState.up_targ;
+		uX = imageState.x;
+		uY = imageState.y;
+		uW = imageState.w;
+		uH = imageState.h;
+		//Ensure the current image has the same bounds as what is being copied onto it so that the pixels will align and not get distorted.
+		if(uW != targImage.w || uH != targImage.h){//If crop needed
+				this.cropBitmap(targImage, 0, 0, uW, uH);
+		}
+		if(uX != targImage.x || uY != targImage.y){//If move needed
+			targImage.x = uX;
+			targImage.y = uY;
+		}
+		var lastPixelState = null, pixSearch, searchStack = this.undoStack;
+		if(imageState.bitmap_copy){
+			lastPixelState = imageState.bitmap_copy;
+		}else{
+			//Find the last state that had pixels copied to ensure that the pixels are as they were when moved.
+			if(!isRedo){//Only undo needs to have pixels copied in this way. It messes up redo and puts the pixels there before the would be when it was just moved, not drawn on.
+				for(pixSearch = searchStack.length-1;pixSearch >= 0;pixSearch--){
+					if(searchStack[pixSearch].type | GraFlicImage.UNDO_BITMAP_PIXELS){
+					 if(searchStack[pixSearch].imageStatesById[imageState.id]){
+					  if(searchStack[pixSearch].imageStatesById[imageState.id].bitmap_copy){
+						lastPixelState = searchStack[pixSearch].imageStatesById[imageState.id].bitmap_copy;
+						break;
+					  }
+					 }
+					}
+				}
+			}
+		}
+		if(lastPixelState){//If pixels were found that can be copied from previous state. (some actions like move may not have these, and they may be looked up from the last pixel-containing state if applicable.)
+			this.undoRedoCopy(lastPixelState, true);
+		}
+	}//end images loop
+	if(v_undoObj.cw != this.a.j.save.canvas_width || v_undoObj.ch != this.a.j.save.canvas_height){
+		//Be sure it is set to exclude from the undo stack.
+		this.systemChangeCanvasSize(0, v_undoObj.cw, v_undoObj.ch, v_undoObj.cxs, v_undoObj.cys);
+	}
+	/*for(i = 0;i < v_undoObj.imageStates.length;i++){
+		uObj1 = v_undoObj.imageStates[i];
+		uObj1.up_targ.x = uObj1.x;
+		uObj1.up_targ.y = uObj1.y;
+	}*/
+	/*if(v_undoObj.type == GraFlicImage.UNDO_IMAGE_PROPS){
+		targImage.x = v_undoObj.x;
+		targImage.y = v_undoObj.y;
+	}
+	if(v_undoObj.type == GraFlicImage.UNDO_IMAGE_ALL){
+		this.systemChangeCanvasSize(0, v_undoObj.w, v_undoObj.h, v_undoObj.x, v_undoObj.y);
+	}*/
+};
 GraFlicImage.calcRGBAForBitDepth = function(v_color){//static
 	var v_base = ['r', 'g', 'b', 'a'];
 	var v_bKey;
@@ -743,9 +904,12 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 	//Special logic needed for altering draws for the onion skin. If it is currently saving, all onion skin stuff should be ignored until finished.
 	var v_drawOnion;
 	var v_drawStainedGlass = false;
+	var finalOutput = false;//Guidelines and visual hints should not be drawn if drawing for final output.
 	if(this.frameDrawingForSave == -1){
 		v_drawOnion = this.a.j.save.onion_skin_on ? true : false;
 		v_drawStainedGlass = this.a.j.save.stain_glass_on ? true : false;
+	}else{
+		finalOutput = true;
 	}
 	//Order any bitmaps sent in the [BMP_OBJ, opacity, ... ] pairs based on z_index
 	//Make a COPY of the images array and sort it properly for draw order.
@@ -923,7 +1087,21 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 		
 		this.cxP.restore();
 	}
-	v_dataP = this.cxP.getImageData(rdX1, rdY1, rdW, rdH);//0, 0, this.cvP.width, this.cvP.height);
+	var xOffset = this.curImage.x, yOffset = this.curImage.y;//If the bitmap is not located at (0, 0) skip to where it starts.
+	var rdcX1, rdcX2, rdcY1, rdcY2, rdcW, rdcH;//locally cropped bounds. (not everything in the bounds affected by the stroke is also in the bounds of the bitmap which may be smaller than the whole canvas.)
+	//if(this.curImage.x)
+	
+	//Only draw within the bounds of the current bitmap. (Bitmaps all have their own size and may be smaller than the entire canvas size.)
+	rdcX1 = Math.max(this.curImage.x, rdX1);
+	rdcY1 = Math.max(this.curImage.y, rdY1);
+	rdcX2 = Math.min(this.curImage.x + this.curImage.w, rdX2);
+	rdcY2 = Math.min(this.curImage.y + this.curImage.h, rdY2);
+	rdcW = rdcX2 - rdcX1;
+	rdcH = rdcY2 - rdcY1;
+	
+	//Force at least 1x1 width/height so there is not an error. The loop afterwards will simply not encounter anything to process if a width/height is 0.
+	v_dataP = this.cxP.getImageData(rdcX1, rdcY1, Math.max(1, rdcW), Math.max(1, rdcH));//0, 0, this.cvP.width, this.cvP.height);
+	
 	if(this.curToolState == 200){
 		//If done with current draw, copy to the custom channel system.
 		var v_pixA;
@@ -933,9 +1111,9 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 			chanWI = this.a.f[this.curImage.chan_i].d;
 			chanFI = this.a.f[this.curImage.chan_f].d;
 			//for(v_copyI = 0;v_copyI < this.channelBitmapBytes;v_copyI++){
-			for(h = rdY1;h < rdY2;h++){
-			for(w = rdX1;w < rdX2;w++){
-				v_copyI = h * canvW + w;
+			for(h = rdcY1;h < rdcY2;h++){
+			for(w = rdcX1;w < rdcX2;w++){
+				v_copyI = (h - yOffset) * this.curImage.w + (w - xOffset);
 				v_pixA = v_dataP.data[v_rgbaI + 3];//get alpha transparency
 				/*penOA replaced with better flood logic
 				if(this.penWidth >= 2 && this.penWidth < 3){
@@ -991,28 +1169,37 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 				}
 				v_rgbaI += 4;//4 bytes per pixel in the RBBA canvas data
 			}}//end w / h loops
-			this.pushUndoStack();//Save state AFTER stroke committed. An initial push will be made when the file is first started.
+			this.pushUndoStack(GraFlicImage.UNDO_BITMAP_PIXELS);//Save state AFTER stroke committed. An initial push will be made when the file is first started.
 			this.requestRedraw(rdX1, rdY2, rdX2, rdY2);//redraw after the stroke has been merged into the channel system.
 		}//end pen stroke finished code.
 		if(this.curTool == GraFlicImage.TOOL_CUT_LASSO && this.cutBitmap == null){//Committing lasso cut move once finished.
 			//For lasso tool, copy anything in the mask to the cut Bitmap.
 			console.log('Committing lasso cut, movable cut bitmap created.');
 			this.cutBitmap = this.initBitmapWAIFU(true);
-			this.cutX = 0;
-			this.cutY = 0;
-			v_rgbaI = 0;
-			for(v_copyI = 0;v_copyI < this.channelBitmapBytes;v_copyI++){
+			//this.cutX = rdX1;
+			//this.cutY = rdY1;
+			this.cropBitmap(this.cutBitmap, 0, 0, rdW, rdH);
+			this.cutBitmap.x = rdX1;//Remember location is not set by the crop operation.
+			this.cutBitmap.y = rdY1;
+			//alert('cropped ' + this.cutBitmap.x + ' ' + this.cutBitmap.y + ' ' + this.cutBitmap.w + ' ' + this.cutBitmap.h + ' ');
+			//v_rgbaI = 0; 
+			var v_copyFromI;
+			for(h = rdcY1;h < rdcY2;h++){
+			for(w = rdcX1;w < rdcX2;w++){
+				//Note that testing the pixels from the redraw-crop section cut out with getImageData
+				v_rgbaI = (rdcW * (h - rdcY1) + w - rdcY1) * 4;//4 bytes per pixel in the RGBA canvas data
+				v_copyI = (this.cutBitmap.w * (h - rdY1) ) + w - rdX1;//new bitmap was inited with rdX1/rdY1 as (x,y)
+				v_copyFromI = (this.curImage.w * (h - yOffset) ) + w - xOffset;
 				v_pixA = v_dataP.data[v_rgbaI + 3];
 				if(v_pixA){
-					this.a.f[this.cutBitmap.chan_a].d[v_copyI] = this.a.f[this.curImage.chan_a].d[v_copyI];
-					this.a.f[this.cutBitmap.chan_i].d[v_copyI] = this.a.f[this.curImage.chan_i].d[v_copyI];
-					this.a.f[this.cutBitmap.chan_f].d[v_copyI] = this.a.f[this.curImage.chan_f].d[v_copyI];
-					this.a.f[this.curImage.chan_a].d[v_copyI] = 0;//Now delete the area that was cut out of the source bitmap.
-					this.a.f[this.curImage.chan_i].d[v_copyI] = 0;
-					this.a.f[this.curImage.chan_f].d[v_copyI] = 0;
+					this.a.f[this.cutBitmap.chan_a].d[v_copyI] = this.a.f[this.curImage.chan_a].d[v_copyFromI];
+					this.a.f[this.cutBitmap.chan_i].d[v_copyI] = this.a.f[this.curImage.chan_i].d[v_copyFromI];
+					this.a.f[this.cutBitmap.chan_f].d[v_copyI] = this.a.f[this.curImage.chan_f].d[v_copyFromI];
+					this.a.f[this.curImage.chan_a].d[v_copyFromI] = 0;//Now delete the area that was cut out of the source bitmap.
+					this.a.f[this.curImage.chan_i].d[v_copyFromI] = 0;
+					this.a.f[this.curImage.chan_f].d[v_copyFromI] = 0;
 				}
-				v_rgbaI += 4;//4 bytes per pixel in the RGBA canvas data
-			}
+			}}
 			this.requestRedraw();//The cut adds a bitmap for the cut area, so request a redraw.
 		}
 		this.curToolState = 0;//set to 0 inactive now that finished with this draw
@@ -1031,17 +1218,27 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 	}
 	for(var v_bmpI = 0;v_bmpI < v_images2Draw.length;v_bmpI++){//images2Draw objects contain .image with the bitmap and other parameter options
 		this.cxB.clearRect(rdX1, rdY1, rdW, rdH);//0, 0, this.cvP.width, this.cvP.height);
-		v_rgbaI = 0;
+		v_rgbaI = 0;//Will start at zero even if a sub region is being drawn, because the sub-region is extracted as an array with getImageData.
 		//Object containing image and alpha setting was wrapped in anther object for ordering and handling split z-index
 		var imageBeingDrawn = v_images2Draw[v_bmpI].i;
 		var v_bmpObj = imageBeingDrawn.image;
 		var v_onionAlpha = imageBeingDrawn.onionAlpha;//Alpha, used for onion skinning.
+		xOffset = v_bmpObj.x;//If the bitmap is not located at (0, 0) skip to where it starts.
+		yOffset = v_bmpObj.y;
+		//rdcX1, rdcX2, rdcYq, rdcY2;//locally cropped bounds.
+		//Only draw within the bounds of the current bitmap. (Bitmaps all have their own size and may be smaller than the entire canvas size.)
+		rdcX1 = Math.max(v_bmpObj.x, rdX1);
+		rdcY1 = Math.max(v_bmpObj.y, rdY1);
+		rdcX2 = Math.min(v_bmpObj.x + v_bmpObj.w, rdX2);
+		rdcY2 = Math.min(v_bmpObj.y + v_bmpObj.h, rdY2);
+		rdcW = rdcX2 - rdcX1;
+		rdcH = rdcY2 - rdcY1;
 		if(v_bmpObj.type == 'WAIFU'){//===================================== bitmap ===========================================================
-		var zSplitMode = v_images2Draw[v_bmpI].m;//0 = all channels, 1 = fill, 2 = alpha
+		var zSplitMode = v_images2Draw[v_bmpI].m;//0 = all channels, 1 = fill, 2 = wire
 		var zDrawFill = zSplitMode == 0 || zSplitMode == 1;
 		var zDrawWire = zSplitMode == 0 || zSplitMode == 2;
 		//console.log('getimagedata ' + rdX1 + ', ' + rdY1 + ', ' + rdW + ', ' + rdH + '...');
-		var v_dataB = this.cxB.getImageData(rdX1, rdY1, rdW, rdH);//0, 0, this.cvM.width, this.cvM.height);
+		var v_dataB = this.cxB.getImageData(rdcX1, rdcY1, Math.max(1, rdcW), Math.max(1, rdcH));//0, 0, this.cvM.width, this.cvM.height);
 			//only get image data for the region being drawn on, to avoid lag.
 		//old: for(v_copyI = 0;v_copyI < this.channelBitmapBytes;v_copyI++){
 		chanWA = this.a.f[v_bmpObj.chan_a].d;//seems to lag when looked up by associative on each iteration
@@ -1049,9 +1246,9 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 		chanFI = this.a.f[v_bmpObj.chan_f].d;
 		//Support drawing only the region that has changed to cut down lag.
 		//console.log( (rdX2- rdX1) + ' vs ' + rdW);
-		for(h = rdY1;h < rdY2;h++){
-		for(w = rdX1;w < rdX2;w++){
-			v_copyI = h * canvW + w;
+		for(h = rdcY1;h < rdcY2;h++){
+		for(w = rdcX1;w < rdcX2;w++){
+			v_copyI = (h - yOffset) * v_bmpObj.w + (w - xOffset);
 			//Draw the fill channel first, any wire channel filled in will
 			//draw over/partially draw over the channel based on the alpha level it has
 			var v_fillIndex;
@@ -1189,13 +1386,25 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 			//this.a.j.save.images[v_bmpI].chan_f[v_copyI] = 0;
 			v_rgbaI += 4;
 		}}//end of w and h loops.
-		this.cxB.putImageData(v_dataB, rdX1, rdY1);
+		this.cxB.putImageData(v_dataB, rdcX1, rdcY1);
 		this.cxM.save();
 		this.cxM.globalAlpha = v_onionAlpha;
 		if(v_bmpObj == this.cutBitmap){
-			this.cxM.drawImage(this.cvB, this.cutX, this.cutY);
+			//If a bitmap being cut, and dragged around.
+			this.cxM.drawImage(this.cvB, 0, 0);//this.cutX, this.cutY);
 		}else{
-			this.cxM.drawImage(this.cvB, rdX1, rdY1, rdW, rdH, rdX1, rdY1, rdW, rdH);
+			if(!v_bmpObj.blend){//normal draw blend
+				this.cxM.drawImage(this.cvB, rdcX1, rdcY1, rdcW, rdcH, rdcX1, rdcY1, rdcW, rdcH);
+			}else{
+				//Note: There is an experimental canvas.filter property that might be simpler, but it is not standard.
+				/*if(v_bmpObj.blend == 'lum'){
+					for(h = rdY1;h < rdY2;h++){
+					for(w = rdX1;w < rdX2;w++){
+						v_rgbaI = (h * canvW + w) * 4;
+						this.cvB
+					}}
+				}*/
+			}
 		}
 		this.cxM.restore();
 			
@@ -1217,6 +1426,43 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 			}
 			curImageInView = true;
 		}
+		if(!finalOutput && (v_bmpObj == this.curImage || v_bmpObj == this.cutBitmap)
+			&& v_bmpObj.type == 'WAIFU' && (zSplitMode == 0 || zSplitMode == 2) ){
+			//If split channels, only draw crop guide once on the topmost (wire)
+			this.cxB.save();
+			this.cxB.fillStyle = '#7F7F7F';
+			this.cxB.globalAlpha = 0.5;
+			//Adjust it to redraw the crop indicator only in the updated region.
+			var cBoxX = v_bmpObj.x;//rdcX1 - rdX1;
+			var cBoxY = v_bmpObj.y;//rdcY1 - rdY1;
+			var cBoxW = v_bmpObj.w;//Math.min(rdX2, rdcX2) - rdcX1;
+			var cBoxH = v_bmpObj.h;//Math.min(rdY2, rdcY2) - rdcY1;
+			//console.log(this.curTool + ' / ' + this.curToolState);
+			if(this.curTool == GraFlicImage.TOOL_BOUNDS_CROP && this.curToolState == 100){
+				//If currently adjusting the cropping tool, show updates to the crop area.
+				cBoxX = Math.min(this.dragStartX, this.dragCurX);
+				cBoxY = Math.min(this.dragStartY, this.dragCurY);
+				cBoxW = Math.max(this.dragStartX, this.dragCurX) - cBoxX;
+				cBoxH = Math.max(this.dragStartY, this.dragCurY) - cBoxY;
+			}
+			//Show cropped bounds if custom dimensions / coordinates set
+			//cxB is cleared for each bitmap/image so it can be recycled here.
+			this.cxB.clearRect(rdX1, rdY1, rdW, rdH);
+			this.cxB.fillRect(rdX1, rdY1, rdW, rdH);
+			this.cxB.clearRect(cBoxX, cBoxY, cBoxW, cBoxH);
+			this.cxM.drawImage(this.cvB, rdX1, rdY1, rdW, rdH, rdX1, rdY1, rdW, rdH);
+			this.cxB.clearRect(rdX1, rdY1, rdW, rdH);//Clear the rect after it has been drawn, so that left over pixels will not spill into other bitmap draws.
+			//this.cxM.fillRect(rdX1, rdY1, cBoxX, Math.min( rdH, this.cvM.height ) );
+			//alert(v_bmpObj.x+'+' + v_bmpObj.w + ' = ' + (v_bmpObj.x + v_bmpObj.w));
+			/*this.cxM.fillRect(rdX1 + cBoxX + cBoxW, rdY1,
+					  Math.min( rdX2, this.cvM.width ) - (rdX1 + cBoxX + cBoxW),
+					  Math.min( rdY2, this.cvM.height ) - rdY1);
+			this.cxM.fillRect(rdX1 + cBoxX, rdY1, cBoxW, Math.max(0, cBoxY - rdY1) );
+			this.cxM.fillRect(rdX1 + cBoxX, rdY1 + cBoxY + cBoxH,
+					cBoxW, Math.min( rdY2, this.cvM.height ) - (rdY1 + cBoxY + cBoxH) );
+			*/
+			this.cxB.restore();
+		}
 	}//end loop thru bitmaps
 
 	
@@ -1232,7 +1478,6 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 	}
 
 
-
 	if(this.curToolState == 100){//100 for in progress currently drawing
 		//If still in progress, draw the preview onto the main viewing canvas (it may be erased and updated based on what stroke or thing is currently being drawn)
 		if(this.curDrawMode){
@@ -1241,8 +1486,11 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 			this.cxM.drawImage(this.cvP, rdX1, rdY1, rdW, rdH, rdX1, rdY1, rdW, rdH);//0, 0);
 			this.cxM.restore();
 		}else{//Invert the currently being drawn on area for erase preview
-			var v_dataM = this.cxM.getImageData(0, 0, this.cvM.width, this.cvM.height);
-			for(v_rgbaI = 0;v_rgbaI < this.rgba32BitmapBytes;v_rgbaI += 4){
+			//dataP preview pixels were only extracted within where the affected region overlaps the bound of the current bitmap image. Get the same rect from the main draw canvas and visually update it.
+			var v_dataM = this.cxM.getImageData(rdcX1, rdcY1, Math.max(1, rdcW), Math.max(1, rdcH));
+					//OLD: this.cxM.getImageData(0, 0, this.cvM.width, this.cvM.height);
+			var dataBytesRGBA = v_dataM.data.length * 4;
+			for(v_rgbaI = 0;v_rgbaI < dataBytesRGBA;v_rgbaI += 4){
 				if(v_dataP.data[v_rgbaI + 3]){//if the preview has pixels drawn
 					if(v_dataM.data[v_rgbaI + 3]){//if the buffer being drawn on has pixels drawn
 						v_dataM.data[v_rgbaI    ] = Math.max(0, 255 - v_dataM.data[v_rgbaI]);
@@ -1264,7 +1512,7 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 					}
 				}*/
 			}
-			this.cxM.putImageData(v_dataM, 0, 0);
+			this.cxM.putImageData(v_dataM, rdcX1, rdcY1);
 		}
 	}
 	//Now draw a smaller version onto the mini preview canvas. This is useful to see what is being drawn in relation to positioning with things around it but outside of the main viewer area.
@@ -1326,7 +1574,7 @@ GraFlicImage.prototype.bucketFillUnbound = function(v_x, v_y){//alert('fillcall'
 	}
 	if(this.floodStopped){//Exit lengthy flood operation the user cancelled.
 		this.curToolState = GraFlicImage.TOOL_STATE_STOP;
-		this.pushUndoStack();
+		this.pushUndoStack(GraFlicImage.UNDO_BITMAP_PIXELS);
 		return;
 	}
 	
@@ -1340,11 +1588,9 @@ GraFlicImage.prototype.bucketFillUnbound = function(v_x, v_y){//alert('fillcall'
 	//So this simulates recursive-style logic while not being actually recursive.
 	//Make the call parameters for the first pixel where the flood starts. It will simulate recursive logic without being recursive and running into call stack limits by pushing the next 'calls' into an array that holds the parameters of the simulated calls.
 	var v_color2Replace;
-	var v_maxX = this.cvM.width;//max x
-	var v_maxY = this.cvM.height;//max y
-	v_x = Math.round(v_x);//Pixel indices are on a round numbers only.
-	v_y = Math.round(v_y);
-	var v_pixI = (v_maxX * v_y + v_x);
+	var v_maxX = this.curImage.w;//max x
+	var v_maxY = this.curImage.h;//max y
+	var v_pixI;
 	var v_colorToUse;
 	
 	var nextPix, np;
@@ -1353,6 +1599,9 @@ GraFlicImage.prototype.bucketFillUnbound = function(v_x, v_y){//alert('fillcall'
 		v_colorToUse = this.floodColor;
 		v_color2Replace = this.floodTarget;
 	}else{//If initial call, make the first pixel in the array so that the loop will process.
+		v_x = Math.round(v_x - this.curImage.x);//Pixel indices are on a round numbers only.
+		v_y = Math.round(v_y - this.curImage.y);//be sure to factor in that the bitmap may be smaller than the canvas and offset by an x/y
+		v_pixI = (v_maxX * v_y + v_x);
 		np = {};
 		np.x = v_x;
 		np.y = v_y;
@@ -1384,6 +1633,8 @@ GraFlicImage.prototype.bucketFillUnbound = function(v_x, v_y){//alert('fillcall'
 			return;
 		}
 	}
+	var alphaRepMax = 16;//The number of times a pixel of the same opacity can be encountered in a row, before it stops the flood due to no increasing opacity.
+	//TODO: Should flood behavior be adjustable?: ✢ normal adjacent flood  ❊ diagonal included flood
 	var exitPix;
 	var chunkExit = false;//Will be set to true if exiting to to max chunk processing.
 	//alphaMax tracks the maximum wire alpha encountered for fill floods.
@@ -1415,7 +1666,7 @@ GraFlicImage.prototype.bucketFillUnbound = function(v_x, v_y){//alert('fillcall'
 	}
 	if(this.bucketWA[v_pixI] <= alphaMax){
 		alphaRep++;//AlphaRep will count anything at or below alpha max. Being only slightly below alphaMax does not exit because there are situations where tight corners need to be filled and a strict cutoff would stop too soon.
-		if(alphaRep >= 16 && alphaMax){// && this.bucketWA[v_pixI] >= 192){
+		if(alphaRep >= alphaRepMax && alphaMax){// && this.bucketWA[v_pixI] >= 192){
 			//It may have hit a place where two ends of the line are loosely connected with alpha transparent pixels. Do not let it wrap all around the line on the outside.
 			//However, DO NOT, exit if the alphaMax is still 0 and no wires have been encountered. 
 			exitPix = true;
@@ -1527,7 +1778,7 @@ X|Z|O|Z|X
 				if(alphaMax && this.bucketWA[v_pixI] <= alphaMax){
 					//For wire fill over fully transparent sections it can do unlimited repeats as long as wire alpha stays at 0, so do not increment alphaRep in that case.
 					alphaRep++;
-					if(alphaRep >= 16 && alphaMax){
+					if(alphaRep >= alphaRepMax && alphaMax){
 						exitPix = true;
 					}
 				}else{
@@ -1577,10 +1828,10 @@ X|Z|O|Z|X
 	}
 	chunkPix++;
 	}//end while
-	if(!chunkExit){
+	if(!chunkExit){//If exited due to being finished, not to split up processing into chunks.
 		//Do not need DONE state to transfer to the channel system, floods are put directly onto the channels as it goes along, just STOP.
 		this.curToolState = GraFlicImage.TOOL_STATE_STOP;
-		this.pushUndoStack();
+		this.pushUndoStack(GraFlicImage.UNDO_BITMAP_PIXELS);
 	}
 	//console.log('end of fill func');
 	this.requestRedraw();
@@ -1589,7 +1840,7 @@ GraFlicImage.prototype.stopFlood = function(){
 	this.floodStopped = true;
 };
 GraFlicImage.prototype.plugWires = function(){
-	this.pushUndoStack();
+	this.pushUndoStack(GraFlicImage.UNDO_BITMAP_PIXELS);
 	var plugWA = this.a.f[this.curImage.chan_a].d;
 	var plugFI = this.a.f[this.curImage.chan_f].d;
 	var maxX = this.cvM.width;
@@ -1751,9 +2002,13 @@ GraFlicImage.prototype.mDown = function(v_evt){
 			this.curStroke = [v_x, v_y, v_evt.pressure * 2];
 			this.curToolState = 100;
 		}
+		if(this.curTool == GraFlicImage.TOOL_BOUNDS_CROP){
+			//Tools that use the tool state, but does not track strokes.
+			this.curToolState = 100;
+		}
 	}//end bitmap
-	this.wasX = this.cutX;//may be used for various dragging calculations.
-	this.wasY = this.cutY;
+	//this.wasX = this.cutX;//may be used for various dragging calculations.
+	//this.wasY = this.cutY;
 	this.dragStartX = v_x;
 	this.dragStartY = v_y;
 	this.minRegionX = v_x;//keep track of what region has been dragged over.
@@ -1766,6 +2021,10 @@ GraFlicImage.prototype.mMove = function(v_evt){
 	var v_calXY = this.getMouseCalibratedXY(v_evt);
 	var v_x = v_calXY[0];
 	var v_y = v_calXY[1];
+	this.dragPrevX = this.dragCurX;
+	this.dragPrevY = this.dragCurY;
+	this.dragCurX = v_x;
+	this.dragCurY = v_y;
 	
 	if(this.isDragging){//========================================================
 	this.minRegionX = Math.min(v_x, this.minRegionX);//keep track of what region has been dragged over.
@@ -1787,10 +2046,20 @@ GraFlicImage.prototype.mMove = function(v_evt){
 			//-1 to avoid out of bounds error
 			this.requestRedraw(this.minRegionX, this.minRegionY, this.maxRegionX, this.maxRegionY);
 		}
-		if(this.curTool == GraFlicImage.TOOL_CUT_LASSO && this.isDragging){
-			this.cutX = Math.round(this.wasX + v_x - this.dragStartX);
-			this.cutY = Math.round(this.wasY + v_y - this.dragStartY);
+		if(this.curTool == GraFlicImage.TOOL_CUT_LASSO && this.isDragging && this.curToolState == 0){
+			this.cutBitmap.x += Math.round(this.dragCurX - this.dragPrevX);
+			this.cutBitmap.y += Math.round(this.dragCurY - this.dragPrevY);
 			//console.log(this.cutX + ', ' + this.cutY)
+			this.requestRedraw();
+		}
+		if(this.curTool == GraFlicImage.TOOL_BOUNDS_CROP){
+			//Tools that use the tool state, but does not track strokes.
+			this.requestRedraw();
+		}
+		if( this.curTool == GraFlicImage.TOOL_BOUNDS_MOVE){
+			//Move does not need to manipulate the tool state since it simply changes object parameters.
+			this.curImage.x += Math.round(this.dragCurX - this.dragPrevX);
+			this.curImage.y += Math.round(this.dragCurY - this.dragPrevY);
 			this.requestRedraw();
 		}
 	}//end bitmap
@@ -1800,12 +2069,15 @@ GraFlicImage.prototype.mUp = function(v_evt){
 	var v_calXY = this.getMouseCalibratedXY(v_evt);
 	var v_x = v_calXY[0];
 	var v_y = v_calXY[1];
+	this.dragStopX = v_x;
+	this.dragStopY = v_y;
 	if(this.curImage.type == 'WAIFU'){
 		if(this.isStrokeBasedTool()){//pen
 			this.curToolState = 200;
 			//The redraw MUST be requested on finish, since the drawing code contains the section that commits the final stroke.
 			if(this.curTool == GraFlicImage.TOOL_CUT_LASSO){
-				this.requestRedraw();//Must draw the whole region so that the lasso is not misaligned when copying over in the cut code. If variable sized bitmaps are implemented, this limitation may not be needed.
+				this.requestRedraw(this.minRegionX, this.minRegionY, this.maxRegionX, this.maxRegionY);
+				//OLD: this.requestRedraw();//OLD: Must draw the whole region so that the lasso is not misaligned when copying over in the cut code. If variable sized bitmaps are implemented, this limitation may not be needed.
 			}else{
 				this.requestRedraw(this.minRegionX, this.minRegionY, this.maxRegionX, this.maxRegionY);
 			}
@@ -1813,6 +2085,25 @@ GraFlicImage.prototype.mUp = function(v_evt){
 		if(this.curTool >= 200 && this.curTool < 300){//bucket
 			//flood tool range reserved from 200-299
 			this.bucketFill(v_x, v_y);
+		}
+		if(this.curTool == GraFlicImage.TOOL_BOUNDS_CROP){
+			var cBoxX = Math.min(this.dragStartX, this.dragStopX);
+			var cBoxY = Math.min(this.dragStartY, this.dragStopY);
+			var cBoxW = Math.max(this.dragStartX, this.dragStopX) - cBoxX;
+			var cBoxH = Math.max(this.dragStartY, this.dragStopY) - cBoxY;
+			var cShiftX = cBoxX - this.curImage.x;//handle areas that have been cut out of view to the left and top. Or that have been pushed over while the bitmap object is moved leftward/upward.
+			var cShiftY = cBoxY - this.curImage.y;
+			if(cBoxW && cBoxH){//dimensions for a bitmap must be non-zero.
+				this.cropBitmap(this.curImage, cShiftX, cShiftY, cBoxW, cBoxH);
+			}
+			this.curImage.x = cBoxX;
+			this.curImage.y = cBoxY;
+			this.pushUndoStack(GraFlicImage.UNDO_BITMAP_PIXELS);
+			this.curToolState = 0;
+			this.requestRedraw();
+		}
+		if( this.curTool == GraFlicImage.TOOL_BOUNDS_MOVE){
+			this.pushUndoStack(GraFlicImage.UNDO_IMAGE_PROPS);
 		}
 	}//end bitmap
 	this.isDragging = false;
@@ -1824,9 +2115,17 @@ GraFlicImage.prototype.commitCutMove = function(){
 	//If the current bitmap has been changed, note that it is also moved to another layer.
 	//if this.cutX this.a.j.save.canvas_height
 	//console.log('Committing cut move.');
-	var v_srcI;
-	for(var v_copyI = 0;v_copyI < this.channelBitmapBytes;v_copyI++){
-		v_srcI = v_copyI - this.cutX - Math.round(this.cutY * this.a.j.save.canvas_width);
+	var v_srcI, v_copyI;
+	var cmX1 = Math.max(this.cutBitmap.x, this.curImage.x);
+	var cmY1 = Math.max(this.cutBitmap.y, this.curImage.y);
+	var cmX2 = Math.min(this.cutBitmap.x + this.cutBitmap.w, this.curImage.x + this.curImage.w);
+	var cmY2 = Math.min(this.cutBitmap.y + this.cutBitmap.h, this.curImage.y + this.curImage.h);
+	for(var h = cmY1;h < cmY2;h++){
+	for(var w = cmX1;w < cmX2;w++){
+	//for(var v_copyI = 0;v_copyI < this.channelBitmapBytes;v_copyI++){
+		v_copyI = (h - this.curImage.y) * this.curImage.w + w - this.curImage.x;
+		v_srcI = (h - this.cutBitmap.y) * this.cutBitmap.w + w - this.cutBitmap.x;
+		//v_srcI = v_copyI - this.cutBitmap.x - Math.round(this.cutBitmap.y * this.a.j.save.canvas_width);
 		//palette indices in the cut bitmap override the current ones
 		if(this.a.f[this.cutBitmap.chan_f].d[v_srcI]){
 			//The following makes a fill on the cut part cover any wires on the destination,
@@ -1839,7 +2138,8 @@ GraFlicImage.prototype.commitCutMove = function(){
 			this.a.f[this.curImage.chan_i].d[v_copyI] = this.a.f[this.cutBitmap.chan_i].d[v_srcI];
 		}
 		this.a.f[this.curImage.chan_a].d[v_copyI] |= this.a.f[this.cutBitmap.chan_a].d[v_srcI];
-	}
+	//}
+	}}
 	//Delete virtual files no longer needed to save memory.
 	this.a.deleteFile(this.cutBitmap.chan_a);
 	this.a.deleteFile(this.cutBitmap.chan_i);
@@ -2116,7 +2416,9 @@ GraFlicImage.prototype.loadFromU8A = function(v_u8a){
 	/*for(var k in this.a.f){
 		console.log(this.a.f[k].p + ' / ' + this.a.f[k].d);
 	}*/
-	this.changeCanvasSize(this.a.j.save.canvas_width, this.a.j.save.canvas_height, 0);
+	//TODO: There could be an issue where once the last pixel-changing action falls out of the stack, if there are a bunch of non-changing things like moves it will not be able to find the last pixel state to copy it over.
+	//Send the flags for size change AND bitmap pixels, so that it will now to copy the pixels for ALL images. Each image must start with something to undo to when the image is started or restored.
+	this.systemChangeCanvasSize(GraFlicImage.UNDO_IMAGE_ALL | GraFlicImage.UNDO_BITMAP_PIXELS, this.a.j.save.canvas_width, this.a.j.save.canvas_height);
 	
 	if(this.onLoaded){
 		this.onLoaded(this.a);
