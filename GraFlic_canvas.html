@@ -52,7 +52,7 @@ SOFTWARE.
 
 <div style="display:inline-block;overflow:hidden;width:15vw;height:75vh;">
 <div style="height:10%;" class="GraFlic_j">
-<a href="de">🇩🇪</a><a href="jp">🇯🇵</a><a href="en">🇺🇸</a>⋯
+<!--a href="de">🇩🇪</a><a href="jp">🇯🇵</a><a href="en">🇺🇸</a-->⋯
 </div>
 <div style="height:45%;overflow:hidden;">
 <div style="position:absolute;z-index:9;opacity:0.67;" class="GraFlic_j">
@@ -83,7 +83,8 @@ Visit <a href="http://AnimatedPNGs.com" target="_blank">AnimatedPNGs.com</a> for
 <label for="GraFlicC_onion_skin_chk" class="GraFlic_j">🍃</label>
 ┆<input type="checkbox" id="GraFlicC_onion_skin_stain_glass_chk"/>
 <label for="GraFlicC_onion_skin_stain_glass_chk" class="GraFlic_j">💎</label>
-<input type="range" id="GraFlicC_zoom_rng" value="50" min="20" max="500" step="5" style="float:right;width:60%;"/>
+┆<button id="GraFlicC_undo_btn" title="z" style="font-weight:bold;">↩</button><button id="GraFlicC_redo_btn" title="y">↪</button>
+<input type="range" id="GraFlicC_zoom_rng" value="50" min="20" max="500" step="5" style="float:right;width:40%;"/>
 </td>
 <td style="min-width:6em;">
 <input type="text" id="GraFlicC_zoom_txt" value="50" style="width:4em;"/><span class="GraFlic_j">🔍</span>
@@ -122,7 +123,7 @@ Visit <a href="http://AnimatedPNGs.com" target="_blank">AnimatedPNGs.com</a> for
 <td class="GraFlic_e">
 <input id="GraFlicC_pen_width_rng" type="range" value="2" min="0.1" max="10" step="0.1"/>
 </td>
-<td><input type="text" id="GraFlicC_pen_width_txt" value="2" style="width:4em;"/><span class="GraFlic_j">🖊</span></td>
+<td><input type="text" id="GraFlicC_pen_width_txt" value="2" style="width:4em;"/><span class="GraFlic_j">⌇</span></td>
 </tr>
 
 
@@ -895,12 +896,12 @@ function f_kUp(v_evt){
 			break;
 	}//end switch
 }
-function f_undo(){
+function f_undo(e){
 	v_curGraFlic.undo();
 	f_requestRedraw();
 	f_zoomChange();//Zoom change must be done in case undoing/redoing canvas size change, otherwise display could be distorted.
 }
-function f_redo(){
+function f_redo(e){
 	v_curGraFlic.redo();
 	f_requestRedraw();
 	f_zoomChange();
@@ -1053,6 +1054,8 @@ function f_init(){
 	v_palSel.addEventListener('input', f_paletteColorChange);
 	
 	//radio/checkbox has issues with 'input' event in some browsers. Make it 'change' to ensure event is going after the input changed it.
+	GraFlicC_undo_btn.addEventListener('click', f_undo);
+	GraFlicC_redo_btn.addEventListener('click', f_redo);
 	GraFlicC_tool_pen_rad.addEventListener('change', f_toolSelect);
 	GraFlicC_tool_brush_rad.addEventListener('change', f_toolSelect);
 	GraFlicC_tool_fill_bucket_rad.addEventListener('change', f_toolSelect);

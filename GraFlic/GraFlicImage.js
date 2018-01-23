@@ -499,6 +499,7 @@ GraFlicImage.prototype.initEmbed = function(fPath){
 
 GraFlicImage.prototype.addBitmap = function(){
 	this.a.j.save.images.push(this.initBitmapWAIFU());
+	this.pushUndoStack(GraFlicImage.UNDO_BITMAP_PIXELS);//The new bitmap must have a pixel state copy to undo back to.
 };
 GraFlicImage.prototype.addEmbed = function(p){
 	this.a.j.save.images.push(this.initEmbed(p));
@@ -544,16 +545,16 @@ GraFlicImage.prototype.undoRedoCopy = function(v_undoBMP, v_revert){
 		}
 	}
 };
-//These bits can be combined with boolean | if an action applies to multiple.
+//These bits can be combined with boolean | if an action applies to multiple. Each flag definition should have exactly one bit set.
 GraFlicImage.UNDO_BITMAP_PIXELS = 0x1;//Pixels drawn/erased/changed. (including crop, that changes pixels and the must be copied and added to the stack to have a place to redo to after a stroke is made onto the newly cropped bitmap)
-GraFlicImage.UNDO_IMAGE_ALL = 0x2;//An action that can affect all images such as Canvas size changed.
+GraFlicImage.UNDO_IMAGE_ALL = 0x2;//An action that can affect all images such as Canvas size changed. This combined with BITMAP_PIXELS will signal that a copy of every bitmap is needed, such as in initializing from restoring a file.
 GraFlicImage.UNDO_IMAGE_PROPS = 0x4;//JSON properties for image/ bitmap changed
-GraFlicImage.prototype.pushUndoStack = function(undoType){
+GraFlicImage.prototype.pushUndoStack = function(undoFlags){
 	var undoObj = {}, i, i2, uObj1, iObj1;
-	undoObj.type = undoType;
+	undoObj.flags = undoFlags;
 	this.redoStack = [];//Cannot redo on top of a change that was done after undoing.
 	//-----------------------------------------------------------------
-	/*if( !(undoType | GraFlicImage.UNDO_IMAGE_ALL) ){//Targets a specific image.
+	/*if( !(undoFlags | GraFlicImage.UNDO_IMAGE_ALL) ){//Targets a specific image.
 		//Save the position it was moved to. Since there is no bitmap_copy (pixel copying for a move would waste resources) the bounds must be tracked this way.
 		//Should not be needed. Image should simply exist in the array of affected images ifs affected.
 		undoObj.targ = this.curImage;//target bitmap
@@ -571,8 +572,8 @@ GraFlicImage.prototype.pushUndoStack = function(undoType){
 		uObj1.y = iObj1.y;
 		uObj1.w = iObj1.w;
 		uObj1.h = iObj1.h;
-		if( (iObj1 == this.curImage || (undoType | GraFlicImage.UNDO_IMAGE_ALL) )
-		 && (undoType | GraFlicImage.UNDO_BITMAP_PIXELS)
+		if( (iObj1 == this.curImage || (undoFlags | GraFlicImage.UNDO_IMAGE_ALL) )
+		 && (undoFlags | GraFlicImage.UNDO_BITMAP_PIXELS)
 			){
 			//If the flag that this affects pixels is set copy pixels. If all images flag set, do this for ALL images. (On initialization/reconstruction from file all images must have a point to be able to undo back to.)
 			//TODO: Support other channel systems later? RGBA?
@@ -623,6 +624,10 @@ GraFlicImage.prototype.pushUndoStack = function(undoType){
 	}
 	console.log('undo stack: ' + this.undoStack.length);// + ' n: ' + v_undoBMP.name);
 };
+GraFlicImage.prototype.clearUndoRedo = function(){//Start over if a new project is started/restored. Undo stats linking to non-existing things will make errors.
+	while(this.undoStack.length){this.undoStack.pop();}
+	while(this.redoStack.length){this.redoStack.pop();}
+};
 GraFlicImage.prototype.undo = function(){
 	console.log('undo called. stack: ' + this.undoStack.length);
 	if(this.undoStack.length < 2){return;}//must have initial state, plus something drawn since then.
@@ -630,7 +635,7 @@ GraFlicImage.prototype.undo = function(){
 	var v_undoObj = this.undoStack[this.undoStack.length - 1];//undo it to the state that is now at the top of the stack.
 	this.undoRedoExec(v_undoObj, false);
 	//redo stack will not get too large because it has to come out of the undo stack, which is already limited.
-	console.log('redo stack: ' + this.redoStack.length + ' undid code: ' + v_undoObj.type);
+	console.log('redo stack: ' + this.redoStack.length + ' undid code bits: ' + v_undoObj.flags.toString(2));
 };
 GraFlicImage.prototype.redo = function(){
 	console.log('redo called');
@@ -638,12 +643,12 @@ GraFlicImage.prototype.redo = function(){
 	var v_undoObj = this.redoStack.pop();
 	this.undoRedoExec(v_undoObj, true);
 	this.undoStack.push(v_undoObj);
-	console.log('undo stack: ' + this.undoStack.length + ' redid code: ' + v_undoObj.type);
+	console.log('undo stack: ' + this.undoStack.length + ' redid code bits: ' + v_undoObj.flags.toString(2));
 };
 GraFlicImage.prototype.undoRedoExec = function(v_undoObj, isRedo){
-	//if(v_undoObj.type == GraFlicImage.UNDO_BITMAP_PIXELS){//Pixel changing actions undone (stroke, fill, crop)
+	//if(v_undoObj.flags == GraFlicImage.UNDO_BITMAP_PIXELS){//Pixel changing actions undone (stroke, fill, crop)
 	var imageState, targImage, i, uObj1;
-	console.log('Undo/Redo Exec code: ' + v_undoObj.type + ' targImage?: ' + targImage);
+	console.log('Undo/Redo Exec code: ' + v_undoObj.flags + ' targImage?: ' + targImage);
 	var uX, uY, uW, uH;//These will be set if x/y/w/h have been changed, signaling it to reposition or crop.
 	for(i = 0;i < v_undoObj.imageStatesList.length;i++){
 		imageState = v_undoObj.imageStatesList[i];
@@ -667,7 +672,7 @@ GraFlicImage.prototype.undoRedoExec = function(v_undoObj, isRedo){
 			//Find the last state that had pixels copied to ensure that the pixels are as they were when moved.
 			if(!isRedo){//Only undo needs to have pixels copied in this way. It messes up redo and puts the pixels there before the would be when it was just moved, not drawn on.
 				for(pixSearch = searchStack.length-1;pixSearch >= 0;pixSearch--){
-					if(searchStack[pixSearch].type | GraFlicImage.UNDO_BITMAP_PIXELS){
+					if(searchStack[pixSearch].flags | GraFlicImage.UNDO_BITMAP_PIXELS){
 					 if(searchStack[pixSearch].imageStatesById[imageState.id]){
 					  if(searchStack[pixSearch].imageStatesById[imageState.id].bitmap_copy){
 						lastPixelState = searchStack[pixSearch].imageStatesById[imageState.id].bitmap_copy;
@@ -679,6 +684,7 @@ GraFlicImage.prototype.undoRedoExec = function(v_undoObj, isRedo){
 			}
 		}
 		if(lastPixelState){//If pixels were found that can be copied from previous state. (some actions like move may not have these, and they may be looked up from the last pixel-containing state if applicable.)
+			//console.log('lastPixState chan_i: ' + lastPixelState.chan_i);//If there is an error here, be sure that clearUndoRedo was called to clear previous states after going to a new project, linking to no-longer-existing things will break here.
 			this.undoRedoCopy(lastPixelState, true);
 		}
 	}//end images loop
@@ -691,11 +697,11 @@ GraFlicImage.prototype.undoRedoExec = function(v_undoObj, isRedo){
 		uObj1.up_targ.x = uObj1.x;
 		uObj1.up_targ.y = uObj1.y;
 	}*/
-	/*if(v_undoObj.type == GraFlicImage.UNDO_IMAGE_PROPS){
+	/*if(v_undoObj.flags == GraFlicImage.UNDO_IMAGE_PROPS){
 		targImage.x = v_undoObj.x;
 		targImage.y = v_undoObj.y;
 	}
-	if(v_undoObj.type == GraFlicImage.UNDO_IMAGE_ALL){
+	if(v_undoObj.flags == GraFlicImage.UNDO_IMAGE_ALL){
 		this.systemChangeCanvasSize(0, v_undoObj.w, v_undoObj.h, v_undoObj.x, v_undoObj.y);
 	}*/
 };
@@ -1172,7 +1178,7 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 			this.pushUndoStack(GraFlicImage.UNDO_BITMAP_PIXELS);//Save state AFTER stroke committed. An initial push will be made when the file is first started.
 			this.requestRedraw(rdX1, rdY2, rdX2, rdY2);//redraw after the stroke has been merged into the channel system.
 		}//end pen stroke finished code.
-		if(this.curTool == GraFlicImage.TOOL_CUT_LASSO && this.cutBitmap == null){//Committing lasso cut move once finished.
+		if(this.curTool == GraFlicImage.TOOL_CUT_LASSO && this.cutBitmap == null){//Committing lasso cut once finished selecting area.
 			//For lasso tool, copy anything in the mask to the cut Bitmap.
 			console.log('Committing lasso cut, movable cut bitmap created.');
 			this.cutBitmap = this.initBitmapWAIFU(true);
@@ -1187,7 +1193,7 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 			for(h = rdcY1;h < rdcY2;h++){
 			for(w = rdcX1;w < rdcX2;w++){
 				//Note that testing the pixels from the redraw-crop section cut out with getImageData
-				v_rgbaI = (rdcW * (h - rdcY1) + w - rdcY1) * 4;//4 bytes per pixel in the RGBA canvas data
+				v_rgbaI = (rdcW * (h - rdcY1) + w - rdcX1) * 4;//4 bytes per pixel in the RGBA canvas data
 				v_copyI = (this.cutBitmap.w * (h - rdY1) ) + w - rdX1;//new bitmap was inited with rdX1/rdY1 as (x,y)
 				v_copyFromI = (this.curImage.w * (h - yOffset) ) + w - xOffset;
 				v_pixA = v_dataP.data[v_rgbaI + 3];
@@ -1200,6 +1206,7 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 					this.a.f[this.curImage.chan_f].d[v_copyFromI] = 0;
 				}
 			}}
+			this.pushUndoStack(GraFlicImage.UNDO_BITMAP_PIXELS);//Save the state after the area is sliced out. (It will also be saved on the target bitmap pasted onto.)
 			this.requestRedraw();//The cut adds a bitmap for the cut area, so request a redraw.
 		}
 		this.curToolState = 0;//set to 0 inactive now that finished with this draw
@@ -2146,6 +2153,8 @@ GraFlicImage.prototype.commitCutMove = function(){
 	this.a.deleteFile(this.cutBitmap.chan_f);
 	this.a.deleteFile('b/' + this.cutBitmap.id + '/');
 	this.cutBitmap = null;//the cutBMP is now empty after it was merged to another bitmap.
+	//TODO: needs to handle for both the source and the destination to where the cut is pasted (if cut moved to a different image).
+	this.pushUndoStack(GraFlicImage.UNDO_BITMAP_PIXELS);
 	this.requestRedraw();//The cut adds a bitmap for the cut area, so request a redraw.
 };
 
@@ -2416,8 +2425,8 @@ GraFlicImage.prototype.loadFromU8A = function(v_u8a){
 	/*for(var k in this.a.f){
 		console.log(this.a.f[k].p + ' / ' + this.a.f[k].d);
 	}*/
-	//TODO: There could be an issue where once the last pixel-changing action falls out of the stack, if there are a bunch of non-changing things like moves it will not be able to find the last pixel state to copy it over.
 	//Send the flags for size change AND bitmap pixels, so that it will now to copy the pixels for ALL images. Each image must start with something to undo to when the image is started or restored.
+	this.clearUndoRedo();
 	this.systemChangeCanvasSize(GraFlicImage.UNDO_IMAGE_ALL | GraFlicImage.UNDO_BITMAP_PIXELS, this.a.j.save.canvas_width, this.a.j.save.canvas_height);
 	
 	if(this.onLoaded){
