@@ -293,4 +293,5 @@ textarea.GraFlic_y,
 .GraFlic_j{
 	font-size: 20px;
 	vertical-align: middle;
+	cursor:pointer;
 }
