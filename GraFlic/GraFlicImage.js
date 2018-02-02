@@ -47,7 +47,7 @@ function GraFlicImage(v_fromArchive, v_params){
 	this.penWidth = 2;
 	this.penOpacityAnalysis = {};//Pen strokes need to have full opacity at the center of the stroke to work with the fill tool and not leak. Using FULL opacity as the edge is important because images should not have stray bits of slightly transparent pixels randomly in them. That can mess up pixel recycling between APNG frames and force a full clear of the region to update it. This var should NOT be saved in the JSON with the save file. There is a chance that the behavior of wire stroke varies slightly between browsers. This needs to be recalculated on each runtime.
 	this.curStroke = [];
-	this.curTool = 1;
+	this.curTool = 101;//Variable width pressure-aware pen.
 	//1 = pen
 	//2 = fill bucket
 	//3 = wire bucket
@@ -133,8 +133,6 @@ function GraFlicImage(v_fromArchive, v_params){
 	this.curPalette.default = true;//Non-default palettes may only override some colors and rely on the default to ensure every used index has a color.
 	this.a.j.s.palettes = [this.curPalette];//Init palette array.
 	this.a.j.s.selected_palette_index = 0;
-	this.a.j.s.onion_skin_on = false;
-	this.a.j.s.stain_glass_on = false;//Makes fill areas more see-thru so that multiple layers are easier to see.
 	
 	//----------------------------------------------
 
@@ -159,6 +157,13 @@ function GraFlicImage(v_fromArchive, v_params){
 	
 	}//================================= end init only needed if not loading from a file ===========================
 	//==============================================================================================================
+	
+	//Viewer controls what view settings are currently active. This is used while editing to make it easier to see different things or use previous frames as a guide. Viewer resets on initialization.
+	
+	this.viewer = {};
+	this.viewer.breeze = false;//TODO: make these accept a number for different modes? (0/false will be off)
+	this.viewer.stained_glass = false;//Makes fill areas more see-thru so that multiple layers are easier to see.
+	this.viewer.dictionary = false;//Will show only the image object being edited and nothing else. Ignores what the current frame is.
 	
 	//this.wasX;//Used for dragging. (Not currently needed...)
 	//this.wasY;
@@ -208,8 +213,9 @@ function GraFlicImage(v_fromArchive, v_params){
 		this.fileSelectLoadedHandler = this.fileSelectLoadedHandlerUnbound.bind(this);
 	}
 };
+GraFlicImage.EDITOR_VERSION = 0.01;//Set to 1.0 when stable enough to declare version.
 GraFlicImage.TOOL_PEN = 1;//Simple single width line that ignores pressure.
-GraFlicImage.TOOL_BRUSH = 101;//Variable width pressure-aware line.
+GraFlicImage.TOOL_BRUSH = 101;//Variable width pressure-aware pen.
 GraFlicImage.TOOL_FLOOD_FILL = 200;
 GraFlicImage.TOOL_FLOOD_WIRE = 201;
 GraFlicImage.TOOL_FLOOD_SWAP = 202;
@@ -263,18 +269,21 @@ GraFlicImage.prototype.initMetadata = function(){
 	var v_metadata = {};
 	v_metadata.project = {};//This var should contain metadata about the project file being drawn/saved.
 				//This is a set of pre-defined keys that set specific project parameters.
-	v_metadata.project.filetype = 'graflic';//extension
-	v_metadata.project.mimetype = 'image/graflic';
+				//TODO: Have not thought of anything to do with .project, remove it???
+	v_metadata.filetype = 'graflic';//extension
+	v_metadata.mimetype = 'image/graflic';
+	v_metadata.version_editor = GraFlicImage.EDITOR_VERSION;//Version used to create this file.
+	v_metadata.version_needed = GraFlicImage.EDITOR_VERSION;//Minimum version needed to open.
 	v_metadata.general = {};//This var should contain metadata that would apply to the result image, not just the project save.
 				//Things like Title would apply to the project and the output image.
 	v_metadata.locale = {};//Data set in locale can cascade over metadata properties (other than .locale itself obviously).
 		//For example create 'de_DE' in .locale and create the chain of properties "locale":{"de_DE":{"general":{"Title":"Deutsch Titel"}}}
 		//(underscore(_) is better than dash(-) in this case for javascript access .loacale.de-DE is a not valid property name)
-	//Change metadata.text to .general, to make it more consistent with how GraFlicEncoder .metadata works
+	//Changed metadata.text to metadata.general, to make it more consistent with how GraFlicEncoder .metadata works
 	//Instead of having .text be just text, it could be any value, if 'typeof' text, it can be inserted as a tEXt or iTXt entry for PNG,
-	//If typeof 'object' it could have a structure used to build other types of metadata like pHYs or colorspace entries.
+	//If typeof 'object' it could have a structure used to build other types of metadata like pHYs or color profile entries.
 	//If it is an object, then it might look for something like '.meta_type' and if the encoder has a way to handle that, it will
-	//insert it in the standard way for the output format, and if not recongnized, it will be ignored.
+	//insert it in the standard way for the output format, and if not recognized, it will be ignored.
 	return v_metadata;//return the initialized object, useful for making sure required init properties are there for parsed JSON.
 };
 
@@ -739,31 +748,54 @@ GraFlicImage.prototype.undoRedoExec = function(v_undoObj, isRedo, wasObj){
 };
 GraFlicImage.calcRGBAForBitDepth = function(v_color){//static
 	var v_base = ['r', 'g', 'b', 'a'];
+	var floatV = [v_color.rgb[0], v_color.rgb[1], v_color.rgb[2], v_color.a];//0.0 - 1.0 precise values
 	var v_bKey;
-	for(var v_i = 0;v_i < v_base.length;v_i++){
+	for(var v_i = 0;v_i < v_base.length;v_i++){//Convert to machine RGBA pixel values.
 		v_bKey = v_base[v_i];
-		v_color[v_bKey + '24'] = Math.round(v_color[v_bKey] * 0xFF);//0-255
-		v_color[v_bKey + '48'] = Math.round(v_color[v_bKey] * 0xFFFF);//0-65k
+		v_color[v_bKey + '24'] = Math.round(floatV[v_i] * 0xFF);//0-255
+		v_color[v_bKey + '48'] = Math.round(floatV[v_i] * 0xFFFF);//0-65k
 	}
 	//alert(JSON.stringify(v_color));
 }
+GraFlicImage.setPaletteColorRGB = function(c, r, g, b){
+	c.rgb = [r, g, b];
+	c.hsl = GraFlicUtil.RGB2HSL(r, g, b);
+	c.hsv = GraFlicUtil.RGB2HSV(r, g, b);
+	GraFlicImage.calcRGBAForBitDepth(v_curGraFlic.curPaletteColor);
+};
+GraFlicImage.setPaletteColorHSL = function(c, h, s, l){
+	c.hsl = [h, s, l];
+	c.rgb = GraFlicUtil.HSL2RGB(h, s, l);
+	c.hsv = GraFlicUtil.RGB2HSV(c.rgb[0], c.rgb[1], c.rgb[2]);
+	GraFlicImage.calcRGBAForBitDepth(v_curGraFlic.curPaletteColor);
+};
+GraFlicImage.setPaletteColorHSV = function(c, h, s, v){
+	c.hsv = [h, s, v];
+	c.rgb = GraFlicUtil.HSV2RGB(h, s, v);
+	c.hsl = GraFlicUtil.RGB2HSL(c.rgb[0], c.rgb[1], c.rgb[2]);
+	GraFlicImage.calcRGBAForBitDepth(v_curGraFlic.curPaletteColor);
+};
 GraFlicImage.prototype.newPaletteColorRGBA = function(v_palR, v_palG, v_palB, v_palA, v_palTitle){
 	this.curPalette.colors.push(this.initPaletteColorRGBA(v_palR, v_palG, v_palB, v_palA, v_palTitle));
 };
+GraFlicImage.prototype.initPaletteColorGeneral = function(pTitle){
+	//Other styles of color objects may be added later with styles other than flat, such as gradient or pattern
+	//rgb, hsl, hsv, and a are properties that a flat color will have that a gradient, for example, would not. The gradient would contain a list of flat colors and instructions for drawing the gradient.
+	//This function should only be called by a specific color init function to set up the basic things first.
+	var pColor = {};
+	pColor.id = this.getNextID('color');//Note that IDs are strings, though they will auto-generate based on the next unique number of the ID variety.
+	pColor.title = pTitle;
+	return pColor;
+};
 GraFlicImage.prototype.initPaletteColorRGBA = function(v_palR, v_palG, v_palB, v_palA, v_palTitle){
-	var v_palHSL = GraFlicUtil.RGB2HSL(v_palR, v_palG, v_palB);
-	var v_palColor = {};
+	var v_palColor = this.initPaletteColorGeneral(v_palTitle);
 	v_palColor.id = this.getNextID('color');
 	//r g b and h s l are 0-1.0 floats, allowing future expansion into 48 bit color potentially.
-	v_palColor.r = v_palR;
-	v_palColor.g = v_palG;
-	v_palColor.b = v_palB;
+	v_palColor.rgb = [v_palR, v_palG, v_palB];
 	v_palColor.a = v_palA;
-	v_palColor.h = v_palHSL[0];
-	v_palColor.s = v_palHSL[1];
-	v_palColor.l = v_palHSL[2];
+	v_palColor.hsl = GraFlicUtil.RGB2HSL(v_palR, v_palG, v_palB);//[h, s, l] array
+	v_palColor.hsv = GraFlicUtil.RGB2HSV(v_palR, v_palG, v_palB);//[h, s, v] array
 	GraFlicImage.calcRGBAForBitDepth(v_palColor);
-	v_palColor.title = v_palTitle;
 	v_palColor.style = 'flat';//Currently only supports flat colors. In the future gradients or textures may be supported.
 	return v_palColor;
 };
@@ -803,10 +835,17 @@ GraFlicImage.prototype.requestRedrawUnbound = function(x1, y1, x2, y2){
 		this.redrawY2 = this.a.j.s.canvas_height;
 		this.redrawFull = true;//Do not let the partial redraw go into effect if a full redraw has been requested.
 	}else if(!this.redrawFull){//If redrawing for a stroke or something, only update the region being changes so that it does not lag.
-		this.redrawX1 = Math.max(0, Math.round(x1-10));//default is to draw the whole area.
-		this.redrawY1 = Math.max(0, Math.round(y1-10));
-		this.redrawX2 = Math.min(this.a.j.s.canvas_width, Math.round(x2+10));
-		this.redrawY2 = Math.min(this.a.j.s.canvas_height, Math.round(y2+10));
+		var rExpand = 0;
+		if(this.isStrokeBasedTool()){
+			rExpand = 10;
+			if(this.isStrokeBasedVariableWidthTool()){
+				rExpand = this.penWidth * 2;//Pressure pen can go from 0% - 200% of base width.
+			}
+		}
+		this.redrawX1 = Math.max(0, Math.round(x1-rExpand));//default is to draw the whole area.
+		this.redrawY1 = Math.max(0, Math.round(y1-rExpand));
+		this.redrawX2 = Math.min(this.a.j.s.canvas_width, Math.round(x2+rExpand));
+		this.redrawY2 = Math.min(this.a.j.s.canvas_height, Math.round(y2+rExpand));
 	}
 };
 GraFlicImage.prototype.alphaOverColorChannel = function(v_byteA, v_byteB, v_alphaA, v_alphaB){
@@ -836,6 +875,7 @@ GraFlicImage.prototype.updateCanvasVisualsUnbound = function(v_cTimestamp){
 		var v_displayFrameIndex = this.a.j.s.selected_frame_index;
 		var v_displayFrameID = this.a.j.s.frames[this.a.j.s.selected_frame_index].id;
 		var v_fMax = this.a.j.s.frames.length - 1;
+		var hasShownCurImage = false;//If in dictionary view, must ensure this is shown.
 		if(this.isPlaying){//if playing a preview of the animation.
 			v_displayFrameIndex = this.playingFrame;
 			v_displayFrameID = this.a.j.s.frames[v_displayFrameIndex].id;
@@ -848,12 +888,12 @@ GraFlicImage.prototype.updateCanvasVisualsUnbound = function(v_cTimestamp){
 			for(var v_i2 = 0;v_i2 < v_img2Draw.plays_on_frames.length;v_i2++){
 				if(v_img2Draw.plays_on_frames[v_i2] == v_displayFrameID){//Link it to String ID, not index since order could be changed.
 					v_imgDoInsert = true;
-					//if(this.a.j.s.onion_skin_on){
+					//if(this.viewer.breeze){
 					//	//Give even the current frame partial alpha, so things behind it can be seen.
 					//	v_imgAlpha = 0.90;
 					//}
 					break;
-				}else if(this.a.j.s.onion_skin_on){
+				}else if(this.viewer.breeze){
 					if(    v_img2Draw.plays_on_frames[v_i2] == this.a.j.s.frames[Math.min(v_fMax, this.a.j.s.selected_frame_index + 1)].id
 					    || v_img2Draw.plays_on_frames[v_i2] == this.a.j.s.frames[Math.max(0, this.a.j.s.selected_frame_index - 1)].id ){
 						v_imgDoInsert = true;
@@ -870,14 +910,28 @@ GraFlicImage.prototype.updateCanvasVisualsUnbound = function(v_cTimestamp){
 						v_imgAlpha = 0.10;
 						break;
 					}
-				}//end onion skin on
+				}//end breeze on
 			}
 			if(v_imgDoInsert){
+				if(this.viewer.dictionary){
+					if(v_img2Draw == this.curImage){
+						hasShownCurImage = true;
+						v_imgAlpha = 1;
+					}else{
+						v_imgAlpha *= 0.20;//Heavily ghost out everything else.
+					}
+				}
 				v_i2dParams = {};
 				v_i2dParams.image = v_img2Draw;
 				v_i2dParams.onionAlpha = v_imgAlpha;
 				v_images2Draw.push(v_i2dParams);
 			}
+		}
+		if(this.viewer.dictionary && !hasShownCurImage){//Dictionary mode. Only show the image currently being edited and everything else heavily ghosted out.
+			v_i2dParams = {};
+			v_i2dParams.image = this.curImage;
+			v_i2dParams.onionAlpha = 1;
+			v_images2Draw.push(v_i2dParams);
 		}
 		if(this.cutBitmap){
 			v_i2dParams = {};
@@ -933,6 +987,7 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 	if(!rdW || !rdH){//0 width or height will make breakage.
 		return;
 	}
+	//TODO: Could make a system where instead of clearing and redrawing the area, the last state of the final canvas before the stroke started would be cached, and it could just copy from the cache to the affected area. Then once a change is done, the final canvas is cached again by copying over just the area affected from the current canvas to the cache canvas to save CPU.
 	//console.log('draw update region: ' + rdX1 + ', ' + rdY1 + ' / ' + rdX2 + ', ' + rdY2 + ' W: ' + rdW + ' H: ' + rdH);
 	var chanWI, chanWA, chanFI;
 	var v_rgbaI;
@@ -944,8 +999,8 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 	var v_drawStainedGlass = false;
 	var finalOutput = false;//Guidelines and visual hints should not be drawn if drawing for final output.
 	if(this.frameDrawingForSave == -1){
-		v_drawOnion = this.a.j.s.onion_skin_on ? true : false;
-		v_drawStainedGlass = this.a.j.s.stain_glass_on ? true : false;
+		v_drawOnion = this.viewer.breeze ? true : false;
+		v_drawStainedGlass = this.viewer.stained_glass ? true : false;
 	}else{
 		finalOutput = true;
 	}
@@ -1000,17 +1055,20 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 		this.cxP.lineWidth = this.penWidth;//For some reason .lineWidth is ignored if set before .beginPath()
 		this.cxP.strokeStyle = GraFlicImage.getPaletteCSSRGB(this.curPaletteColor);
 		this.cxP.fillStyle = this.cxP.strokeStyle;
-		if(this.curTool == 300){//Lasso
-			if(this.curToolState == 200){
-				this.cxP.strokeStyle = 'black';
-			}else{
+		if(this.curTool == GraFlicImage.TOOL_CUT_LASSO){//Lasso
+			//if(this.curToolState == GraFlicImage.TOOL_STATE_DONE){
+				//this.cxP.strokeStyle = 'black';//should not matter now, because the lasso mask uses fill() not stroke()
+			//}else{
 				this.cxP.setLineDash([4, 4]);
 				this.cxP.strokeStyle = '#7F7F7F';
-			}
+			//}
 		}
 		var usePressure = true;
 		if(this.curTool == GraFlicImage.TOOL_CUT_LASSO || this.curTool == GraFlicImage.TOOL_PEN){
 			usePressure = false;//no pressure needed for lasso or basic pen.
+		}
+		if(!this.isStrokeBasedVariableWidthTool()){
+			this.cxP.lineWidth = 2;//Lasso does not need different line width variations.
 		}
 		if(usePressure){
 			var lastX = this.curStroke[0];
@@ -1115,10 +1173,11 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 			for(v_i = 3;v_i < this.curStroke.length;v_i+=3){
 				this.cxP.lineTo(this.curStroke[v_i], this.curStroke[v_i + 1]);
 			}
-			this.cxP.stroke();
 			if(this.curTool == GraFlicImage.TOOL_CUT_LASSO && this.curToolState == 200){
 				//For lasso, If finished and ready to commit, fill it to build the mask.
 				this.cxP.fill();
+			}else{
+				this.cxP.stroke();
 			}
 		}
 		//Do not .closePath() unless drawing a closed shape to connect start/end of line.
@@ -1544,7 +1603,7 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 						v_dataM.data[v_rgbaI    ] = Math.max(0, 255 - v_dataM.data[v_rgbaI]);
 						v_dataM.data[v_rgbaI + 1] = Math.max(0, 255 - v_dataM.data[v_rgbaI + 1]);
 						v_dataM.data[v_rgbaI + 2] = Math.max(0, 255 - v_dataM.data[v_rgbaI + 2]);
-						v_dataP.data[v_rgbaI + 3] = 0;
+						v_dataP.data[v_rgbaI + 3] = 0;//Zero out preview canvas and just show what is below.
 					}else{
 						v_dataM.data[v_rgbaI    ] = 127;
 						v_dataM.data[v_rgbaI + 1] = 127;
@@ -1887,7 +1946,7 @@ X|Z|O|Z|X
 GraFlicImage.prototype.stopFlood = function(){
 	this.floodStopped = true;
 };
-GraFlicImage.prototype.plugWires = function(){
+/*GraFlicImage.prototype.plugWires = function(){
 	this.pushUndoStack(GraFlicImage.UNDO_BITMAP_PIXELS);
 	var plugWA = this.a.f[this.curImage.chan_a].d;
 	var plugFI = this.a.f[this.curImage.chan_f].d;
@@ -1998,7 +2057,7 @@ GraFlicImage.prototype.plugWires = function(){
 		}
 	}
 	this.requestRedraw();
-};
+};*/
 
 
 GraFlicImage.prototype.getMouseCalibratedXY = function(v_evt){
@@ -2038,6 +2097,10 @@ GraFlicImage.prototype.isStrokeBasedTool = function(){
 	return	   this.curTool == GraFlicImage.TOOL_PEN
 		|| this.curTool == GraFlicImage.TOOL_BRUSH
 		|| (this.curTool == GraFlicImage.TOOL_CUT_LASSO && this.cutBitmap == null);
+};
+GraFlicImage.prototype.isStrokeBasedVariableWidthTool = function(){
+	//Tools that are stroke based AND use stroke width.
+	return this.isStrokeBasedTool() && this.curTool != GraFlicImage.TOOL_CUT_LASSO;
 };
 GraFlicImage.prototype.mDown = function(v_evt){
 	var v_calXY = this.getMouseCalibratedXY(v_evt);
@@ -2094,11 +2157,11 @@ GraFlicImage.prototype.mMove = function(v_evt){
 			//-1 to avoid out of bounds error
 			this.requestRedraw(this.minRegionX, this.minRegionY, this.maxRegionX, this.maxRegionY);
 		}
-		if(this.curTool == GraFlicImage.TOOL_CUT_LASSO && this.isDragging && this.curToolState == 0){
+		if(this.curTool == GraFlicImage.TOOL_CUT_LASSO && this.isDragging && this.curToolState == GraFlicImage.TOOL_STATE_STOP){
 			this.cutBitmap.x += Math.round(this.dragCurX - this.dragPrevX);
 			this.cutBitmap.y += Math.round(this.dragCurY - this.dragPrevY);
 			//console.log(this.cutX + ', ' + this.cutY)
-			this.requestRedraw();
+			this.requestRedraw();//Needs special handling for what area to draw for drag of cut-out lassoed area. For now just do a full redraw.
 		}
 		if(this.curTool == GraFlicImage.TOOL_BOUNDS_CROP){
 			//Tools that use the tool state, but does not track strokes.
@@ -2123,12 +2186,7 @@ GraFlicImage.prototype.mUp = function(v_evt){
 		if(this.isStrokeBasedTool()){//pen
 			this.curToolState = 200;
 			//The redraw MUST be requested on finish, since the drawing code contains the section that commits the final stroke.
-			if(this.curTool == GraFlicImage.TOOL_CUT_LASSO){
-				this.requestRedraw(this.minRegionX, this.minRegionY, this.maxRegionX, this.maxRegionY);
-				//OLD: this.requestRedraw();//OLD: Must draw the whole region so that the lasso is not misaligned when copying over in the cut code. If variable sized bitmaps are implemented, this limitation may not be needed.
-			}else{
-				this.requestRedraw(this.minRegionX, this.minRegionY, this.maxRegionX, this.maxRegionY);
-			}
+			this.requestRedraw(this.minRegionX, this.minRegionY, this.maxRegionX, this.maxRegionY);
 		}//end pen
 		if(this.curTool >= 200 && this.curTool < 300){//bucket
 			//flood tool range reserved from 200-299
@@ -2308,22 +2366,48 @@ GraFlicImage.prototype.saveArchive = function(v_params){
 
 
 GraFlicImage.prototype.saveArchiveStage2 = function(){//Call this after the thumb has been generated.
-	var v_fileEntry;
+	var v_fileEntry, i;
 	
 	if(this.encoder.outputOctetStream){
 		//Add the thumb to the virtual archive. This will overwrite any previous thumb that had been added.
 		/*v_fileEntry = {};//ensure thumbs directory is there. (Directories auto-created when needed now.)
 		v_fileEntry.p = 't/';
 		this.a.addFile(v_fileEntry);*/
-		
+		var thumbLoc = 't/t256.png';
 		v_fileEntry = {};
-		v_fileEntry.p = 't/t256.png';
+		v_fileEntry.p = thumbLoc;
 		v_fileEntry.d = this.encoder.outputOctetStream;
 		//v_fileEntry.b = this.encoder.output;
 		this.a.addFile(v_fileEntry);
+		
+		//Thumbs are optional. If thumbs are contained, create a thumbs[] array with objects to describe them. Typically, one thumb at 256 size ought to be enough.
+		this.a.j.m.thumbs = [];//If thumbs[] is there, overwrite it. This editor will only make one 256 size thumb and that is all that should be there.
+		var thumbObj = {};
+		thumbObj.width = this.encoder.outputWidth;
+		thumbObj.height = this.encoder.outputHeight;
+		thumbObj.path = thumbLoc;
+		this.a.j.m.thumbs.push(thumbObj);
 	}
-
+	this.a.j.m.version_editor = GraFlicImage.EDITOR_VERSION;
+	var vNeed = 0.01;
+	//Determine version_needed based on features used:
+	//As more versions get done, more logic will be here...
+	this.a.j.m.version_needed = vNeed;
 	
+	//Copy over the canvas width/height, so that when reading just the metadata the image dimensions can be known.
+	this.a.j.m.width = this.a.j.s.canvas_width;
+	this.a.j.m.height = this.a.j.s.canvas_height;
+
+	//Calculate the duration. Make this a function if useful elsewhere.
+	var duration = 0, dFrame;
+	for(i = 0;i < this.a.j.s.frames.length;i++){
+		dFrame = this.a.j.s.frames[i];
+		duration += (dFrame.delay === undefined ? this.a.j.s.global_delay : dFrame.delay) *
+			    ( (dFrame.delay_denom === undefined ? this.a.j.s.global_delay_denom : dFrame.delay_denom) / 1000 );
+	}
+	this.a.j.m.duration = duration;//Duration in milliseconds.
+	
+	//A bunch of OLD code follows that may be deleted:
 	/*
 	var v_bitmapsJSON = [];//A raw array can go into JSON with no object wrapper.
 	for(v_i = 0;v_i < this.a.j.s.images.length;v_i++){

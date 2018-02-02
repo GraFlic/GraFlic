@@ -685,6 +685,66 @@ GraFlicUtil.hue2ChannelPercent = function(v_srcZA,v_srcZB,v_srcHue){
  if(v_srcHue < 2/3){return v_srcZB + (v_srcZA - v_srcZB) * (2/3 - v_srcHue) *6 ;}
  return v_srcZB;
 };
+GraFlicUtil.RGB2HSV = function(r, g, b){
+	var h, s, v;
+	var n = Math.min(r, g, b);
+	var x = Math.max(r, g, b);
+	v = x;
+	var d = x - n;
+	if(d <= 0.00001){
+		//Grayscale
+		return [0, 0, v];
+	}
+	if(x > 0){//avoid zero-division
+		s = d / x;
+	}else{//No channel above zero, absolute black
+		return [0, 0, 0];
+	}
+	if(r == x){
+		h = (g - b) / d;
+	}else if(g == x){
+		h = 2 + (b - r) / d;
+	}else{
+		h = 4 + (r - g) / d;
+	}
+	h *= 60;
+	if(h < 0){
+		h += 360;
+	}
+	h /= 360;//convert to standard 0.0 - 1.0 component
+	return [h, s, v];
+};
+GraFlicUtil.HSV2RGB = function(h, s, v){
+	var r, g, b, p, q, t, u, i, f;
+	if(s == 0){//Grayscale
+		return [v, v, v];
+	}
+	h *= 360;//convert from standard 0.0 - 1.0 component
+	u = h;
+	if(u >= 360){u = 0;}
+	u /= 60;//hUe initial val copy
+	i = Math.floor(u);//int
+	f = u - i;//float remains
+	p = v * ( 1 - s );
+	q = v * ( 1 - (s * f) );
+	t = v * ( 1 - (s * (1 - f) ) );
+	if(i == 0){
+		return [v, t, p];
+	}
+	if(i == 1){
+		return [q, v, p];
+	}
+	if(i == 2){
+		return [p, v, t];
+	}
+	if(i == 3){
+		return [p, q, v];
+	}
+	if(i == 4){
+		return [t, p, v];
+	}
+	return [v, p, q];//i == 5
+};
 GraFlicUtil.filenameSafe = function(fnStr, onlyASCII){
 	//Remove non-filename-safe characters. This should be the non-letter, non-number ASCII characters.
 	//non-ASCII UTF-8 characters are all, it would seem, safe for filenames

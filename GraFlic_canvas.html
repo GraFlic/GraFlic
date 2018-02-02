@@ -12,6 +12,44 @@
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <meta name="description" content="GraFlic™ Animated PNG Drawing Tool"/>
 <meta name="keywords" content="APNG,APNGs,PNG,PNGs,Animated PNG,Animated PNGs,GIF,GIFs,animation,format,GraFlic" />
+<style>
+.GraFlicC_range_bg_hue{
+	background-image: repeating-linear-gradient(
+		90deg,
+		#FF00007F,
+		#FFFF007F 15%,
+		#00FF007F 30%,
+		#00FFFF7F 45%,
+		#0000FF7F 60%,
+		#FF00FF7F 85%,
+		#FF00007F 100%
+	);
+}
+.GraFlicC_range_bg_sat{
+	background-image: repeating-linear-gradient(
+		90deg,
+		#5F5F5F7F,
+		#5F5F5F7F 15%,
+		#0000FF7F 85%,
+		#0000FF7F 100%
+	);
+}
+.GraFlicC_range_bg_lum{
+	background-image: repeating-linear-gradient(
+		90deg,
+		#000000BF,
+		#00FF00BF 50%,
+		#FFFFFFBF 100%
+	);
+}
+.GraFlicC_range_bg_val{
+	background-image: repeating-linear-gradient(
+		90deg,
+		#000000BF,
+		#00FF00BF 100%
+	);
+}
+</style>
 </head>
 <!--
 The MIT License (MIT)
@@ -79,10 +117,12 @@ Visit <a href="http://AnimatedPNGs.com" target="_blank">AnimatedPNGs.com</a> for
 
 <tr>
 <td>
-<input type="checkbox" id="GraFlicC_onion_skin_chk"/>
-<label for="GraFlicC_onion_skin_chk" class="GraFlic_j">🍃</label>
-┆<input type="checkbox" id="GraFlicC_onion_skin_stain_glass_chk"/>
-<label for="GraFlicC_onion_skin_stain_glass_chk" class="GraFlic_j">💎</label>
+<input type="checkbox" id="GraFlicC_breeze_chk"/>
+<label for="GraFlicC_breeze_chk" class="GraFlic_j">🍃</label>
+┆<input type="checkbox" id="GraFlicC_stained_glass_chk"/>
+<label for="GraFlicC_stained_glass_chk" class="GraFlic_j">💎</label>
+┆<input type="checkbox" id="GraFlicC_dictionary_chk"/>
+<label for="GraFlicC_dictionary_chk" class="GraFlic_j">📝</label>
 ┆<button id="GraFlicC_undo_btn" title="z" style="font-weight:bold;">↩</button><button id="GraFlicC_redo_btn" title="y">↪</button>
 <input type="range" id="GraFlicC_zoom_rng" value="50" min="20" max="500" step="5" style="float:right;width:40%;"/>
 </td>
@@ -98,10 +138,10 @@ Visit <a href="http://AnimatedPNGs.com" target="_blank">AnimatedPNGs.com</a> for
 </select>
 <input type="checkbox" id="GraFlicC_tool_erase_chk"/>
 <label for="GraFlicC_tool_erase_chk" class="GraFlic_j">❌</label>
-┆<input type="radio" name="GraFlicC_tool_rad" value="1" id="GraFlicC_tool_pen_rad" style="display:none;" checked/>
-<label for="GraFlicC_tool_pen_rad" class="GraFlic_j" style="opacity:0.35;">🖊</label>
-┆<input type="radio" name="GraFlicC_tool_rad" value="101" id="GraFlicC_tool_brush_rad" style="display:none;"/>
-<label for="GraFlicC_tool_brush_rad" class="GraFlic_j">🖋</label>
+┆<input type="radio" name="GraFlicC_tool_rad" value="101" id="GraFlicC_tool_tablet_rad" style="display:none;" checked/>
+<label for="GraFlicC_tool_tablet_rad" class="GraFlic_j" style="opacity:0.35;">🖋</label>
+┆<input type="radio" name="GraFlicC_tool_rad" value="1" id="GraFlicC_tool_pen_rad" style="display:none;"/>
+<label for="GraFlicC_tool_pen_rad" class="GraFlic_j">🖊</label>
 ┆<input type="radio" name="GraFlicC_tool_rad" value="200" id="GraFlicC_tool_fill_bucket_rad" style="display:none;"/>
 <label for="GraFlicC_tool_fill_bucket_rad" class="GraFlic_j">🌊</label>
 ┆<input type="radio" name="GraFlicC_tool_rad" value="201" id="GraFlicC_tool_wire_bucket_rad" style="display:none;"/>
@@ -207,9 +247,43 @@ x
 <th id="GraFlicC_palette_color_preview" style="background-color:black;" class="GraFlic_j">
 🎨 
 </th>
-<th class="GraFlic_e" colspan="2"><input type="text" id="GraFlicC_palette_color_title_txt" value="⚫️"/></th>
+<th class="GraFlic_e"><input type="text" id="GraFlicC_palette_color_title_txt" value="⚫️"/></th>
+<th>
+<select id="GraFlicC_color_model_sel">
+<option value="hsl" selected>🌈⛲️🌅</option>
+<option value="hsv">🌈⛲️🎆</option>
+<option value="rgb">❤️💚💙</option>
+</select>
+</th>
 </tr>
 </thead>
+<tbody>
+
+<tr>
+<th class="GraFlic_j">👻</th>
+<td class="GraFlic_e">
+<input type="range" id="GraFlicC_palette_alpha_rng" min="0" max="1" step="0.00001" value="1"/>
+</td>
+<td>
+<input type="text" id="GraFlicC_palette_alpha_txt" value="1" style="width:7em;"/>
+</td>
+</tr>
+
+<tr>
+<td colspan="3">
+<input type="checkbox" id="GraFlicC_palette_zw_chk"/>
+<label for="GraFlicC_palette_zw_chk" class="GraFlic_j">⌇&#xFEFF;🕴</label>
+<button id="GraFlicC_palette_revert_btn">&#x21A9;</button>
+<button id="GraFlicC_palette_new_color_btn">&#x2795;&#x1F3A8;</button>
+</td>
+</tr>
+
+</tbody>
+</table>
+
+<br/>
+
+<table class="GraFlic_t" id="GraFlicC_color_model_tbl_rgb" style="display:none;">
 <tbody>
 
 <tr>
@@ -242,20 +316,19 @@ x
 </td>
 </tr>
 
-<tr>
-<th class="GraFlic_j">&#x1F47B;</th>
-<td class="GraFlic_e">
-<input type="range" id="GraFlicC_palette_alpha_rng" min="0" max="1" step="0.00001" value="1"/>
-</td>
-<td>
-<input type="text" id="GraFlicC_palette_alpha_txt" value="1" style="width:7em;"/>
-</td>
-</tr>
+
+</tbody>
+</table>
+
+<table class="GraFlic_t" id="GraFlicC_color_model_tbl_hsl">
+<tbody>
 
 <tr>
 <th class="GraFlic_j">🌈</th>
 <td class="GraFlic_e">
+<div class="GraFlicC_range_bg_hue">
 <input type="range" id="GraFlicC_palette_hue_rng" min="0" max="1" step="0.00001" value="0"/>
+</div>
 </td>
 <td>
 <input type="text" id="GraFlicC_palette_hue_txt" value="0" style="width:7em;"/>
@@ -263,15 +336,11 @@ x
 </tr>
 
 <tr>
-<th class="GraFlic_j"><span style="background-image: repeating-linear-gradient(
-		90deg,
-		#AFAFAF,
-		#AFAFAF 15%,
-		#FF00FF 85%,
-		#FF00FF 100%
-	);">&#x1F4A6;</span></th>
+<th class="GraFlic_j"><span>⛲️</span></th>
 <td class="GraFlic_e">
+<div class="GraFlicC_range_bg_sat">
 <input type="range" id="GraFlicC_palette_sat_rng" min="0" max="1" step="0.00001" value="0"/>
+</div>
 </td>
 <td>
 <input type="text" id="GraFlicC_palette_sat_txt" value="0" style="width:7em;"/>
@@ -279,33 +348,64 @@ x
 </tr>
 
 <tr>
-<th class="GraFlic_j">🌔</th>
+<th class="GraFlic_j">🌅</th>
 <td class="GraFlic_e">
+<div class="GraFlicC_range_bg_lum">
 <input type="range" id="GraFlicC_palette_lum_rng" min="0" max="1" step="0.00001" value="0"/>
+</div>
 </td>
 <td>
 <input type="text" id="GraFlicC_palette_lum_txt" value="0" style="width:7em;"/>
 </td>
 </tr>
 
+</tbody>
+</table>
+
+<table class="GraFlic_t" id="GraFlicC_color_model_tbl_hsv" style="display:none;">
+<tbody>
+
 <tr>
-<td colspan="3">
-<input type="checkbox" id="GraFlicC_palette_zw_chk"/>
-<label for="GraFlicC_palette_zw_chk" class="GraFlic_j">⌇&#xFEFF;🕴</label>
+<th class="GraFlic_j">🌈</th>
+<td class="GraFlic_e">
+<div class="GraFlicC_range_bg_hue">
+<input type="range" id="GraFlicC_palette_hsv_hue_rng" min="0" max="1" step="0.00001" value="0"/>
+</div>
+</td>
+<td>
+<input type="text" id="GraFlicC_palette_hsv_hue_txt" value="0" style="width:7em;"/>
 </td>
 </tr>
 
 <tr>
-<td colspan="3">
-<button id="GraFlicC_palette_revert_btn">&#x21A9;</button>
-<button id="GraFlicC_palette_new_color_btn">&#x2795;&#x1F3A8;</button>
+<th class="GraFlic_j"><span>⛲️</span></th>
+<td class="GraFlic_e">
+<div class="GraFlicC_range_bg_sat">
+<input type="range" id="GraFlicC_palette_hsv_sat_rng" min="0" max="1" step="0.00001" value="0"/>
+</div>
+</td>
+<td>
+<input type="text" id="GraFlicC_palette_hsv_sat_txt" value="0" style="width:7em;"/>
+</td>
+</tr>
+
+<tr>
+<th class="GraFlic_j">🎆</th>
+<td class="GraFlic_e">
+<div class="GraFlicC_range_bg_val">
+<input type="range" id="GraFlicC_palette_hsv_val_rng" min="0" max="1" step="0.00001" value="0"/>
+</div>
+</td>
+<td>
+<input type="text" id="GraFlicC_palette_hsv_val_txt" value="0" style="width:7em;"/>
 </td>
 </tr>
 
 </tbody>
 </table>
 
-<br/>
+<div><br/></div>
+
 <table class="GraFlic_t">
 <thead>
 <tr><th colspan="4">Export Options</th></tr>
@@ -470,22 +570,21 @@ function f_paletteColorChange(v_evt){
 	f_rebuildPaletteEditorUI();
 	f_rebuildPaletteSelectUI();
 }
+function f_paletteColorModelSwitch(v_evt){
+	GraFlicC_color_model_tbl_rgb.style.display = 'none';
+	GraFlicC_color_model_tbl_hsl.style.display = 'none';
+	GraFlicC_color_model_tbl_hsv.style.display = 'none';
+	document.getElementById('GraFlicC_color_model_tbl_' + v_evt.target.value).style.display = 'initial';
+}
 function f_paletteAdjustRGB(v_evt){
 	//these use the input event instead of change, because they may be changed by code and that would make these events loop
 	var v_isRange = v_evt.target.type == 'range';
 	if(!v_isRange && !v_evt.target.value.match(/[0-9].[0-9]+/)){return;}//If in the process of typing incomplete ('0.' about to type '0.1')
-	var v_rIn = parseFloat((v_isRange ? GraFlicC_palette_red_rng : GraFlicC_palette_red_txt).value);
-	var v_gIn = parseFloat((v_isRange ? GraFlicC_palette_green_rng : GraFlicC_palette_green_txt).value);
-	var v_bIn = parseFloat((v_isRange ? GraFlicC_palette_blue_rng : GraFlicC_palette_blue_txt).value);
-	if( !( f_palFloatValid(v_rIn) && f_palFloatValid(v_gIn) && f_palFloatValid(v_bIn) ) ){return;}
-	v_curGraFlic.curPaletteColor.r = v_rIn;
-	v_curGraFlic.curPaletteColor.g = v_gIn;
-	v_curGraFlic.curPaletteColor.b = v_bIn;
-	var v_palHSL = GraFlicUtil.RGB2HSL(v_curGraFlic.curPaletteColor.r, v_curGraFlic.curPaletteColor.g, v_curGraFlic.curPaletteColor.b);
-	v_curGraFlic.curPaletteColor.h = v_palHSL[0];
-	v_curGraFlic.curPaletteColor.s = v_palHSL[1];
-	v_curGraFlic.curPaletteColor.l = v_palHSL[2];
-	GraFlicImage.calcRGBAForBitDepth(v_curGraFlic.curPaletteColor);
+	var r = parseFloat((v_isRange ? GraFlicC_palette_red_rng : GraFlicC_palette_red_txt).value);
+	var g = parseFloat((v_isRange ? GraFlicC_palette_green_rng : GraFlicC_palette_green_txt).value);
+	var b = parseFloat((v_isRange ? GraFlicC_palette_blue_rng : GraFlicC_palette_blue_txt).value);
+	if( !( f_palFloatValid(r) && f_palFloatValid(g) && f_palFloatValid(b) ) ){return;}
+	GraFlicImage.setPaletteColorRGB(v_curGraFlic.curPaletteColor, r, g, b);
 	f_rebuildPaletteEditorUI();
 	f_requestRedraw();//Update to see the changes in the image. The revert button can be used to revert these changes.
 }
@@ -493,18 +592,22 @@ function f_paletteAdjustHSL(v_evt){
 	//HSL is 0.0 - 1.0, not 0-255.
 	var v_isRange = v_evt.target.type == 'range';
 	if(!v_isRange && !v_evt.target.value.match(/[0-9].?[0-9]+/)){return;}//If in the process of typing incomplete ('0.' about to type '0.1')
-	var v_hIn = parseFloat((v_isRange ? GraFlicC_palette_hue_rng : GraFlicC_palette_hue_txt).value);
-	var v_sIn = parseFloat((v_isRange ? GraFlicC_palette_sat_rng : GraFlicC_palette_sat_txt).value);
-	var v_lIn = parseFloat((v_isRange ? GraFlicC_palette_lum_rng : GraFlicC_palette_lum_txt).value);
-	if( !( f_palFloatValid(v_hIn) || f_palFloatValid(v_sIn) || f_palFloatValid(v_lIn) ) ){return;}
-	v_curGraFlic.curPaletteColor.h = v_hIn;
-	v_curGraFlic.curPaletteColor.s = v_sIn;
-	v_curGraFlic.curPaletteColor.l = v_lIn;
-	var v_palRGB = GraFlicUtil.HSL2RGB(v_curGraFlic.curPaletteColor.h, v_curGraFlic.curPaletteColor.s, v_curGraFlic.curPaletteColor.l);
-	v_curGraFlic.curPaletteColor.r = v_palRGB[0];
-	v_curGraFlic.curPaletteColor.g = v_palRGB[1];
-	v_curGraFlic.curPaletteColor.b = v_palRGB[2];
-	GraFlicImage.calcRGBAForBitDepth(v_curGraFlic.curPaletteColor);
+	var h = parseFloat((v_isRange ? GraFlicC_palette_hue_rng : GraFlicC_palette_hue_txt).value);
+	var s = parseFloat((v_isRange ? GraFlicC_palette_sat_rng : GraFlicC_palette_sat_txt).value);
+	var l = parseFloat((v_isRange ? GraFlicC_palette_lum_rng : GraFlicC_palette_lum_txt).value);
+	if( !( f_palFloatValid(h) || f_palFloatValid(s) || f_palFloatValid(l) ) ){return;}
+	GraFlicImage.setPaletteColorHSL(v_curGraFlic.curPaletteColor, h, s, l);
+	f_rebuildPaletteEditorUI();
+	f_requestRedraw();
+}
+function f_paletteAdjustHSV(v_evt){
+	var isRange = v_evt.target.type == 'range';
+	if(!isRange && !v_evt.target.value.match(/[0-9].?[0-9]+/)){return;}//If in the process of typing incomplete ('0.' about to type '0.1')
+	var h = parseFloat((isRange ? GraFlicC_palette_hsv_hue_rng : GraFlicC_palette_hsv_hue_txt).value);
+	var s = parseFloat((isRange ? GraFlicC_palette_hsv_sat_rng : GraFlicC_palette_hsv_sat_txt).value);
+	var v = parseFloat((isRange ? GraFlicC_palette_hsv_val_rng : GraFlicC_palette_hsv_val_txt).value);
+	if( !( f_palFloatValid(h) || f_palFloatValid(s) || f_palFloatValid(v) ) ){return;}
+	GraFlicImage.setPaletteColorHSV(v_curGraFlic.curPaletteColor, h, s, v);
 	f_rebuildPaletteEditorUI();
 	f_requestRedraw();
 }
@@ -630,20 +733,26 @@ function f_rebuildPaletteEditorUI(){
 	//This will also call to rebuild the palette select UI
 	//TODO: swap v_curGraFlic.curPaletteColor fora another var? in the future there may be cascaded override colors that can get edited.
 	//Different from the plain palette UI for selecting a palette from what is already built.
-	GraFlicC_palette_red_rng.value = v_curGraFlic.curPaletteColor.r;
-	GraFlicC_palette_green_rng.value = v_curGraFlic.curPaletteColor.g;
-	GraFlicC_palette_blue_rng.value = v_curGraFlic.curPaletteColor.b;
+	GraFlicC_palette_red_rng.value   = v_curGraFlic.curPaletteColor.rgb[0];
+	GraFlicC_palette_green_rng.value = v_curGraFlic.curPaletteColor.rgb[1];
+	GraFlicC_palette_blue_rng.value  = v_curGraFlic.curPaletteColor.rgb[2];
 	GraFlicC_palette_alpha_rng.value = v_curGraFlic.curPaletteColor.a;
-	GraFlicC_palette_red_txt.value = v_curGraFlic.curPaletteColor.r.toString();
-	GraFlicC_palette_green_txt.value = v_curGraFlic.curPaletteColor.g.toString();
-	GraFlicC_palette_blue_txt.value = v_curGraFlic.curPaletteColor.b.toString();
+	GraFlicC_palette_red_txt.value   = v_curGraFlic.curPaletteColor.rgb[0].toString();
+	GraFlicC_palette_green_txt.value = v_curGraFlic.curPaletteColor.rgb[1].toString();
+	GraFlicC_palette_blue_txt.value  = v_curGraFlic.curPaletteColor.rgb[2].toString();
 	GraFlicC_palette_alpha_txt.value = v_curGraFlic.curPaletteColor.a.toString();
-	GraFlicC_palette_hue_rng.value = v_curGraFlic.curPaletteColor.h;
-	GraFlicC_palette_sat_rng.value = v_curGraFlic.curPaletteColor.s;
-	GraFlicC_palette_lum_rng.value = v_curGraFlic.curPaletteColor.l;
-	GraFlicC_palette_hue_txt.value = v_curGraFlic.curPaletteColor.h.toString();
-	GraFlicC_palette_sat_txt.value = v_curGraFlic.curPaletteColor.s.toString();
-	GraFlicC_palette_lum_txt.value = v_curGraFlic.curPaletteColor.l.toString();
+	GraFlicC_palette_hue_rng.value = v_curGraFlic.curPaletteColor.hsl[0];
+	GraFlicC_palette_sat_rng.value = v_curGraFlic.curPaletteColor.hsl[1];
+	GraFlicC_palette_lum_rng.value = v_curGraFlic.curPaletteColor.hsl[2];
+	GraFlicC_palette_hue_txt.value = v_curGraFlic.curPaletteColor.hsl[0].toString();
+	GraFlicC_palette_sat_txt.value = v_curGraFlic.curPaletteColor.hsl[1].toString();
+	GraFlicC_palette_lum_txt.value = v_curGraFlic.curPaletteColor.hsl[2].toString();
+	GraFlicC_palette_hsv_hue_rng.value = v_curGraFlic.curPaletteColor.hsv[0];
+	GraFlicC_palette_hsv_sat_rng.value = v_curGraFlic.curPaletteColor.hsv[1];
+	GraFlicC_palette_hsv_val_rng.value = v_curGraFlic.curPaletteColor.hsv[2];
+	GraFlicC_palette_hsv_hue_txt.value = v_curGraFlic.curPaletteColor.hsv[0].toString();
+	GraFlicC_palette_hsv_sat_txt.value = v_curGraFlic.curPaletteColor.hsv[1].toString();
+	GraFlicC_palette_hsv_val_txt.value = v_curGraFlic.curPaletteColor.hsv[2].toString();
 	GraFlicC_palette_color_preview.style.backgroundColor = GraFlicImage.getPaletteCSSRGBA(v_curGraFlic.curPaletteColor);
 	GraFlicC_palette_color_title_txt.value = v_curGraFlic.curPaletteColor.title;
 	GraFlicC_palette_zw_chk.checked = v_curGraFlic.curPaletteColor.zw;
@@ -781,12 +890,16 @@ function f_playsOnFramesSelect(v_evt){
 	}
 	f_requestRedraw();
 }
-function f_toggleOnionSkin(v_evt){
-	v_curGraFlic.a.j.s.onion_skin_on = v_onionSkinChk.checked;
+function f_toggleBreeze(v_evt){
+	v_curGraFlic.viewer.breeze = GraFlicC_breeze_chk.checked;
 	f_requestRedraw();
 }
-function f_toggleOnionStainGlass(v_evt){
-	v_curGraFlic.a.j.s.stain_glass_on = GraFlicC_onion_skin_stain_glass_chk.checked;
+function f_toggleStainedGlass(v_evt){
+	v_curGraFlic.viewer.stained_glass = GraFlicC_stained_glass_chk.checked;
+	f_requestRedraw();
+}
+function f_toggleDictionaryView(v_evt){
+	v_curGraFlic.viewer.dictionary = GraFlicC_dictionary_chk.checked;
 	f_requestRedraw();
 }
 function f_scaleDownAdjust(v_evt){
@@ -818,7 +931,7 @@ function f_canvasSizeClick(v_evt){
 	f_changeCanvasSize( v_newW, v_newH, v_cropX, v_cropY);
 	f_requestRedraw();
 }
-var lastToolLabel = document.body.querySelector('label[for=\'GraFlicC_tool_pen_rad\']');
+var lastToolLabel = document.body.querySelector('label[for=\'GraFlicC_tool_tablet_rad\']');
 function f_toolSelect(v_evt){
 	v_curGraFlic.curTool = parseInt(v_evt.target.value);
 	if(v_curGraFlic.cutBitmap != null){
@@ -942,7 +1055,6 @@ var v_penWidthTxt;//text input for pen width
 var v_imageSel;
 var v_frameSel;
 var v_playsOnFramesSel;
-var v_onionSkinChk;
 function f_zoomChange(v_evt){
 	var v_zoomPercent;
 	if(v_evt){//input may be text input or range input
@@ -1066,7 +1178,6 @@ function f_init(){
 	v_imageSel = document.getElementById('GraFlicC_bitmap_sel');
 	v_frameSel = document.getElementById('GraFlicC_frame_sel');
 	v_playsOnFramesSel = document.getElementById('GraFlicC_plays_on_frames_sel');
-	v_onionSkinChk = document.getElementById('GraFlicC_onion_skin_chk');
 	//----------------------------------------------
 
 	//================ Hook up events. =============
@@ -1083,7 +1194,7 @@ function f_init(){
 	GraFlicC_undo_btn.addEventListener('click', f_undo);
 	GraFlicC_redo_btn.addEventListener('click', f_redo);
 	GraFlicC_tool_pen_rad.addEventListener('change', f_toolSelect);
-	GraFlicC_tool_brush_rad.addEventListener('change', f_toolSelect);
+	GraFlicC_tool_tablet_rad.addEventListener('change', f_toolSelect);
 	GraFlicC_tool_fill_bucket_rad.addEventListener('change', f_toolSelect);
 	GraFlicC_tool_wire_bucket_rad.addEventListener('change', f_toolSelect);
 	GraFlicC_tool_swap_bucket_rad.addEventListener('change', f_toolSelect);
@@ -1112,24 +1223,36 @@ function f_init(){
 	GraFlicC_frame_title_txt.addEventListener('input', f_frameChangeTitle);
 	GraFlicC_frame_ms_txt.addEventListener('input', f_frameEditMS);
 	GraFlicC_frame_global_ms_txt.addEventListener('input', f_frameEditGlobalMS);
-	v_onionSkinChk.addEventListener('change', f_toggleOnionSkin);
-	GraFlicC_onion_skin_stain_glass_chk.addEventListener('change', f_toggleOnionStainGlass);
+	GraFlicC_breeze_chk.addEventListener('change', f_toggleBreeze);
+	GraFlicC_stained_glass_chk.addEventListener('change', f_toggleStainedGlass);
+	GraFlicC_dictionary_chk.addEventListener('change', f_toggleDictionaryView);
 	GraFlicC_canvas_size_btn.addEventListener('click', f_canvasSizeClick);
 	GraFlicC_save_Animated_PNG_btn.addEventListener('click', f_saveAnimatedPNGNormal);
 	GraFlicC_save_work_btn.addEventListener('click', f_saveWorkWithThumb);
 	GraFlicC_scale_down_rng.addEventListener('input', f_scaleDownAdjust);
+	
+	GraFlicC_color_model_sel.addEventListener('input', f_paletteColorModelSwitch);
 	GraFlicC_palette_red_rng.addEventListener('input', f_paletteAdjustRGB);
 	GraFlicC_palette_green_rng.addEventListener('input', f_paletteAdjustRGB);
 	GraFlicC_palette_blue_rng.addEventListener('input', f_paletteAdjustRGB);
 	GraFlicC_palette_red_txt.addEventListener('input', f_paletteAdjustRGB);
 	GraFlicC_palette_green_txt.addEventListener('input', f_paletteAdjustRGB);
 	GraFlicC_palette_blue_txt.addEventListener('input', f_paletteAdjustRGB);
+
 	GraFlicC_palette_hue_rng.addEventListener('input', f_paletteAdjustHSL);
 	GraFlicC_palette_sat_rng.addEventListener('input', f_paletteAdjustHSL);
 	GraFlicC_palette_lum_rng.addEventListener('input', f_paletteAdjustHSL);
 	GraFlicC_palette_hue_txt.addEventListener('input', f_paletteAdjustHSL);
 	GraFlicC_palette_sat_txt.addEventListener('input', f_paletteAdjustHSL);
 	GraFlicC_palette_lum_txt.addEventListener('input', f_paletteAdjustHSL);
+
+	GraFlicC_palette_hsv_hue_rng.addEventListener('input', f_paletteAdjustHSV);
+	GraFlicC_palette_hsv_sat_rng.addEventListener('input', f_paletteAdjustHSV);
+	GraFlicC_palette_hsv_val_rng.addEventListener('input', f_paletteAdjustHSV);
+	GraFlicC_palette_hsv_hue_txt.addEventListener('input', f_paletteAdjustHSV);
+	GraFlicC_palette_hsv_sat_txt.addEventListener('input', f_paletteAdjustHSV);
+	GraFlicC_palette_hsv_val_txt.addEventListener('input', f_paletteAdjustHSV);
+	
 	GraFlicC_palette_alpha_rng.addEventListener('input', f_paletteAdjustAlpha);
 	GraFlicC_palette_alpha_txt.addEventListener('input', f_paletteAdjustAlpha);
 	GraFlicC_palette_color_title_txt.addEventListener('input', f_paletteChangeTitle);
@@ -1163,10 +1286,10 @@ function f_init(){
 	//this.cutBitmap = null;//Initially nothing cut.
 	v_paletteRevertCol = GraFlicUtil.makeCopyOfJSON(v_curGraFlic.curPaletteColor);
 	
-	//v_uiState.onion_skin_on = v_onionSkinChk.checked;//in the future, another var may adjust onion skin opacity or viewing mode.
-	v_onionSkinChk.checked = v_curGraFlic.a.j.s.onion_skin_on ? true : false;//handle undefined
-	GraFlicC_onion_skin_stain_glass_chk.checked =  v_curGraFlic.a.j.s.stain_glass_on ? true : false;
-	
+	//Not currently needed because they start unchecked and GraFlic load from file does not make a new GraFlicImage object and these are not saved in the ZIP JSON:
+	//GraFlicC_breeze_chk.checked = v_curGraFlic.viewer.breeze ? true : false;//handle undefined or number
+	//GraFlicC_stained_glass_chk.checked =  v_curGraFlic.viewer.stained_glass ? true : false;
+	//GraFlicC_dictionary_chk.checked =  v_curGraFlic.viewer.dictionary ? true : false;
 	
 	
 	f_adjustCanvasUI();
