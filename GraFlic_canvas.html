@@ -456,12 +456,11 @@ x
 </thead>
 <tbody>
 <tr><td>
-<input type="file" id="GraFlicC_embed_file" accept="image/*"/>
-<button id="GraFlicC_new_image_embed_btn">➕🖼</button>
-</td></tr>
-<tr><td>
+<input type="file" id="GraFlicC_embed_file_btn" accept="image/*" style="display:none"/>
+<label for="GraFlicC_embed_file_btn" class="GraFlic_j">➕💾</label>
 <select id="GraFlicC_embed_sel">
 </select>
+<span id="GraFlicC_new_image_embed_btn" class="GraFlic_j">➕🖼</span>
 </td></tr>
 </tbody>
 </table>
@@ -1268,7 +1267,7 @@ function f_init(){
 	GraFlicC_brute_force_chk.addEventListener('change', f_bruteForceToggle);
 	GraFlicC_brute_force_iter_txt.addEventListener('input', f_bruteForceIterChange);
 	
-	GraFlicC_embed_file.addEventListener('change', f_embedFile);
+	GraFlicC_embed_file_btn.addEventListener('change', f_embedFile);
 	GraFlicC_new_image_embed_btn.addEventListener('click', f_embedNew);
 	//----------------------------------------------
 	
@@ -1374,7 +1373,7 @@ function f_onRedrawn(){
 <b>About saves:</b> This is an early version of the format and many things are not set in stone. Things may change under the hood and files made now might not load in later versions. In some cases it could be manually reconfigured to later version formatting by renaming the .graflic to .zip, repairing JSON files and re-packaging it to a ZIP. If the JSON format changes too much, you can make a new file with the same dimensions and number of images, then swap out the .dat.gz channel files out of the /b bitmaps directory, and/or embeds out of /e.
 </p>
 <div class="GraFlic_f">
-<small>Copyright 2017, Compukaze LLC. <a href="https://github.com/GraFlic/GraFlic">GraFlic™ libraries and tools are available under the MIT license.</a> GraFlic™ and Compukaze™ are trademarks of Compukaze LLC</small>
+<small>Copyright 2017 - 2018, Compukaze LLC. <a href="https://github.com/GraFlic/GraFlic">GraFlic™ libraries and tools are available under the MIT license.</a> GraFlic™ and Compukaze™ are trademarks of Compukaze LLC</small>
 </div>
 
 <div style="text-align:center;">

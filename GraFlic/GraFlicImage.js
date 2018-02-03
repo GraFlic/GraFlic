@@ -561,8 +561,33 @@ GraFlicImage.prototype.addBitmap = function(){
 };
 GraFlicImage.prototype.addEmbed = function(p){
 	//Adds an image that uses an embedded file.
-	this.a.j.s.images.push(this.initEmbed(p));
+	var iObj = this.initEmbed(p);
+	this.a.j.s.images.push(iObj);
+	this.refitImage(iObj, 'crop');
+	this.pushUndoStack(GraFlicImage.UNDO_IMAGE_PROPS);
 	this.requestRedraw();//The embed being added will change the visuals. (not initially blank like bitmaps)
+};
+GraFlicImage.prototype.refitImage = function(iObj, fitting){
+	//Images like embeds might want to snap to fit the bounds.
+	//TODO: set up a .fitting to tell it to refit if canvas is resized??
+	var fScale, imgDOM, nWidth, nHeight;
+	if(iObj.type == 'embed'){
+		//For some reason naturalWidth is not available here (Because not in DOM?), but just .width is working fine so far.
+		imgDOM = this.a.f[iObj.file].i;
+		nWidth = imgDOM.natuarWidth ? imgDOM.natuarWidth : imgDOM.width;
+		nHeight = imgDOM.natuarHeight ? imgDOM.natuarHeight : imgDOM.height;
+		//Should preserved from GraFlicEncoder be renamed to snap???
+		if(fitting.match(/crop|snap/i)){
+			fScale = Math[fitting == 'crop' ? 'max' : 'min'](this.a.j.s.canvas_width / nWidth, this.a.j.s.canvas_width / nHeight);
+			iObj.w = Math.round(nWidth * fScale);
+			iObj.h = Math.round(nHeight * fScale);
+			iObj.x = (this.a.j.s.canvas_width - iObj.w) / 2;
+			iObj.y = (this.a.j.s.canvas_height - iObj.h) / 2;
+		}else{//Not a valid fitting string.
+			return;
+		}
+		iObj.fitting = fitting;//If the canvas is resized, this can auto-fit the fit images. .fitting should be deleted if bounds are changed directly (crop/move tool)
+	}
 };
 GraFlicImage.prototype.addFrame = function(){
 	this.a.j.s.frames.push(this.initFrame());
@@ -824,17 +849,13 @@ GraFlicImage.getPaletteCSSRGB = function(v_palEntry){//static
 
 
 
-
-
 GraFlicImage.prototype.requestRedrawUnbound = function(x1, y1, x2, y2){
 	this.redrawRequested = true;
-	if(x1 === undefined){//ALL coordinates should be defined, or NONE of them should.
-		this.redrawX1 = 0;//default is to draw the whole area.
-		this.redrawY1 = 0;
-		this.redrawX2 = this.a.j.s.canvas_width;
-		this.redrawY2 = this.a.j.s.canvas_height;
+	//If Xs/Ys are defined, they will override redrawFull and make it just draw a region.
+	if(x1 === undefined){
 		this.redrawFull = true;//Do not let the partial redraw go into effect if a full redraw has been requested.
-	}else if(!this.redrawFull){//If redrawing for a stroke or something, only update the region being changes so that it does not lag.
+	}else{//If redrawing for a stroke or something, only update the region being changes so that it does not lag.
+		this.redrawFull = false;
 		var rExpand = 0;
 		if(this.isStrokeBasedTool()){
 			rExpand = 10;
@@ -864,8 +885,6 @@ GraFlicImage.prototype.updateCanvasVisualsUnbound = function(v_cTimestamp){
 	//Now make the tool request the redraw specifically so that there is not major lag.
 	if((this.redrawRequested) && this.frameDrawingForSave == -1){//Do not draw the current view while save in progress. drawingforSave as -1 is the not-saving value.
 		this.redrawRequested = false;//do not waste CPU redrawing until a redraw is requested again.
-		this.redrawFull = false;
-			//The drawFrame code may request a redraw that sets this back to true, for example if a cut pate is made and committed.
 		//If in state 0 inactive, the drawing is not currently changing, so do not lag the processor with draws.
 		var v_images2Draw = [];//BMP_obj, opacity pairs (onion skin uses reduced opacity.)
 		var v_img2Draw;
@@ -944,6 +963,10 @@ GraFlicImage.prototype.updateCanvasVisualsUnbound = function(v_cTimestamp){
 			//The bitmaps will be drawn in the order they appear in the array
 			//so do any ordering based on z_index when building the array.
 		this.drawFrame(v_images2Draw);
+		if(!this.redrawRequested){//If drawFrame() requested a follow-up redraw after a draw operation was completed, let it use the settings set by that.
+			this.redrawFull = true;//Set it to true AFTER the draw, because drawFrame will use it to find the full bounds if true.
+				//The drawFrame code may request a redraw that sets this back to true, for example if a cut pate is made and committed.
+		}
 	}
 	window.requestAnimationFrame(this.updateCanvasVisuals);
 };
@@ -978,6 +1001,12 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 	var w;
 	var h;
 	var canvW = this.a.j.s.canvas_width;
+	if(this.redrawFull){//Get the bounds as they are now in case they changed since last draw.
+		this.redrawX1 = 0;//default is to draw the whole area.
+		this.redrawY1 = 0;
+		this.redrawX2 = this.a.j.s.canvas_width;
+		this.redrawY2 = this.a.j.s.canvas_height;
+	}
 	var rdX1 = this.redrawX1;
 	var rdY1 = this.redrawY1;
 	var rdX2 = this.redrawX2;
@@ -998,6 +1027,7 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 	var v_drawOnion;
 	var v_drawStainedGlass = false;
 	var finalOutput = false;//Guidelines and visual hints should not be drawn if drawing for final output.
+	var zSplitMode;//Used for WAIFU bitmaps that have a different z-index for the wire and the fill.
 	if(this.frameDrawingForSave == -1){
 		v_drawOnion = this.viewer.breeze ? true : false;
 		v_drawStainedGlass = this.viewer.stained_glass ? true : false;
@@ -1341,7 +1371,7 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 		rdcW = rdcX2 - rdcX1;
 		rdcH = rdcY2 - rdcY1;
 		if(v_bmpObj.type == 'WAIFU'){//===================================== bitmap ===========================================================
-		var zSplitMode = v_images2Draw[v_bmpI].m;//0 = all channels, 1 = fill, 2 = wire
+		zSplitMode = v_images2Draw[v_bmpI].m;//0 = all channels, 1 = fill, 2 = wire
 		var zDrawFill = zSplitMode == 0 || zSplitMode == 1;
 		var zDrawWire = zSplitMode == 0 || zSplitMode == 2;
 		//console.log('getimagedata ' + rdX1 + ', ' + rdY1 + ', ' + rdW + ', ' + rdH + '...');
@@ -1518,7 +1548,31 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 		}else if(v_bmpObj.type == 'embed'){//===================================== embed ===========================================================
 			this.cxM.save();
 			this.cxM.globalAlpha = v_onionAlpha;
-			this.cxM.drawImage(this.a.f[v_bmpObj.file].i, 0, 0);
+			var imgDOM = this.a.f[v_bmpObj.file].i;
+			//For some reason naturalWidth is not available here (Because not in DOM?), but just .width is working fine so far...
+			var nWidth = imgDOM.natuarWidth ? imgDOM.natuarWidth : imgDOM.width;
+			var nHeight = imgDOM.natuarHeight ? imgDOM.natuarHeight : imgDOM.height;
+			var eScaleX = v_bmpObj.w / nWidth;
+			var eScaleY = v_bmpObj.h / nHeight;
+			var eSrcX = 0;
+			var eSrcY = 0;
+			var erdX = Math.max(v_bmpObj.x, rdcX1);//If another image is being drawn, and this must be redrawn underneath it.
+			var erdY = Math.max(v_bmpObj.y, rdcY1);
+			var erdW = Math.min(v_bmpObj.w, rdcW);
+			var erdH = Math.min(v_bmpObj.h, rdcH);
+			var erdDifX = rdcX1 - v_bmpObj.x;
+			var erdDifY = rdcY1 - v_bmpObj.y;
+			if(v_bmpObj.x < 0){
+				erdDifX += v_bmpObj.x;
+			}
+			if(v_bmpObj.y < 0){
+				erdDifY += v_bmpObj.y;
+			}
+			//this.cxM.fillRect(erdX, erdY, erdW, erdH);
+			this.cxM.drawImage(imgDOM,
+					(Math.max(0, -v_bmpObj.x) + erdDifX) / eScaleX, (Math.max(0, -v_bmpObj.y) + erdDifY) / eScaleY,	
+					Math.min(nWidth, rdcW) / eScaleX, Math.min(nHeight, rdcH) / eScaleY,
+					erdX, erdY, erdW, erdH);//0, 0);
 			this.cxM.restore();
 		}//================================================================================================
 		
@@ -1534,8 +1588,8 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 			curImageInView = true;
 		}
 		if(!finalOutput && (v_bmpObj == this.curImage || v_bmpObj == this.cutBitmap)
-			&& v_bmpObj.type == 'WAIFU' && (zSplitMode == 0 || zSplitMode == 2) ){
-			//If split channels, only draw crop guide once on the topmost (wire)
+			&& ( v_bmpObj != 'WAIFU' || (zSplitMode == 0 || zSplitMode == 2) ) ){
+			//If split channels, only draw crop guide once on the topmost (wire). Only applies to pixel-based image types.
 			this.cxB.save();
 			this.cxB.fillStyle = '#7F7F7F';
 			this.cxB.globalAlpha = 0.5;
@@ -2113,11 +2167,11 @@ GraFlicImage.prototype.mDown = function(v_evt){
 			this.curStroke = [v_x, v_y, v_evt.pressure * 2];
 			this.curToolState = 100;
 		}
-		if(this.curTool == GraFlicImage.TOOL_BOUNDS_CROP){
-			//Tools that use the tool state, but does not track strokes.
-			this.curToolState = 100;
-		}
 	}//end bitmap
+	if(this.curTool == GraFlicImage.TOOL_BOUNDS_CROP){
+		//Tools that use the tool state, but does not track strokes.
+		this.curToolState = 100;
+	}
 	//this.wasX = this.cutX;//may be used for various dragging calculations.
 	//this.wasY = this.cutY;
 	this.dragStartX = v_x;
@@ -2163,15 +2217,17 @@ GraFlicImage.prototype.mMove = function(v_evt){
 			//console.log(this.cutX + ', ' + this.cutY)
 			this.requestRedraw();//Needs special handling for what area to draw for drag of cut-out lassoed area. For now just do a full redraw.
 		}
-		if(this.curTool == GraFlicImage.TOOL_BOUNDS_CROP){
-			//Tools that use the tool state, but does not track strokes.
-			this.requestRedraw();
-		}
 	}//end bitmap
+	if(this.curTool == GraFlicImage.TOOL_BOUNDS_CROP){
+		//Tools that use the tool state, but does not track strokes.
+		if(this.curImage.fitting){delete this.curImage.fitting;}//If was fit with refitImage(), that has no been modified and it should not auto-fit on canvas resize.
+		this.requestRedraw();
+	}
 	if( this.curTool == GraFlicImage.TOOL_BOUNDS_MOVE){
 		//Move does not need to manipulate the tool state since it simply changes object parameters.
 		this.curImage.x += Math.round(this.dragCurX - this.dragPrevX);
 		this.curImage.y += Math.round(this.dragCurY - this.dragPrevY);
+		if(this.curImage.fitting){delete this.curImage.fitting;}//If was fit with refitImage(), that has no been modified and it should not auto-fit on canvas resize.
 		this.requestRedraw();
 	}
 	}//======================= end isDragging ==========================
@@ -2182,7 +2238,8 @@ GraFlicImage.prototype.mUp = function(v_evt){
 	var v_y = v_calXY[1];
 	this.dragStopX = v_x;
 	this.dragStopY = v_y;
-	if(this.curImage.type == 'WAIFU'){
+	var isBitmap = this.curImage.type == 'WAIFU';//Some tools apply only to bitmaps, other things like cropping apply even to embeds.
+	if(isBitmap){
 		if(this.isStrokeBasedTool()){//pen
 			this.curToolState = 200;
 			//The redraw MUST be requested on finish, since the drawing code contains the section that commits the final stroke.
@@ -2192,26 +2249,29 @@ GraFlicImage.prototype.mUp = function(v_evt){
 			//flood tool range reserved from 200-299
 			this.bucketFill(v_x, v_y);
 		}
-		if(this.curTool == GraFlicImage.TOOL_BOUNDS_CROP){
-			//Even if the cropBitmap does rounding, not rounding here before figuring, seems to cause things to be misaligned or break when zoomed to a non-evenly dividable amount. So round first. Apparently something is getting set out of bounds or somehow corrupted in the channel typed array when this not rounded issue happens.
-			var cBoxX = Math.round(Math.min(this.dragStartX, this.dragStopX));
-			var cBoxY = Math.round(Math.min(this.dragStartY, this.dragStopY));
-			var cBoxW = Math.round(Math.max(this.dragStartX, this.dragStopX)) - cBoxX;
-			var cBoxH = Math.round(Math.max(this.dragStartY, this.dragStopY)) - cBoxY;
-			//The image x/y should always be an integer, so if it is not there is something broken somewhere else...
-			var cShiftX = cBoxX - this.curImage.x;//handle areas that have been cut out of view to the left and top. Or that have been pushed over while the bitmap object is moved leftward/upward.
-			var cShiftY = cBoxY - this.curImage.y;
-			//console.log('mouse crop, x: ' + cBoxX + ' y: ' + cBoxY + ' w: ' + cBoxW + ' h: ' + cBoxH + ' shX: ' + cShiftX + ' shY: ' + cShiftY);
-			if(cBoxW && cBoxH){//dimensions for a bitmap must be non-zero.
-				this.cropBitmap(this.curImage, cShiftX, cShiftY, cBoxW, cBoxH);
-			}
-			this.curImage.x = cBoxX;
-			this.curImage.y = cBoxY;
-			this.pushUndoStack(GraFlicImage.UNDO_BITMAP_PIXELS);
-			this.curToolState = 0;
-			this.requestRedraw();
-		}
 	}//end bitmap
+	if(this.curTool == GraFlicImage.TOOL_BOUNDS_CROP){
+		//Even if the cropBitmap does rounding, not rounding here before figuring, seems to cause things to be misaligned or break when zoomed to a non-evenly dividable amount. So round first. Apparently something is getting set out of bounds or somehow corrupted in the channel typed array when this not rounded issue happens.
+		var cBoxX = Math.round(Math.min(this.dragStartX, this.dragStopX));
+		var cBoxY = Math.round(Math.min(this.dragStartY, this.dragStopY));
+		var cBoxW = Math.round(Math.max(this.dragStartX, this.dragStopX)) - cBoxX;
+		var cBoxH = Math.round(Math.max(this.dragStartY, this.dragStopY)) - cBoxY;
+		//The image x/y should always be an integer, so if it is not there is something broken somewhere else...
+		var cShiftX = cBoxX - this.curImage.x;//handle areas that have been cut out of view to the left and top. Or that have been pushed over while the bitmap object is moved leftward/upward.
+		var cShiftY = cBoxY - this.curImage.y;
+		//console.log('mouse crop, x: ' + cBoxX + ' y: ' + cBoxY + ' w: ' + cBoxW + ' h: ' + cBoxH + ' shX: ' + cShiftX + ' shY: ' + cShiftY);
+		if(isBitmap && cBoxW && cBoxH){//dimensions for a bitmap must be non-zero.
+			this.cropBitmap(this.curImage, cShiftX, cShiftY, cBoxW, cBoxH);
+		}else{
+			this.curImage.w = cBoxW;
+			this.curImage.h = cBoxH;
+		}
+		this.curImage.x = cBoxX;
+		this.curImage.y = cBoxY;
+		this.pushUndoStack(isBitmap ? GraFlicImage.UNDO_BITMAP_PIXELS : GraFlicImage.UNDO_IMAGE_PROPS);
+		this.curToolState = 0;
+		this.requestRedraw();
+	}
 	if( this.curTool == GraFlicImage.TOOL_BOUNDS_MOVE){
 		this.pushUndoStack(GraFlicImage.UNDO_IMAGE_PROPS);
 	}
@@ -2283,7 +2343,7 @@ GraFlicImage.prototype.export = function(v_imgSMode){
 		return;
 	}
 
-	//Draw all layers that will be on the current frame being drawn for save.
+	//Draw all images that will be on the current frame being drawn for save.
 	var v_images2Draw = [];
 	var v_i2dParams;
 	for(var v_i = 0;v_i < this.a.j.s.images.length;v_i++){
@@ -2292,7 +2352,7 @@ GraFlicImage.prototype.export = function(v_imgSMode){
 		if(v_img2Draw.plays_on_all_frames){v_imgDoInsert = true;}
 		for(var v_i2 = 0;v_i2 < v_img2Draw.plays_on_frames.length;v_i2++){
 			if(v_img2Draw.plays_on_frames[v_i2] == this.a.j.s.frames[this.frameDrawingForSave].id){
-				//Draw all layers that play on the current frame BEING SAVED.
+				//Draw all images that play on the current frame BEING SAVED.
 				v_imgDoInsert = true;
 				break;
 			}
@@ -2385,7 +2445,7 @@ GraFlicImage.prototype.saveArchiveStage2 = function(){//Call this after the thum
 		var thumbObj = {};
 		thumbObj.width = this.encoder.outputWidth;
 		thumbObj.height = this.encoder.outputHeight;
-		thumbObj.path = thumbLoc;
+		thumbObj.file = thumbLoc;//path to the file in the ZIP
 		this.a.j.m.thumbs.push(thumbObj);
 	}
 	this.a.j.m.version_editor = GraFlicImage.EDITOR_VERSION;
