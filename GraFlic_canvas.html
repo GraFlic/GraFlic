@@ -49,12 +49,18 @@
 		#00FF00BF 100%
 	);
 }
+.GraFlicC_draw_tools_bitmap .GraFlicC_draw_tools_embed{
+	display:none;
+}
+.GraFlicC_draw_tools_embed .GraFlicC_draw_tools_bitmap{
+	display:none;
+}
 </style>
 </head>
 <!--
 The MIT License (MIT)
 
-Copyright (c) 2017 Compukaze LLC
+Copyright (c) 2017 - 2018 Compukaze LLC
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -94,7 +100,7 @@ SOFTWARE.
 </div>
 <div style="height:45%;overflow:hidden;">
 <div style="position:absolute;z-index:9;" class="GraFlic_j">
-<span id="GraFlicC_current_tool_icon" style="opacity:0.90;">🖊</span><span style="opacity:0.67;">🖼</span>
+<span id="GraFlicC_current_tool_icon" style="opacity:0.90;">🖋</span><span style="opacity:0.67;">🖼</span>
 </div>
 <canvas id="GraFlicC_mini_editing_canvas" width="200" height="400" style="width:100%;"></canvas>
 </div>
@@ -132,10 +138,12 @@ Visit <a href="http://AnimatedPNGs.com" target="_blank">AnimatedPNGs.com</a> for
 </tr>
 
 <tr>
-<td>
+<td id="GraFlicC_draw_toolbar" class="GraFlicC_draw_tools_bitmap">
 <span id="GraFlicC_palette_color_clr" style="font-family:'Courier New',courier,monospace;background-color:black;border:2px solid #7F7F7F;padding:2px;" class="GraFlic_j">🎨</span>
 <select id="palette_color_sel">
 </select>
+
+<span class="GraFlicC_draw_tools_bitmap">
 <input type="checkbox" id="GraFlicC_tool_erase_chk"/>
 <label for="GraFlicC_tool_erase_chk" class="GraFlic_j">❌</label>
 ┆<input type="radio" name="GraFlicC_tool_rad" value="101" id="GraFlicC_tool_tablet_rad" style="display:none;" checked/>
@@ -150,12 +158,22 @@ Visit <a href="http://AnimatedPNGs.com" target="_blank">AnimatedPNGs.com</a> for
 <label for="GraFlicC_tool_swap_bucket_rad" class="GraFlic_j">🎚&#xFEFF;🌊</label>
 ┆<input type="radio" name="GraFlicC_tool_rad" value="300" id="GraFlicC_tool_lasso_rad" style="display:none;"/>
 <label for="GraFlicC_tool_lasso_rad" class="GraFlic_j">✂️</label>
+<!--button id="GraFlicC_plug_wires_btn" title="Plu[g] Wires">🔌</button-->
+</span><!--end draw_tools_bitmap class-->
+
+<span class="GraFlicC_draw_tools_embed">
+<input type="checkbox" id="GraFlicC_tool_aspect_lock_chk"/>
+<label for="GraFlicC_tool_aspect_lock_chk" class="GraFlic_j">🔒↕</label>
+</span>
+
 ┆<input type="radio" name="GraFlicC_tool_rad" value="400" id="GraFlicC_tool_crop_rad" style="display:none;"/>
 <label for="GraFlicC_tool_crop_rad" class="GraFlic_j">🔪</label>
 ┆<input type="radio" name="GraFlicC_tool_rad" value="401" id="GraFlicC_tool_move_rad" style="display:none;"/>
 <label for="GraFlicC_tool_move_rad" class="GraFlic_j">📌</label>
-<!--button id="GraFlicC_plug_wires_btn" title="Plu[g] Wires">🔌</button-->
-<input id="GraFlicC_pen_width_rng" type="range" value="2" min="0.1" max="30" step="0.1" style="width:20%;float:right;"/>
+
+
+<input id="GraFlicC_pen_width_rng" class="GraFlicC_draw_tools_bitmap" type="range" value="2" min="0.1" max="30" step="0.1" style="width:20%;float:right;"/>
+
 </td>
 <td><input type="text" id="GraFlicC_pen_width_txt" value="2" style="width:4em;"/><span class="GraFlic_j">⌇</span></td>
 </tr>
@@ -167,8 +185,8 @@ Visit <a href="http://AnimatedPNGs.com" target="_blank">AnimatedPNGs.com</a> for
 <button id="GraFlicC_new_bitmap_btn">➕</button>
 <button id="GraFlicC_del_bitmap_btn">❌</button>
 <input type="text" id="GraFlicC_bitmap_title_txt" value="🖼" style="width:16em;"/>
-&nbsp;<input type="text" id="GraFlicC_bitmap_z_index_txt" value="0" style="width:5em;"/><span class="GraFlic_j">🕴</span>
-&nbsp;<input type="text" id="GraFlicC_bitmap_z_index_w_txt" value="" style="width:5em;" placeholder="--"/><span class="GraFlic_j">⌇&#xFEFF;🕴</span>
+&nbsp;<input type="text" id="GraFlicC_bitmap_z_index_txt" value="0" style="width:3em;"/><span class="GraFlic_j">🕴</span>
+&nbsp;<input type="text" id="GraFlicC_bitmap_z_index_w_txt" value="" style="width:3em;" placeholder="--"/><span class="GraFlic_j">⌇&#xFEFF;🕴</span>
 <span style="display:none;">
 <select id="GraFlicC_bitmap_blend_sel">
 <option value="normal" selected>🎨</option>
@@ -198,20 +216,26 @@ Visit <a href="http://AnimatedPNGs.com" target="_blank">AnimatedPNGs.com</a> for
 </td>
 </tr>
 
+
 <tr>
 <td>
-<input type="text" id="GraFlicC_canvas_size_w_txt" value="512" style="width:7em;"/>
-x
-<input type="text" id="GraFlicC_canvas_size_h_txt" value="512" style="width:7em;"/>
- Crop to 
-<input type="text" id="GraFlicC_canvas_size_crop_x_txt" value="0" style="width:7em;"/>
-,
-<input type="text" id="GraFlicC_canvas_size_crop_y_txt" value="0" style="width:7em;"/>
-<button id="GraFlicC_canvas_size_btn">Change Canvas Size</button>
-<br/>
-<span class="GraFlic_x">Negative crop values will push the existing pixels rightwards, downwards.</span>
+🗂┯┯┑
+<input type="file" id="GraFlicC_embed_file_btn" accept="image/*" style="display:none"/>
+<label for="GraFlicC_embed_file_btn">➕💾</label>
+┆<span id="GraFlicC_embed_del_file_btn">❌💾</span>
+┆<select id="GraFlicC_embed_sel" style="vertical-align:top;">
+<option value="" selected>--</option>
+</select>
+┆<select id="GraFlicC_embed_fit_sel" style="vertical-align:top;">
+<option value="crop" selected>🔪┆🖼┆</option>
+<option value="snap">┆→🖼←┆</option>
+<option value="fill">┆←🖼→┆</option>
+<option value="real">┆🖼&nbsp;&nbsp;┆</option>
+</select>
+<span id="GraFlicC_new_image_embed_btn">➕🖼</span>
 </td>
 </tr>
+
 
 <tr>
 <td>
@@ -222,6 +246,12 @@ x
 <span style="font-size:1.40em;">🖼</span>
 <span id="GraFlicC_scale_down_percent_spn">50</span><span>%</span>┆↓
 <a id="GraFlicC_download_image_link" target="_blank" href="#"></a>
+
+
+┆<input type="file" id="GraFlicC_load_work_btn" accept=".graflic,.zip" style="display:none;"/><label for="GraFlicC_load_work_btn" class="GraFlic_j">💾📦↑</label>┆
+<span id="GraFlicC_save_work_btn" class="GraFlic_j">💾📦↓</span>┆↓
+<!-- ,image/graflic,application/zip NOTE: some browsers will not allow file selects for custom extensions if extensions AND mime types are listed. It treats it as needing to match extension AND mime apparently. Since custom types are not going to have a mime-type defined on user devices it will leave those unelectable. -->
+<a id="GraFlicC_download_work_link" target="_blank" href="#"></a>
 </td>
 <td rowspan="2" style="text-align:center;vertical-align:middle;">
 <img id="GraFlicC_project_thumb" src="favicon.png" alt="Thumb" style="max-width:48px;max-height:48px;"/>
@@ -230,10 +260,15 @@ x
 
 <tr>
 <td>
-<input type="file" id="GraFlicC_load_work_btn" accept=".graflic,.zip" style="display:none;"/><label for="GraFlicC_load_work_btn" class="GraFlic_j">💾▶︎</label>┆
-<span id="GraFlicC_save_work_btn" class="GraFlic_j">💾◀︎</span>┆↓
-<!-- ,image/graflic,application/zip NOTE: some browsers will not allow file selects for custom extensions if extensions AND mime types are listed. It treats it as needing to match extension AND mime apparently. Since custom types are not going to have a mime-type defined on user devices it will leave those unelectable. -->
-<a id="GraFlicC_download_work_link" target="_blank" href="#"></a>
+<input type="text" id="GraFlicC_canvas_size_w_txt" value="512" style="width:7em;"/>
+x
+<input type="text" id="GraFlicC_canvas_size_h_txt" value="512" style="width:7em;"/>
+ 
+🔪→<input type="text" id="GraFlicC_canvas_size_crop_x_txt" value="0" style="width:7em;" placeholder="±"/>
+ 🔪↓<input type="text" id="GraFlicC_canvas_size_crop_y_txt" value="0" style="width:7em;" placeholder="±"/>
+<button id="GraFlicC_canvas_size_btn">🖼↕</button>
+<br/>
+<!--span class="GraFlic_x">Negative crop values will push the existing pixels rightwards, downwards.</span-->
 </td>
 </tr>
 
@@ -249,7 +284,7 @@ x
 </th>
 <th class="GraFlic_e"><input type="text" id="GraFlicC_palette_color_title_txt" value="⚫️"/></th>
 <th>
-<select id="GraFlicC_color_model_sel">
+<select id="GraFlicC_color_model_sel" class="GraFlic_j">
 <option value="hsl" selected>🌈⛲️🌅</option>
 <option value="hsv">🌈⛲️🎆</option>
 <option value="rgb">❤️💚💙</option>
@@ -408,12 +443,16 @@ x
 
 <table class="GraFlic_t">
 <thead>
-<tr><th colspan="4">Export Options</th></tr>
+<tr>
+<th class="GraFlic_j">🖼&#xFEFF;🎬&#xFEFF;💾&#xFEFF;⚙</th>
+<th colspan="4"></th>
+</tr>
 </thead>
 <tbody>
 
-<tr>
-<td>
+
+<!-- non-emoji version that depends on locale processing:
+
 <select id="GraFlicC_metadata_sel" style="vertical-align:top;">
 <option value="meta_Title" selected>🖇1001📝Title🌐</option>
 <option value="meta_Author">🖇1003📝Author🌐</option>
@@ -423,13 +462,32 @@ x
 <option value="meta_Disclaimer">🖇1007📝Disclaimer🌐</option>
 <option value="meta_Comment">🖇1004📝Comment🌐</option>
 </select>
+
+-->
+
+
+<tr>
+<td>
+<select id="GraFlicC_metadata_sel" class="GraFlic_j" style="vertical-align:top;">
+<option value="meta_Title" selected>🏷</option>
+<option value="meta_Author">👤</option>
+<option value="meta_Copyright">©</option>
+<option value="meta_Description">📝</option>
+<option value="meta_Warning">⚠️</option>
+<option value="meta_Disclaimer">⚖</option>
+<option value="meta_Comment">💬</option>
+</select>
 </td>
-<td colspan="3" class="GraFlic_e">
+<td colspan="4" class="GraFlic_e">
 <textarea id="GraFlicC_metadata_txt" rows="2" placeholder="--"></textarea>
 </td>
 </tr>
 
 <tr>
+<td class="GraFlic_j">
+<input type="checkbox" id="GraFlicC_dither_chk" checked/>
+<label for="GraFlicC_dither_chk" class="GraFlic_j">⠯⠪⠂</label>
+</td>
 <td class="GraFlic_j" style="text-align:right;">🗜</td>
 <td class="GraFlic_e">
 <input type="range" id="GraFlicC_export_quality_rng" min="0" max="100" step="5" value="75"/>
@@ -439,31 +497,16 @@ x
 </tr>
 
 <tr>
-<td colspan="4">
+<td colspan="5">
 <input type="checkbox" id="GraFlicC_brute_force_chk"/>
-<label for="GraFlicC_brute_force_chk" class="GraFlic_j">🔨</label>
- x <input type="text" id="GraFlicC_brute_force_iter_txt" value="15" style="width:4em;" disabled/> <span>🖇1008 Brute-force compression quick note🌐</span>
+<label for="GraFlicC_brute_force_chk" class="GraFlic_j">🔨🗜</label>
+ x <input type="text" id="GraFlicC_brute_force_iter_txt" value="15" style="width:4em;" disabled/> <!--span>🖇1008 Brute-force compression quick note🌐</span-->
 </td>
 </tr>
 
 </tbody>
 </table>
 
-<br/>
-<table class="GraFlic_t">
-<thead>
-<tr><th>Embed images</th></tr>
-</thead>
-<tbody>
-<tr><td>
-<input type="file" id="GraFlicC_embed_file_btn" accept="image/*" style="display:none"/>
-<label for="GraFlicC_embed_file_btn" class="GraFlic_j">➕💾</label>
-<select id="GraFlicC_embed_sel">
-</select>
-<span id="GraFlicC_new_image_embed_btn" class="GraFlic_j">➕🖼</span>
-</td></tr>
-</tbody>
-</table>
 
 <script>
 'use strict';
@@ -578,7 +621,7 @@ function f_paletteColorModelSwitch(v_evt){
 function f_paletteAdjustRGB(v_evt){
 	//these use the input event instead of change, because they may be changed by code and that would make these events loop
 	var v_isRange = v_evt.target.type == 'range';
-	if(!v_isRange && !v_evt.target.value.match(/[0-9].[0-9]+/)){return;}//If in the process of typing incomplete ('0.' about to type '0.1')
+	if(!v_isRange && !v_evt.target.value.match(/[0-9]\.[0-9]+/)){return;}//If in the process of typing incomplete ('0.' about to type '0.1')
 	var r = parseFloat((v_isRange ? GraFlicC_palette_red_rng : GraFlicC_palette_red_txt).value);
 	var g = parseFloat((v_isRange ? GraFlicC_palette_green_rng : GraFlicC_palette_green_txt).value);
 	var b = parseFloat((v_isRange ? GraFlicC_palette_blue_rng : GraFlicC_palette_blue_txt).value);
@@ -636,12 +679,20 @@ function f_paletteToggleZW(evt){
 }
 function f_rebuildEmbedListUI(){
 	while(GraFlicC_embed_sel.firstChild){GraFlicC_embed_sel.removeChild(GraFlicC_embed_sel.firstChild);}
-	var eFiles = v_curGraFlic.a.listDir('e/');
+	var eFiles = v_curGraFlic.a.listDir('f/');
+	var selObj;
 	for(var i = 0;i < eFiles.length;i++){
-		var selObj = document.createElement('option');
+		selObj = document.createElement('option');
 		selObj.value = eFiles[i].p;
 		selObj.innerHTML = eFiles[i].p;
 		//if(v_curGraFlic.a.j.s.images[v_i] == v_curGraFlic.curImage){v_selObj.selected = true;}
+		GraFlicC_embed_sel.appendChild(selObj);
+	}
+	if(!eFiles.length){//Make empty indicator if no embedded files in 'f/'
+		selObj = document.createElement('option');
+		selObj.value = '';
+		selObj.innerHTML = '--';
+		v_selObj.selected = true;
 		GraFlicC_embed_sel.appendChild(selObj);
 	}
 }
@@ -809,6 +860,15 @@ function f_rebuildBitmapAndFrameUI(){
 		v_frameSel.appendChild(v_selObj);
 	}
 	f_rebuildPlaysOnFramesUI();
+	
+	//Show the tools relevant to the type of object the current image is.
+	var c = 'GraFlicC_draw_tools_'
+	if(v_curGraFlic.curImage.type == 'embed'){
+		c += 'embed';
+	}else{
+		c += 'bitmap';
+	}
+	GraFlicC_draw_toolbar.className = c;
 }
 function f_rebuildPlaysOnFramesUI(){
 	while(v_playsOnFramesSel.firstChild){v_playsOnFramesSel.removeChild(v_playsOnFramesSel.firstChild);}
@@ -836,6 +896,10 @@ function f_rebuildPlaysOnFramesUI(){
 }
 function f_bitmapNew(v_evt){
 	v_curGraFlic.addBitmap();
+	//Select the image that was just made for editing.
+	v_curGraFlic.a.j.s.selected_image_index = v_curGraFlic.a.j.s.images.length - 1;
+	v_curGraFlic.curImage = v_curGraFlic.a.j.s.images[v_curGraFlic.a.j.s.selected_image_index];
+	f_requestRedraw();//This will change the image-being-edited preview canvas
 	f_rebuildBitmapAndFrameUI();
 	f_rebuildPlaysOnFramesUI();
 }
@@ -845,7 +909,12 @@ function f_bitmapDel(v_evt){
 	f_rebuildPlaysOnFramesUI();
 }
 function f_embedNew(v_evt){
-	v_curGraFlic.addEmbed(GraFlicC_embed_sel.value);
+	if(!GraFlicC_embed_sel.value.length){return;}//value="" for blank/no embedded files. (so that there will be at one option element to make a valid select to ensure proper visual display of the control.)
+	v_curGraFlic.addEmbed(GraFlicC_embed_sel.value, GraFlicC_embed_fit_sel.value);
+	//Select the image that was just made for editing.
+	v_curGraFlic.a.j.s.selected_image_index = v_curGraFlic.a.j.s.images.length - 1;
+	v_curGraFlic.curImage = v_curGraFlic.a.j.s.images[v_curGraFlic.a.j.s.selected_image_index];
+	f_requestRedraw();//This will change the image-being-edited preview canvas
 	f_rebuildBitmapAndFrameUI();
 	f_rebuildPlaysOnFramesUI();
 }
@@ -949,6 +1018,9 @@ function f_toolSelect(v_evt){
 }
 function f_toolEraseSelect(v_evt){
 	v_curGraFlic.curDrawMode = v_evt.target.checked ? 0 : 1;//parseInt(v_evt.target.value);
+}
+function f_toolAspectLockSelect(v_evt){
+	v_curGraFlic.aspectRatioCropMode = v_evt.target.checked ? 1 : 0;
 }
 //function f_plugWires(v_evt){
 //	v_curGraFlic.plugWires();
@@ -1097,6 +1169,9 @@ function f_qualityChange(v_evt){
 	v_qPercent /= 100;
 	v_curGraFlic.a.j.s.export.quality = v_qPercent;
 }
+function f_ditherToggle(v_evt){
+	v_curGraFlic.a.j.s.export.dithering = v_evt.target.checked ? 1 : 0;
+}
 function f_bruteForceToggle(v_evt){
 	GraFlicC_brute_force_iter_txt.disabled = !v_evt.target.checked;
 	if(v_evt.target.checked){
@@ -1129,9 +1204,16 @@ function f_embedFile(v_evt){
 function f_embedFileLoaded(v_evt){
 	var v_fe = {};
 	v_fe.d = new Uint8Array(v_evt.target.result);
-	v_fe.p = 'e/' + v_fileToEmbed.name;
+	v_fe.p = 'f/' + v_fileToEmbed.name;
 	v_curGraFlic.a.addFile(v_fe);
 	f_rebuildEmbedListUI();
+	f_requestRedraw();//If a deleted file used by an image is restored, this could change visuals.
+}
+function f_embedDelFile(v_evt){
+	var f = GraFlicC_embed_sel.value;
+	if(!f.length){return;}//Empty string placeholder for no embeds
+	v_curGraFlic.a.deleteFile(f);
+	f_requestRedraw();//May delete an image file that is in use (causing images using it to show a 'missing' placeholder)
 }
 
 
@@ -1140,17 +1222,23 @@ function f_saveAnimatedPNGNormal(){
 	v_curGraFlic.export(1);
 }
 
+function f_compactDLText(s){
+	if(s.length > 24){
+		s = s.replace(/^(.{10}).*(.{11})$/, '$1…$2');
+	}
+	return s;
+}
 function f_onExported(v_aeRes){
 	GraFlicC_download_image_link.href = v_aeRes.output;
 	GraFlicC_download_image_link.download = f_makeFilename() + '.png';
-	GraFlicC_download_image_link.innerHTML = GraFlicC_download_image_link.download;
+	GraFlicC_download_image_link.innerHTML = f_compactDLText(GraFlicC_download_image_link.download);
 	GraFlicC_project_thumb.src = v_curGraFlic.encoder.output;
 	f_requestRedraw();//redraw in regular viewing state after save operation is done.
 	//alert('PNG saved!');
 }
 function f_onArchived(v_arcRes){
 	GraFlicC_download_work_link.download = f_makeFilename() + '.graflic';
-	GraFlicC_download_work_link.innerHTML = GraFlicC_download_work_link.download;
+	GraFlicC_download_work_link.innerHTML = f_compactDLText(GraFlicC_download_work_link.download);
 	GraFlicC_download_work_link.href = v_arcRes.b;
 	GraFlicC_project_thumb.src = v_curGraFlic.encoder.output;
 	f_requestRedraw();
@@ -1200,6 +1288,8 @@ function f_init(){
 	GraFlicC_tool_lasso_rad.addEventListener('change', f_toolSelect);
 	GraFlicC_tool_erase_chk.addEventListener('change', f_toolEraseSelect);
 	//GraFlicC_plug_wires_btn.addEventListener('click', f_plugWires);
+	
+	GraFlicC_tool_aspect_lock_chk.addEventListener('change', f_toolAspectLockSelect);
 	
 	GraFlicC_tool_crop_rad.addEventListener('change', f_toolSelect);
 	GraFlicC_tool_move_rad.addEventListener('change', f_toolSelect);
@@ -1264,10 +1354,12 @@ function f_init(){
 
 	GraFlicC_export_quality_rng.addEventListener('input', f_qualityChange);
 	GraFlicC_export_quality_txt.addEventListener('input', f_qualityChange);
+	GraFlicC_dither_chk.addEventListener('change', f_ditherToggle);
 	GraFlicC_brute_force_chk.addEventListener('change', f_bruteForceToggle);
 	GraFlicC_brute_force_iter_txt.addEventListener('input', f_bruteForceIterChange);
 	
 	GraFlicC_embed_file_btn.addEventListener('change', f_embedFile);
+	GraFlicC_embed_del_file_btn.addEventListener('click', f_embedDelFile);
 	GraFlicC_new_image_embed_btn.addEventListener('click', f_embedNew);
 	//----------------------------------------------
 	
@@ -1370,7 +1462,7 @@ function f_onRedrawn(){
 </tbody>
 </table>
 <p id="About_saves">
-<b>About saves:</b> This is an early version of the format and many things are not set in stone. Things may change under the hood and files made now might not load in later versions. In some cases it could be manually reconfigured to later version formatting by renaming the .graflic to .zip, repairing JSON files and re-packaging it to a ZIP. If the JSON format changes too much, you can make a new file with the same dimensions and number of images, then swap out the .dat.gz channel files out of the /b bitmaps directory, and/or embeds out of /e.
+<b>About saves:</b> This is an early version of the format and many things are not set in stone. Things may change under the hood and files made now might not load in later versions. In some cases it could be manually reconfigured to later version formatting by renaming the .graflic to .zip, repairing JSON files and re-packaging it to a ZIP. If the JSON format changes too much, you can make a new file with the same dimensions and number of images, then swap out the .dat.gz channel files out of the /b bitmaps directory, and/or embeds out of f/.
 </p>
 <div class="GraFlic_f">
 <small>Copyright 2017 - 2018, Compukaze LLC. <a href="https://github.com/GraFlic/GraFlic">GraFlic™ libraries and tools are available under the MIT license.</a> GraFlic™ and Compukaze™ are trademarks of Compukaze LLC</small>

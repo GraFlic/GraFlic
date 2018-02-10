@@ -7,7 +7,7 @@ use GraFlicEncoder.js to save as Animated PNG.
 
 The MIT License (MIT)
 
-Copyright (c) 2017 Compukaze LLC
+Copyright (c) 2017 - 2018 Compukaze LLC
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -58,6 +58,7 @@ function GraFlicImage(v_fromArchive, v_params){
 	//100 = drawing
 	//200 = finished and/or ready to transfer to custom bitmap channels (wire_index/wire_alpha/fill_index)
 	this.curDrawMode = 1;//0 for erase, 1 for draw
+	this.aspectRatioCropMode = 0;//0 for none, 1 for preserve aspect ratio. This is used when resizing embed-based images.
 
 	this.undoStack = [];
 	this.redoStack = [];
@@ -559,17 +560,27 @@ GraFlicImage.prototype.addBitmap = function(){
 	this.a.j.s.images.push(this.initBitmapWAIFU());
 	this.pushUndoStack(GraFlicImage.UNDO_BITMAP_PIXELS);//The new bitmap must have a pixel state copy to undo back to.
 };
-GraFlicImage.prototype.addEmbed = function(p){
-	//Adds an image that uses an embedded file.
+GraFlicImage.prototype.addEmbed = function(p, fitting){
+	//Adds an image that uses an embedded file. Note that the file must already be added to the virtual archive and this accepts a string with the path to it.
 	var iObj = this.initEmbed(p);
 	this.a.j.s.images.push(iObj);
-	this.refitImage(iObj, 'crop');
+	this.refitImage(iObj, fitting);
 	this.pushUndoStack(GraFlicImage.UNDO_IMAGE_PROPS);
 	this.requestRedraw();//The embed being added will change the visuals. (not initially blank like bitmaps)
 };
 GraFlicImage.prototype.refitImage = function(iObj, fitting){
 	//Images like embeds might want to snap to fit the bounds.
-	//TODO: set up a .fitting to tell it to refit if canvas is resized??
+	//Fitting works differently than the GraFlicEncoder. On the encoder it specifies how it will be drawn on final output, including actual-size mode being drawn at full dimensions.
+	//For GraFlicImage embeds, fitting controls how the image is initially sized/positioned and will be repeated if the global canvas is resized. However if the embed-based image is moved or resized directly after being added, 'fitting' will be unset.
+	//Valid values: 'crop' - fill whole canvas, some areas may go over the edge and not be seen
+	//		'snap' - ensure all areas are visible and snap the image centered on the canvas with at least one dimension taking up the whole amount. There may be some empty space next to edges on the other dimension
+	//		'fill' - keep all of the image visible and fill the canvas. It may be skewed and not preserve aspect ratio.
+	//		'real' - make it the full size based on the image file dimensions.
+	//		undefined or 'none' - No resizing or repositioning will be done. 'none' string is useful in UI control setup. Sending this to refitImage() will result in the .fitting property being deleted if present. This setup allows the call of refitImage(i, i.fitting) without having to do value checking (refitImage will simply do nothing if undefined/'none').
+	if(!fitting || fitting == 'none'){//fitting undefined is valid and means no fitting
+		if(iObj.fitting){delete iObj.fitting;}
+		return;
+	}
 	var fScale, imgDOM, nWidth, nHeight;
 	if(iObj.type == 'embed'){
 		//For some reason naturalWidth is not available here (Because not in DOM?), but just .width is working fine so far.
@@ -578,11 +589,21 @@ GraFlicImage.prototype.refitImage = function(iObj, fitting){
 		nHeight = imgDOM.natuarHeight ? imgDOM.natuarHeight : imgDOM.height;
 		//Should preserved from GraFlicEncoder be renamed to snap???
 		if(fitting.match(/crop|snap/i)){
-			fScale = Math[fitting == 'crop' ? 'max' : 'min'](this.a.j.s.canvas_width / nWidth, this.a.j.s.canvas_width / nHeight);
+			fScale = Math[fitting == 'crop' ? 'max' : 'min'](this.a.j.s.canvas_width / nWidth, this.a.j.s.canvas_height / nHeight);
 			iObj.w = Math.round(nWidth * fScale);
 			iObj.h = Math.round(nHeight * fScale);
 			iObj.x = (this.a.j.s.canvas_width - iObj.w) / 2;
 			iObj.y = (this.a.j.s.canvas_height - iObj.h) / 2;
+		}else if(fitting == 'fill'){
+			iObj.x = 0;
+			iObj.y = 0;
+			iObj.w = this.a.j.s.canvas_width;
+			iObj.h = this.a.j.s.canvas_height;
+		}else if(fitting == 'real'){
+			iObj.x = 0;
+			iObj.y = 0;
+			iObj.w = nWidth;
+			iObj.h = nHeight;
 		}else{//Not a valid fitting string.
 			return;
 		}
@@ -1524,6 +1545,49 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 			v_rgbaI += 4;
 		}}//end of w and h loops.
 		this.cxB.putImageData(v_dataB, rdcX1, rdcY1);
+		}else if(v_bmpObj.type == 'embed'){//===================================== embed ===========================================================
+			this.cxB.save();
+			this.cxB.globalAlpha = v_onionAlpha;
+			var fObj = this.a.f[v_bmpObj.file];
+			if(fObj){//If not there, show a 'missing' placeholder.
+				var imgDOM = fObj.i;
+				//For some reason naturalWidth is not available here (Because not in DOM?), but just .width is working fine so far...
+				var nWidth = imgDOM.natuarWidth ? imgDOM.natuarWidth : imgDOM.width;
+				var nHeight = imgDOM.natuarHeight ? imgDOM.natuarHeight : imgDOM.height;
+				var eScaleX = v_bmpObj.w / nWidth;
+				var eScaleY = v_bmpObj.h / nHeight;
+				var eSrcX = 0;
+				var eSrcY = 0;
+				var erdX = Math.max(v_bmpObj.x, rdcX1);//If another image is being drawn, and this must be redrawn underneath it.
+				var erdY = Math.max(v_bmpObj.y, rdcY1);
+				var erdW = Math.min(v_bmpObj.w, rdcW);
+				var erdH = Math.min(v_bmpObj.h, rdcH);
+				var erdDifX = rdcX1 - v_bmpObj.x;
+				var erdDifY = rdcY1 - v_bmpObj.y;
+				if(v_bmpObj.x < 0){
+					erdDifX += v_bmpObj.x;
+				}
+				if(v_bmpObj.y < 0){
+					erdDifY += v_bmpObj.y;
+				}
+				//this.cxB.fillRect(erdX, erdY, erdW, erdH);
+				this.cxB.drawImage(imgDOM,
+					(Math.max(0, -v_bmpObj.x) + erdDifX) / eScaleX, (Math.max(0, -v_bmpObj.y) + erdDifY) / eScaleY,	
+					Math.min(nWidth, rdcW) / eScaleX, Math.min(nHeight, rdcH) / eScaleY,
+					erdX, erdY, erdW, erdH);//0, 0);
+			}else{
+				this.cxB.fillStyle = '#FF00007F';
+				this.cxB.fillRect(rdcX1, rdcY1, rdcW, rdcH);
+			}
+			this.cxB.restore();
+		}//================================================================================================
+		
+
+
+
+		//---------------- now draw onto main canvas ----------------------------------
+		//(whether it was a WAIFU bitmap, embed, etc). Things like blend should apply to all of these.
+		//(cxB is the current image being drawn, and that result then gets moved to cxM)
 		this.cxM.save();
 		this.cxM.globalAlpha = v_onionAlpha;
 		if(v_bmpObj == this.cutBitmap){
@@ -1544,38 +1608,10 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 			}
 		}
 		this.cxM.restore();
-			
-		}else if(v_bmpObj.type == 'embed'){//===================================== embed ===========================================================
-			this.cxM.save();
-			this.cxM.globalAlpha = v_onionAlpha;
-			var imgDOM = this.a.f[v_bmpObj.file].i;
-			//For some reason naturalWidth is not available here (Because not in DOM?), but just .width is working fine so far...
-			var nWidth = imgDOM.natuarWidth ? imgDOM.natuarWidth : imgDOM.width;
-			var nHeight = imgDOM.natuarHeight ? imgDOM.natuarHeight : imgDOM.height;
-			var eScaleX = v_bmpObj.w / nWidth;
-			var eScaleY = v_bmpObj.h / nHeight;
-			var eSrcX = 0;
-			var eSrcY = 0;
-			var erdX = Math.max(v_bmpObj.x, rdcX1);//If another image is being drawn, and this must be redrawn underneath it.
-			var erdY = Math.max(v_bmpObj.y, rdcY1);
-			var erdW = Math.min(v_bmpObj.w, rdcW);
-			var erdH = Math.min(v_bmpObj.h, rdcH);
-			var erdDifX = rdcX1 - v_bmpObj.x;
-			var erdDifY = rdcY1 - v_bmpObj.y;
-			if(v_bmpObj.x < 0){
-				erdDifX += v_bmpObj.x;
-			}
-			if(v_bmpObj.y < 0){
-				erdDifY += v_bmpObj.y;
-			}
-			//this.cxM.fillRect(erdX, erdY, erdW, erdH);
-			this.cxM.drawImage(imgDOM,
-					(Math.max(0, -v_bmpObj.x) + erdDifX) / eScaleX, (Math.max(0, -v_bmpObj.y) + erdDifY) / eScaleY,	
-					Math.min(nWidth, rdcW) / eScaleX, Math.min(nHeight, rdcH) / eScaleY,
-					erdX, erdY, erdW, erdH);//0, 0);
-			this.cxM.restore();
-		}//================================================================================================
-		
+		//------------------------ end draw onto main canvas code -------------------
+
+
+
 		if(v_bmpObj == this.curImage && this.canvasPreviewBitmap){//if the preview was configured
 			//If this is the current image, use it to make a thumbnail of current image being edited.
 			//TODO: make this only copy the updated region to reduce lag.
@@ -2268,6 +2304,27 @@ GraFlicImage.prototype.mUp = function(v_evt){
 		}
 		this.curImage.x = cBoxX;
 		this.curImage.y = cBoxY;
+		//Adjust to ensure aspect ratio for embeds if in preservation mode.
+		if(this.aspectRatioCropMode && this.curImage.type == 'embed'){
+			var fObj = this.a.f[this.curImage.file];
+			if(fObj){
+				var imgDOM = fObj.i;
+				var nWidth = imgDOM.natuarWidth ? imgDOM.natuarWidth : imgDOM.width;
+				var nHeight = imgDOM.natuarHeight ? imgDOM.natuarHeight : imgDOM.height;
+				var arW = this.curImage.w / nWidth;
+				var arH = this.curImage.h / nHeight;
+				var wasDim;
+				if(arW > arH){
+					wasDim = this.curImage.w;
+					this.curImage.w = Math.round(nWidth * arH);
+					this.curImage.x += (wasDim - this.curImage.w) / 2;
+				}else{
+					wasDim = this.curImage.h;
+					this.curImage.h = Math.round(nHeight * arW);
+					this.curImage.y += (wasDim - this.curImage.h) / 2;
+				}
+			}
+		}
 		this.pushUndoStack(isBitmap ? GraFlicImage.UNDO_BITMAP_PIXELS : GraFlicImage.UNDO_IMAGE_PROPS);
 		this.curToolState = 0;
 		this.requestRedraw();
@@ -2379,6 +2436,7 @@ GraFlicImage.prototype.export = function(v_imgSMode){
 	if(this.imageSaveMode == 1){//export to PNG
 		v_saveScale = this.a.j.s.save_scale;
 		this.encoder.quality = this.a.j.s.export.quality;
+		this.encoder.dithering = this.a.j.s.export.dithering;
 		if(this.a.j.s.export.png && this.a.j.s.export.png.brute){
 			this.encoder.png = {};
 			this.encoder.png.brute = this.a.j.s.export.png.brute;

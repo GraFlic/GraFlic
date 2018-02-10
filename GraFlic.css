@@ -50,7 +50,7 @@ table{
 /*
 anti-collision prefix: GraFlic_ may swap prefix for other things.
 */
-td, th, p, .GraFlic_h, .GraFlic_R{
+tr, td, th, p, .GraFlic_h, .GraFlic_R{
 	margin: 0px;
 	padding: 5px;
 	text-align: left;
