@@ -94,6 +94,7 @@ function GraFlicImage(v_fromArchive, v_params){
 	//==============================================================================================================
 	this.a = new GraFlicArchive(v_fromArchive);//Set up the virtual archive that will handle load/save and be directly manipulatable while live.
 	//.a for archive
+	this.a.onImageLoaded = GraFlicImage.onImageLoaded.bind(this);//Check if an image embed loads and do a redraw with the available image.
 	var v_initF;
 	//Create a folder entry. In ZIP, folders use a trailing slash and have 0 length payload
 	//Bitmaps can have lots of files with the compressed channel systems, so stick them in a folder so the root is not cluttered.
@@ -105,35 +106,40 @@ function GraFlicImage(v_fromArchive, v_params){
 	v_initF.p = '𝕿æßt_Д_ÜTF-8_フォルダ/';
 	this.a.addFile(v_initF);*/
 	
-	//.a.j.s contains the main JSON configurations for the project that will save to the project save file.
+	//s.json contains the main JSON configurations for the project that will save to the project save file.
 	v_initF = {};
 	v_initF.p = 's.json';
 	v_initF.j = this.initSaveJSON();
 	this.a.addFile(v_initF);
+	this.save = v_initF.j;//Link to the file's live JSON property
+	
+	
 	//JSON data for the metadata of the project(Title, Author, Description, etc).
 	v_initF = {};
 	v_initF.p = 'm.json';
 	v_initF.j = this.initMetadata();
 	this.a.addFile(v_initF);
-	this.a.j.s.images = [];
-	this.a.j.s.canvas_width = 512;
-	this.a.j.s.canvas_height = 512;
-	this.a.j.s.index_bit_depth = 8;//May have to raise to 16 if more than 156 palette entries
-	this.a.j.s.alpha_bit_depth = 8;//May one day be raisable to 16 for 48 bit color with 16 bit alpha.
+	this.meta = v_initF.j;
+	
+	this.save.images = [];
+	this.save.canvas_width = 512;
+	this.save.canvas_height = 512;
+	this.save.index_bit_depth = 8;//May have to raise to 16 if more than 156 palette entries
+	this.save.alpha_bit_depth = 8;//May one day be raisable to 16 for 48 bit color with 16 bit alpha.
 			//Raising bit depths would require all the channels for each bitmap to be converted into Uint16Array.
 	//== Create blank bitmap canvas to start with ==
 	this.curImage = this.initBitmapWAIFU();//bitmap currently being operated on
-	this.a.j.s.images.push(this.curImage);
+	this.save.images.push(this.curImage);
 	//Note that this this.curImage must be there for changeCanvasSize to init the undo stack.
-	this.a.j.s.save_scale = 0.5;
+	this.save.save_scale = 0.5;
 	//============ set global variables that reset on new image ============
 	//colors are drawn by inserting an index to a palette entry, rather than a color code, that way palette colors can be swapped and updated dynamically.
 	//palette[0] should always be considered fully transparent
 	this.curPalette = this.initPalette();
 	this.curPalette.cascade = -9999;//This will be the 'default' palette. All others should cascade over it.
 	this.curPalette.default = true;//Non-default palettes may only override some colors and rely on the default to ensure every used index has a color.
-	this.a.j.s.palettes = [this.curPalette];//Init palette array.
-	this.a.j.s.selected_palette_index = 0;
+	this.save.palettes = [this.curPalette];//Init palette array.
+	this.save.selected_palette_index = 0;
 	
 	//----------------------------------------------
 
@@ -144,12 +150,12 @@ function GraFlicImage(v_fromArchive, v_params){
 	this.newPaletteColorRGBA(1, 0, 0, 1, '❤️');
 	this.newPaletteColorRGBA(0, 1, 0, 1, '💚');
 	this.newPaletteColorRGBA(0, 0, 1, 1, '💙');
-	this.a.j.s.selected_color_index = 1;
-	this.curPaletteColor = this.curPalette.colors[this.a.j.s.selected_color_index];
+	this.save.selected_color_index = 1;
+	this.curPaletteColor = this.curPalette.colors[this.save.selected_color_index];
 	//----------------------------------------------
 	
 	this.curFrame = this.initFrame();
-	this.a.j.s.frames = [this.curFrame];
+	this.save.frames = [this.curFrame];
 	//----------------------------------------------
 	//Note that the first undo stack entry will be made on change canvas size where it resets the undos.
 	//Send the flags for size change AND bitmap pixels, so that it will now to copy the pixels for ALL images. Each image must start with something to undo to when the image is started or restored.
@@ -195,6 +201,7 @@ function GraFlicImage(v_fromArchive, v_params){
 	this.bucketFill = this.bucketFillUnbound.bind(this);//Used for bucket fills to make the 'this' keyword work.
 	this.playNextFrame = this.playNextFrameUnbound.bind(this);
 	
+	
 	if(GraFlicEncoder){//The class will be defined if GraFlicEncoder.js was in a script element. It may not be needed if only doing playback.
 		//GraFlicEncoder functions are needed if doing any saving.
 		this.encoder = new GraFlicEncoder({
@@ -213,6 +220,10 @@ function GraFlicImage(v_fromArchive, v_params){
 		this.fileSelectLoader = this.fileSelectLoaderUnbound.bind(this);
 		this.fileSelectLoadedHandler = this.fileSelectLoadedHandlerUnbound.bind(this);
 	}
+};
+GraFlicImage.onImageLoaded = function(e){
+	this.requestRedraw();
+	e.target.removeEventListener('load', GraFlicImage.onImageLoaded);
 };
 GraFlicImage.EDITOR_VERSION = 0.01;//Set to 1.0 when stable enough to declare version.
 GraFlicImage.TOOL_PEN = 1;//Simple single width line that ignores pressure.
@@ -261,8 +272,8 @@ GraFlicImage.prototype.getNextID = function(v_idStr, v_temp){
 		return 'temp_' + this.nextTempID.toString(16);//prefix so it does not collide with savable IDs.
 	}else{
 		v_idStr = 'last_' + v_idStr + '_id';
-		this.a.j.s[v_idStr]++;
-		return this.a.j.s[v_idStr].toString();//Use base 10 so that numbers order correctly in folders.
+		this.save[v_idStr]++;
+		return this.save[v_idStr].toString();//Use base 10 so that numbers order correctly in folders.
 	}
 };
 
@@ -290,12 +301,12 @@ GraFlicImage.prototype.initMetadata = function(){
 
 GraFlicImage.prototype.calcBitmapSizes = function(){
 	//TODO: Additional logic will be needed her if supporting 16 bit depth for more palette entries or 48 bit color with 16 bit alpha.
-	//use this.a.j.s.index_bit_depth, this.a.j.s.alpha_bit_depth ( / 8 for number of bytes per pixel)
+	//use this.save.index_bit_depth, this.save.alpha_bit_depth ( / 8 for number of bytes per pixel)
 	//NOTE: In some cases if bit depth is increased only some channels will be increased. For example 16 bit depth for more palette indices than 255, but NOT moving to 16 bit alpha to support 48 bit color.
 	//TODO: phase these globals out for bitmapBytes, each bitmap should have own adjustable dimensions.
 		//The things will full canvas size may use these (preview canvas, draw canvas, but not individual bitmaps)
-	this.channelBitmapBytes = this.a.j.s.canvas_width * this.a.j.s.canvas_height;
-	this.rgba32BitmapBytes = this.a.j.s.canvas_width * this.a.j.s.canvas_height * 4;//Each custom channel will be on its own array of W*H.
+	this.channelBitmapBytes = this.save.canvas_width * this.save.canvas_height;
+	this.rgba32BitmapBytes = this.save.canvas_width * this.save.canvas_height * 4;//Each custom channel will be on its own array of W*H.
 	//A channel for wire color index,
 	//A channel for wire color anti-alias alpha
 	//A channel for fill color index (a flat color that fills in under shapes and slides under the anti-aliased parts to blend)
@@ -317,9 +328,9 @@ GraFlicImage.prototype.cropBitmap = function(cropB, cropX, cropY, cropW, cropH){
 	var v_canvasWidthOld = cropB.w;
 	var v_canvasHeightOld = cropB.h;
 	
-	var v_oldWireA = this.a.f[cropB.chan_a].d;
-	var v_oldWireI = this.a.f[cropB.chan_i].d;
-	var v_oldFillI = this.a.f[cropB.chan_f].d;
+	var v_oldWireA = this.a.f(cropB.chan_a).d;
+	var v_oldWireI = this.a.f(cropB.chan_i).d;
+	var v_oldFillI = this.a.f(cropB.chan_f).d;
 
 	cropW = Math.round(cropW);//Initializing the Uint8Array with a non-integer can cause errors and bugs.
 	cropH = Math.round(cropH);
@@ -328,9 +339,9 @@ GraFlicImage.prototype.cropBitmap = function(cropB, cropX, cropY, cropW, cropH){
 	var chanBytesWAIFU = cropW * cropH;//Currently 1 byte per pixel, TODO: may optionally expand to 2 if 16-bit supported later.
 	//Log check for error conditions when cropping. Occasionally a crop ends up in bugs and broken behavior.
 	console.log('crop done... X ' + cropX + ' Y ' + cropY + ' W ' + cropW + ' H ' + cropH + ' b: ' + chanBytesWAIFU);
-	this.a.f[cropB.chan_a].d = new Uint8Array(new ArrayBuffer(chanBytesWAIFU));
-	this.a.f[cropB.chan_i].d = new Uint8Array(new ArrayBuffer(chanBytesWAIFU));
-	this.a.f[cropB.chan_f].d = new Uint8Array(new ArrayBuffer(chanBytesWAIFU));
+	this.a.f(cropB.chan_a).d = new Uint8Array(new ArrayBuffer(chanBytesWAIFU));
+	this.a.f(cropB.chan_i).d = new Uint8Array(new ArrayBuffer(chanBytesWAIFU));
+	this.a.f(cropB.chan_f).d = new Uint8Array(new ArrayBuffer(chanBytesWAIFU));
 	//alert('a');
 	for(var v_h = 0;v_h < cropH;v_h++){
 		for(var v_w = 0;v_w < cropW;v_w++){
@@ -340,16 +351,16 @@ GraFlicImage.prototype.cropBitmap = function(cropB, cropX, cropY, cropW, cropH){
 			v_oldPixI = v_hOld * v_canvasWidthOld + v_wOld;
 			//alert(v_newPixI + ' -- ' + v_oldPixI + ' ' +v_wOld + ', ' + v_hOld +' ... ' + v_canvasWidthOld);return;
 			if(v_wOld >= 0 && v_hOld >= 0 && v_wOld < v_canvasWidthOld && v_hOld < v_canvasHeightOld){
-				this.a.f[cropB.chan_a].d[v_newPixI] = v_oldWireA[v_oldPixI];
-				this.a.f[cropB.chan_i].d[v_newPixI] = v_oldWireI[v_oldPixI];
-				this.a.f[cropB.chan_f].d[v_newPixI] = v_oldFillI[v_oldPixI];
+				this.a.f(cropB.chan_a).d[v_newPixI] = v_oldWireA[v_oldPixI];
+				this.a.f(cropB.chan_i).d[v_newPixI] = v_oldWireI[v_oldPixI];
+				this.a.f(cropB.chan_f).d[v_newPixI] = v_oldFillI[v_oldPixI];
 			}else{//init to zero anything that is not in the copied region
-				this.a.f[cropB.chan_a].d[v_newPixI] = 0;
-				this.a.f[cropB.chan_i].d[v_newPixI] = 0;
-				this.a.f[cropB.chan_f].d[v_newPixI] = 0;
+				this.a.f(cropB.chan_a).d[v_newPixI] = 0;
+				this.a.f(cropB.chan_i).d[v_newPixI] = 0;
+				this.a.f(cropB.chan_f).d[v_newPixI] = 0;
 			}
 		}
-		//v_oldPixI += this.a.j.s.canvas_widthOld;//old value before this var is changed
+		//v_oldPixI += this.save.canvas_widthOld;//old value before this var is changed
 		//v_newPixI += cropW;
 	}
 	
@@ -365,8 +376,8 @@ GraFlicImage.prototype.systemChangeCanvasSize = function(v_csUndoFlags, v_csW, v
 	//Note: be sure to set v_csUndoFlags to 0 if being used by an undo/redo reconstruction otherwise it will break the undo system.
 	//If no undo flags are set (0) it will exclude from undo state. If it is the initial action when creating an image, the flags for change canvas size AND bitmap pixels should be set.
 	//alert(v_canvasWidthOld + ' x ' + v_canvasHeightOld);
-	this.a.j.s.canvas_width = v_csW;
-	this.a.j.s.canvas_height = v_csH;
+	this.save.canvas_width = v_csW;
+	this.save.canvas_height = v_csH;
 	this.calcBitmapSizes();//Now that W/H has changed, adjust the byte size per channel
 	//cycle thru the bitmaps and adjust them to the new size.
 	//var v_minCropX = 0;
@@ -381,8 +392,8 @@ GraFlicImage.prototype.systemChangeCanvasSize = function(v_csUndoFlags, v_csW, v
 	if(v_startY !== undefined){
 		v_posCropH = v_startY;
 	}
-	for(var v_i = 0;v_i < this.a.j.s.images.length;v_i++){
-		var v_changeB = this.a.j.s.images[v_i];
+	for(var v_i = 0;v_i < this.save.images.length;v_i++){
+		var v_changeB = this.save.images[v_i];
 		v_changeB.x -= v_posCropW;//position based cropping if x/y was set. (The pixels are still there in the individual image/bitmap, but out of view)
 		v_changeB.y -= v_posCropH;
 		/*//OLD: The bitmaps all have their own x/y/w/h settings independent of canvas size now (though new ones may be inited at canvas size).
@@ -395,15 +406,15 @@ GraFlicImage.prototype.systemChangeCanvasSize = function(v_csUndoFlags, v_csW, v
 		this.pushUndoStack(v_csUndoFlags);//Make the initial state to undo to before anything is drawn/changed.
 	}
 
-	this.cvM.width = this.a.j.s.canvas_width;
-	this.cvM.height = this.a.j.s.canvas_height;
-	this.cvB.width = this.a.j.s.canvas_width;
-	this.cvB.height = this.a.j.s.canvas_height;
-	this.cvP.width = this.a.j.s.canvas_width;
-	this.cvP.height = this.a.j.s.canvas_height;
+	this.cvM.width = this.save.canvas_width;
+	this.cvM.height = this.save.canvas_height;
+	this.cvB.width = this.save.canvas_width;
+	this.cvB.height = this.save.canvas_height;
+	this.cvP.width = this.save.canvas_width;
+	this.cvP.height = this.save.canvas_height;
 	
 	//The aspect ratio has changed, so adjust the preview canvases
-	//this.canvasPreviewBitmap.width = this.a.j.s.canvas_width;
+	//this.canvasPreviewBitmap.width = this.save.canvas_width;
 	var v_miniCX;
 	v_miniCX = this.canvasPreviewBitmap.getContext('2d');
 	v_miniCX.clearRect(0, 0, this.canvasPreviewBitmap.width, this.canvasPreviewBitmap.height);
@@ -423,8 +434,8 @@ GraFlicImage.prototype.initImage = function(v_excludeFromArchive, initX, initY, 
 	//Make each bitmap have bounds, so that images that only have a small section drawn on do not consume huge amounts of memory.
 	initI.x = 0;
 	initI.y = 0;
-	initI.w = this.a.j.s.canvas_width;
-	initI.h = this.a.j.s.canvas_height;
+	initI.w = this.save.canvas_width;
+	initI.h = this.save.canvas_height;
 	if(initX){initI.x = initX;}//undefined evaluates 0/false which is either the default(x/y) or invalid(w/h)
 	if(initY){initI.y = initY;}
 	if(initW){initI.w = initW;}
@@ -515,18 +526,18 @@ GraFlicImage.prototype.initEmbed = function(fPath){
 GraFlicImage.prototype.deleteImage = function(){
 	//Deletes an image such as a bitmap or embed from the project. Note that for embeds this will delete the instance image using the embedded file, not the file itself.
 	//If the parameter is undefined, it will delete the current selected image.
-	if(this.a.j.s.images.length < 2){
+	if(this.save.images.length < 2){
 		return 0;//Cannot delete down to 0 images, must have at least one.
 	}
 	//if(!d){//Do not currently need to support deleting an image that is not the selected image. That will cause unneeded complication.
 	var d = this.curImage;//Delete current image if not parameter sent.
 	//}
 	var isCur = (d == this.curImage);
-	var dIndex = this.a.j.s.images.indexOf(d);
-	this.a.j.s.images.splice(dIndex, 1);//Remove the image being deleted.
+	var dIndex = this.save.images.indexOf(d);
+	this.save.images.splice(dIndex, 1);//Remove the image being deleted.
 	if(isCur){//If the current/selected image was deleted, ensure something is selected.
-		this.a.j.s.selected_image_index = Math.min(dIndex, this.a.j.s.images.length -1);
-		this.curImage = this.a.j.s.images[this.a.j.s.selected_image_index];
+		this.save.selected_image_index = Math.min(dIndex, this.save.images.length -1);
+		this.curImage = this.save.images[this.save.selected_image_index];
 	}
 	this.pushUndoStack(GraFlicImage.UNDO_OBJECT_DELETE);
 	this.requestRedraw();//The image being removed may alter the visuals.
@@ -534,16 +545,16 @@ GraFlicImage.prototype.deleteImage = function(){
 };
 GraFlicImage.prototype.deleteFrame = function(){
 	//Deletes the current selected frame.
-	if(this.a.j.s.frames.length < 2){
+	if(this.save.frames.length < 2){
 		return 0;//Cannot delete down to 0 frames, must have at least one.
 	}
 	var f = this.curFrame;
-	var fIndex = this.a.j.s.frames.indexOf(f);
-	this.a.j.s.frames.splice(fIndex, 1);//Remove the frame being deleted.
-	this.a.j.s.selected_frame_index = Math.min(fIndex, this.a.j.s.frames.length - 1);
-	this.curFrame = this.a.j.s.frames[this.a.j.s.selected_frame_index];
-	for(var i = 0;i < this.a.j.s.images.length;i++){
-		var iObj = this.a.j.s.images[i];
+	var fIndex = this.save.frames.indexOf(f);
+	this.save.frames.splice(fIndex, 1);//Remove the frame being deleted.
+	this.save.selected_frame_index = Math.min(fIndex, this.save.frames.length - 1);
+	this.curFrame = this.save.frames[this.save.selected_frame_index];
+	for(var i = 0;i < this.save.images.length;i++){
+		var iObj = this.save.images[i];
 		for(var j = 0;j < iObj.plays_on_frames.length;j++){
 			if(iObj.plays_on_frames[j] == f.id){
 				iObj.plays_on_frames.splice(j, 1);
@@ -557,13 +568,13 @@ GraFlicImage.prototype.deleteFrame = function(){
 };
 
 GraFlicImage.prototype.addBitmap = function(){
-	this.a.j.s.images.push(this.initBitmapWAIFU());
+	this.save.images.push(this.initBitmapWAIFU());
 	this.pushUndoStack(GraFlicImage.UNDO_BITMAP_PIXELS);//The new bitmap must have a pixel state copy to undo back to.
 };
 GraFlicImage.prototype.addEmbed = function(p, fitting){
 	//Adds an image that uses an embedded file. Note that the file must already be added to the virtual archive and this accepts a string with the path to it.
 	var iObj = this.initEmbed(p);
-	this.a.j.s.images.push(iObj);
+	this.save.images.push(iObj);
 	this.refitImage(iObj, fitting);
 	this.pushUndoStack(GraFlicImage.UNDO_IMAGE_PROPS);
 	this.requestRedraw();//The embed being added will change the visuals. (not initially blank like bitmaps)
@@ -584,21 +595,21 @@ GraFlicImage.prototype.refitImage = function(iObj, fitting){
 	var fScale, imgDOM, nWidth, nHeight;
 	if(iObj.type == 'embed'){
 		//For some reason naturalWidth is not available here (Because not in DOM?), but just .width is working fine so far.
-		imgDOM = this.a.f[iObj.file].i;
+		imgDOM = this.a.f(iObj.file).i;
 		nWidth = imgDOM.natuarWidth ? imgDOM.natuarWidth : imgDOM.width;
 		nHeight = imgDOM.natuarHeight ? imgDOM.natuarHeight : imgDOM.height;
 		//Should preserved from GraFlicEncoder be renamed to snap???
 		if(fitting.match(/crop|snap/i)){
-			fScale = Math[fitting == 'crop' ? 'max' : 'min'](this.a.j.s.canvas_width / nWidth, this.a.j.s.canvas_height / nHeight);
+			fScale = Math[fitting == 'crop' ? 'max' : 'min'](this.save.canvas_width / nWidth, this.save.canvas_height / nHeight);
 			iObj.w = Math.round(nWidth * fScale);
 			iObj.h = Math.round(nHeight * fScale);
-			iObj.x = (this.a.j.s.canvas_width - iObj.w) / 2;
-			iObj.y = (this.a.j.s.canvas_height - iObj.h) / 2;
+			iObj.x = (this.save.canvas_width - iObj.w) / 2;
+			iObj.y = (this.save.canvas_height - iObj.h) / 2;
 		}else if(fitting == 'fill'){
 			iObj.x = 0;
 			iObj.y = 0;
-			iObj.w = this.a.j.s.canvas_width;
-			iObj.h = this.a.j.s.canvas_height;
+			iObj.w = this.save.canvas_width;
+			iObj.h = this.save.canvas_height;
 		}else if(fitting == 'real'){
 			iObj.x = 0;
 			iObj.y = 0;
@@ -611,7 +622,7 @@ GraFlicImage.prototype.refitImage = function(iObj, fitting){
 	}
 };
 GraFlicImage.prototype.addFrame = function(){
-	this.a.j.s.frames.push(this.initFrame());
+	this.save.frames.push(this.initFrame());
 };
 GraFlicImage.prototype.initFrame = function(){
 	var v_initFrame = {};
@@ -625,9 +636,9 @@ GraFlicImage.prototype.initFrame = function(){
 GraFlicImage.prototype.savePixelState = function(uID, bObj){
 	var sObj = {}, i;
 	if(bObj.type == 'WAIFU'){
-		var v_liveA = this.a.f[bObj.chan_a].d;//pixels live on the screen (link to the live bitmap the undo bitmap was copied from)
-		var v_liveI = this.a.f[bObj.chan_i].d;
-		var v_liveF = this.a.f[bObj.chan_f].d;
+		var v_liveA = this.a.f(bObj.chan_a).d;//pixels live on the screen (link to the live bitmap the undo bitmap was copied from)
+		var v_liveI = this.a.f(bObj.chan_i).d;
+		var v_liveF = this.a.f(bObj.chan_f).d;
 		//Could switch to a simpler Uint8Array.from() rather than make new array and copy with loop, but support is questionable for that right now (early 2018).
 		sObj.chanA = new Uint8Array(new ArrayBuffer(v_liveA.length));
 		sObj.chanI = new Uint8Array(new ArrayBuffer(v_liveI.length));
@@ -659,9 +670,9 @@ GraFlicImage.prototype.restorePixelState = function(uID, bObj, sObj){
 		var v_liveA = new Uint8Array(new ArrayBuffer(sObj.chanA.length));
 		var v_liveI = new Uint8Array(new ArrayBuffer(sObj.chanI.length));
 		var v_liveF = new Uint8Array(new ArrayBuffer(sObj.chanF.length));
-		this.a.f[bObj.chan_a].d = v_liveA;
-		this.a.f[bObj.chan_i].d = v_liveI;
-		this.a.f[bObj.chan_f].d = v_liveF;
+		this.a.f(bObj.chan_a).d = v_liveA;
+		this.a.f(bObj.chan_i).d = v_liveI;
+		this.a.f(bObj.chan_f).d = v_liveF;
 		//Note that all channels will not necessarily be the same length in the future, for example if it switches to 16-bit palette indices, but still has 8-bit alpha.
 		//Note that simply changing to a Uint16Array, which has BYTES_PER_ELEMENT = 2, may work if switching to 16-bit indices. This lets the system control byte order, so extra handling may be needed when saving to ensure a consistent byte order in fils. This could help avoid messy logic for variable number of bytes per channel pixel.
 		for(i = 0;i < v_liveA.length;i++){
@@ -687,8 +698,8 @@ GraFlicImage.prototype.pushUndoStack = function(undoFlags){
 	//Cannot redo on top of a change that was done after undoing.
 	while(this.redoStack.length){this.deleteUndoRedoResources(this.redoStack.pop());}
 	//Most objects can be handled by simple a stringify save state. Images require special handling in addition to this beause they can contain bitmaps, which would be horrible on resources and performance being JSON stringified.
-	undoObj.framesJSON = JSON.stringify(this.a.j.s.frames);//This stringifies some things in the s.json save state. It does not include the metadata.
-	undoObj.imagesJSON = JSON.stringify(this.a.j.s.images);
+	undoObj.framesJSON = JSON.stringify(this.save.frames);//This stringifies some things in the s.json save state. It does not include the metadata.
+	undoObj.imagesJSON = JSON.stringify(this.save.images);
 	undoObj.pixelStates = [];
 	this.undoRedoLastFlags = undoFlags;//Flags for what the last action changed. (pixels, all images, etc)
 	//-----------------------------------------------------------------
@@ -697,10 +708,10 @@ GraFlicImage.prototype.pushUndoStack = function(undoFlags){
 		//Should not be needed. Image should simply exist in the array of affected images ifs affected.
 		undoObj.targ = this.curImage;//target bitmap
 	}*/
-	undoObj.cw = this.a.j.s.canvas_width;
-	undoObj.ch = this.a.j.s.canvas_height;
-	for(i = 0;i < this.a.j.s.images.length;i++){//Save the properties of the different images at the state in case a change affected multiple images.
-		iObj1 = this.a.j.s.images[i];
+	undoObj.cw = this.save.canvas_width;
+	undoObj.ch = this.save.canvas_height;
+	for(i = 0;i < this.save.images.length;i++){//Save the properties of the different images at the state in case a change affected multiple images.
+		iObj1 = this.save.images[i];
 		if( iObj1.type == 'WAIFU' && (iObj1 == this.curImage || (undoFlags & GraFlicImage.UNDO_IMAGE_ALL) )
 		 && (undoFlags & GraFlicImage.UNDO_BITMAP_PIXELS)
 			){
@@ -757,21 +768,21 @@ GraFlicImage.prototype.undoRedoExec = function(v_undoObj, isRedo, wasObj){
 	var imageState, i, uObj1, iObj;
 	console.log('Undo/Redo Exec code bits: ' + v_undoObj.flags.toString(2));
 
-	this.a.j.s.images = JSON.parse(v_undoObj.imagesJSON);
-	this.a.j.s.selected_image_index = Math.min(this.a.j.s.selected_image_index, this.a.j.s.images.length - 1);
-	this.curImage = this.a.j.s.images[this.a.j.s.selected_image_index];//Make sure not linking to a now deleted image.
+	this.save.images = JSON.parse(v_undoObj.imagesJSON);
+	this.save.selected_image_index = Math.min(this.save.selected_image_index, this.save.images.length - 1);
+	this.curImage = this.save.images[this.save.selected_image_index];//Make sure not linking to a now deleted image.
 
-	this.a.j.s.frames = JSON.parse(v_undoObj.framesJSON);
-	this.a.j.s.selected_frame_index = Math.min(this.a.j.s.selected_frame_index, this.a.j.s.frames.length - 1);
-	this.curFrame = this.a.j.s.frames[this.a.j.s.selected_frame_index];
+	this.save.frames = JSON.parse(v_undoObj.framesJSON);
+	this.save.selected_frame_index = Math.min(this.save.selected_frame_index, this.save.frames.length - 1);
+	this.curFrame = this.save.frames[this.save.selected_frame_index];
 
 	//Reference links must be updated once a JSON string is reconstituted as a live object. Most things will use an index or key instead. Current Image, Current Frame, Current Palette Color, etc... are exceptions.
 	//---------------- Images --------------------------------------------------------------------------------
 	//Images require special handling beause they can contain bitmaps, which would be horrible on resources and performance being JSON stringified.
 	//console.log('uFlags: ' + this.undoRedoLastFlags.toString(2));
 	//if(v_undoObj.flags & GraFlicImage.UNDO_BITMAP_PIXELS){
-		for(i = 0;i < this.a.j.s.images.length;i++){
-			iObj = this.a.j.s.images[i];
+		for(i = 0;i < this.save.images.length;i++){
+			iObj = this.save.images[i];
 			if(v_undoObj.pixelStates[iObj.id]){
 				console.log('restoring pixels for: '+ iObj.id);
 				var wasID = 0;//ID will be non-zero if a pixel state was saved within the state object that was at the top of the undo stack. If these are identical then the pixel state did not change.
@@ -780,7 +791,7 @@ GraFlicImage.prototype.undoRedoExec = function(v_undoObj, isRedo, wasObj){
 			}
 		}//end images loop
 	//}//End if pixels affected.
-	if(v_undoObj.cw != this.a.j.s.canvas_width || v_undoObj.ch != this.a.j.s.canvas_height){
+	if(v_undoObj.cw != this.save.canvas_width || v_undoObj.ch != this.save.canvas_height){
 		//Be sure it is set to exclude from the undo stack.
 		this.systemChangeCanvasSize(0, v_undoObj.cw, v_undoObj.ch, v_undoObj.cxs, v_undoObj.cys);
 	}
@@ -886,8 +897,8 @@ GraFlicImage.prototype.requestRedrawUnbound = function(x1, y1, x2, y2){
 		}
 		this.redrawX1 = Math.max(0, Math.round(x1-rExpand));//default is to draw the whole area.
 		this.redrawY1 = Math.max(0, Math.round(y1-rExpand));
-		this.redrawX2 = Math.min(this.a.j.s.canvas_width, Math.round(x2+rExpand));
-		this.redrawY2 = Math.min(this.a.j.s.canvas_height, Math.round(y2+rExpand));
+		this.redrawX2 = Math.min(this.save.canvas_width, Math.round(x2+rExpand));
+		this.redrawY2 = Math.min(this.save.canvas_height, Math.round(y2+rExpand));
 	}
 };
 GraFlicImage.prototype.alphaOverColorChannel = function(v_byteA, v_byteB, v_alphaA, v_alphaB){
@@ -912,16 +923,16 @@ GraFlicImage.prototype.updateCanvasVisualsUnbound = function(v_cTimestamp){
 		var v_imgAlpha;
 		var v_imgDoInsert;
 		var v_i2dParams;
-		var v_displayFrameIndex = this.a.j.s.selected_frame_index;
-		var v_displayFrameID = this.a.j.s.frames[this.a.j.s.selected_frame_index].id;
-		var v_fMax = this.a.j.s.frames.length - 1;
+		var v_displayFrameIndex = this.save.selected_frame_index;
+		var v_displayFrameID = this.save.frames[this.save.selected_frame_index].id;
+		var v_fMax = this.save.frames.length - 1;
 		var hasShownCurImage = false;//If in dictionary view, must ensure this is shown.
 		if(this.isPlaying){//if playing a preview of the animation.
 			v_displayFrameIndex = this.playingFrame;
-			v_displayFrameID = this.a.j.s.frames[v_displayFrameIndex].id;
+			v_displayFrameID = this.save.frames[v_displayFrameIndex].id;
 		}
-		for(var v_i = 0;v_i < this.a.j.s.images.length;v_i++){
-			v_img2Draw = this.a.j.s.images[v_i];
+		for(var v_i = 0;v_i < this.save.images.length;v_i++){
+			v_img2Draw = this.save.images[v_i];
 			v_imgAlpha = 1;
 			v_imgDoInsert = false;
 			if(v_img2Draw.plays_on_all_frames){v_imgDoInsert = true;}
@@ -934,18 +945,18 @@ GraFlicImage.prototype.updateCanvasVisualsUnbound = function(v_cTimestamp){
 					//}
 					break;
 				}else if(this.viewer.breeze){
-					if(    v_img2Draw.plays_on_frames[v_i2] == this.a.j.s.frames[Math.min(v_fMax, this.a.j.s.selected_frame_index + 1)].id
-					    || v_img2Draw.plays_on_frames[v_i2] == this.a.j.s.frames[Math.max(0, this.a.j.s.selected_frame_index - 1)].id ){
+					if(    v_img2Draw.plays_on_frames[v_i2] == this.save.frames[Math.min(v_fMax, this.save.selected_frame_index + 1)].id
+					    || v_img2Draw.plays_on_frames[v_i2] == this.save.frames[Math.max(0, this.save.selected_frame_index - 1)].id ){
 						v_imgDoInsert = true;
 						v_imgAlpha = 0.40;
 						break;
-					}else if(    v_img2Draw.plays_on_frames[v_i2] == this.a.j.s.frames[Math.min(v_fMax, this.a.j.s.selected_frame_index)].id + 2
-						  || v_img2Draw.plays_on_frames[v_i2] == this.a.j.s.frames[Math.max(0, this.a.j.s.selected_frame_index)].id - 2 ){
+					}else if(    v_img2Draw.plays_on_frames[v_i2] == this.save.frames[Math.min(v_fMax, this.save.selected_frame_index)].id + 2
+						  || v_img2Draw.plays_on_frames[v_i2] == this.save.frames[Math.max(0, this.save.selected_frame_index)].id - 2 ){
 						v_imgDoInsert = true;
 						v_imgAlpha = 0.20;
 						break;
-					}else if(    v_img2Draw.plays_on_frames[v_i2] == this.a.j.s.frames[Math.min(v_fMax, this.a.j.s.selected_frame_index)].id + 3
-						  || v_img2Draw.plays_on_frames[v_i2] == this.a.j.s.frames[Math.max(0, this.a.j.s.selected_frame_index)].id - 3 ){
+					}else if(    v_img2Draw.plays_on_frames[v_i2] == this.save.frames[Math.min(v_fMax, this.save.selected_frame_index)].id + 3
+						  || v_img2Draw.plays_on_frames[v_i2] == this.save.frames[Math.max(0, this.save.selected_frame_index)].id - 3 ){
 						v_imgDoInsert = true;
 						v_imgAlpha = 0.10;
 						break;
@@ -1021,12 +1032,12 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 	var v_copyI;
 	var w;
 	var h;
-	var canvW = this.a.j.s.canvas_width;
+	var canvW = this.save.canvas_width;
 	if(this.redrawFull){//Get the bounds as they are now in case they changed since last draw.
 		this.redrawX1 = 0;//default is to draw the whole area.
 		this.redrawY1 = 0;
-		this.redrawX2 = this.a.j.s.canvas_width;
-		this.redrawY2 = this.a.j.s.canvas_height;
+		this.redrawX2 = this.save.canvas_width;
+		this.redrawY2 = this.save.canvas_height;
 	}
 	var rdX1 = this.redrawX1;
 	var rdY1 = this.redrawY1;
@@ -1264,9 +1275,9 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 		var v_pixA;
 		if(this.curTool == GraFlicImage.TOOL_PEN || this.curTool == GraFlicImage.TOOL_BRUSH){
 			v_rgbaI = 0;
-			chanWA = this.a.f[this.curImage.chan_a].d;
-			chanWI = this.a.f[this.curImage.chan_i].d;
-			chanFI = this.a.f[this.curImage.chan_f].d;
+			chanWA = this.a.f(this.curImage.chan_a).d;
+			chanWI = this.a.f(this.curImage.chan_i).d;
+			chanFI = this.a.f(this.curImage.chan_f).d;
 			//for(v_copyI = 0;v_copyI < this.channelBitmapBytes;v_copyI++){
 			for(h = rdcY1;h < rdcY2;h++){
 			for(w = rdcX1;w < rdcX2;w++){
@@ -1281,19 +1292,19 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 				if(v_pixA){//any non-zero value that evals true.
 					if(this.curDrawMode){//if DRAWING, not erasing
 						/*if(false){//let the existing wire override untying that intersects it
-							if(!this.a.f[this.curImage.chan_i].d[v_copyI]){
+							if(!this.a.f(this.curImage.chan_i).d[v_copyI]){
 								//Any wire already drawn will stay and not be overwritten, this works better
 								//for preserving line art and drawing the borders of shade/hilight areas
 								//drawn that intersect the line art.
 								//TODO: allow this behavior to be overridden if needed.
-								chanWI[v_copyI] = this.a.j.s.selected_color_index;
+								chanWI[v_copyI] = this.save.selected_color_index;
 								chanWA[v_copyI] |= v_pixA;
 							}
 						}else if(true){//the new wire drawing over anything it intersects.
 							//Fully transparent should be index [0] and alpha 0.
 							//An index set non-zero with alpha of zero triggers special handling.
 							//This allows intersecting wires of different colors to blend visually gracefully.
-							chanWI[v_copyI] = this.a.j.s.selected_color_index;
+							chanWI[v_copyI] = this.save.selected_color_index;
 							chanWA[v_copyI] = 0;
 						}else{
 							//If a wire already exists, push the current wire value down to the fill channel
@@ -1301,17 +1312,17 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 							if(v_pixA == 255){
 								chanFI[v_copyI] = chanWI[v_copyI]];
 							}
-							chanWI[v_copyI] = this.a.j.s.selected_color_index;
+							chanWI[v_copyI] = this.save.selected_color_index;
 							chanWA[v_copyI] |= v_pixA;
 						}*/
-						if(chanWI[v_copyI] && chanWI[v_copyI] != this.a.j.s.selected_color_index && v_pixA < 255){//wire already there, intersect and are different colors, but the stroke over it is not fully opaque.
+						if(chanWI[v_copyI] && chanWI[v_copyI] != this.save.selected_color_index && v_pixA < 255){//wire already there, intersect and are different colors, but the stroke over it is not fully opaque.
 							//Fully transparent should be index [0] and alpha 0.
 							//An index set non-zero with alpha of zero triggers special handling.
 							//This allows intersecting wires of different colors to blend visually gracefully.
-							chanWI[v_copyI] = this.a.j.s.selected_color_index;
+							chanWI[v_copyI] = this.save.selected_color_index;
 							chanWA[v_copyI] = 0;
 						}else{//otherwise,
-							chanWI[v_copyI] = this.a.j.s.selected_color_index;
+							chanWI[v_copyI] = this.save.selected_color_index;
 							chanWA[v_copyI] |= v_pixA;
 						}
 						//boolean |= so that alpha where wires intersect
@@ -1349,12 +1360,13 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 				v_copyFromI = (this.curImage.w * (h - yOffset) ) + w - xOffset;
 				v_pixA = v_dataP.data[v_rgbaI + 3];
 				if(v_pixA){
-					this.a.f[this.cutBitmap.chan_a].d[v_copyI] = this.a.f[this.curImage.chan_a].d[v_copyFromI];
-					this.a.f[this.cutBitmap.chan_i].d[v_copyI] = this.a.f[this.curImage.chan_i].d[v_copyFromI];
-					this.a.f[this.cutBitmap.chan_f].d[v_copyI] = this.a.f[this.curImage.chan_f].d[v_copyFromI];
-					this.a.f[this.curImage.chan_a].d[v_copyFromI] = 0;//Now delete the area that was cut out of the source bitmap.
-					this.a.f[this.curImage.chan_i].d[v_copyFromI] = 0;
-					this.a.f[this.curImage.chan_f].d[v_copyFromI] = 0;
+					//TODO: would it be more efficient and less laggy to save the .d var first, rather than looking it up with a.f() over and over looped?
+					this.a.f(this.cutBitmap.chan_a).d[v_copyI] = this.a.f(this.curImage.chan_a).d[v_copyFromI];
+					this.a.f(this.cutBitmap.chan_i).d[v_copyI] = this.a.f(this.curImage.chan_i).d[v_copyFromI];
+					this.a.f(this.cutBitmap.chan_f).d[v_copyI] = this.a.f(this.curImage.chan_f).d[v_copyFromI];
+					this.a.f(this.curImage.chan_a).d[v_copyFromI] = 0;//Now delete the area that was cut out of the source bitmap.
+					this.a.f(this.curImage.chan_i).d[v_copyFromI] = 0;
+					this.a.f(this.curImage.chan_f).d[v_copyFromI] = 0;
 				}
 			}}
 			this.pushUndoStack(GraFlicImage.UNDO_BITMAP_PIXELS);//Save the state after the area is sliced out. (It will also be saved on the target bitmap pasted onto.)
@@ -1399,9 +1411,9 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 		var v_dataB = this.cxB.getImageData(rdcX1, rdcY1, Math.max(1, rdcW), Math.max(1, rdcH));//0, 0, this.cvM.width, this.cvM.height);
 			//only get image data for the region being drawn on, to avoid lag.
 		//old: for(v_copyI = 0;v_copyI < this.channelBitmapBytes;v_copyI++){
-		chanWA = this.a.f[v_bmpObj.chan_a].d;//seems to lag when looked up by associative on each iteration
-		chanWI = this.a.f[v_bmpObj.chan_i].d;
-		chanFI = this.a.f[v_bmpObj.chan_f].d;
+		chanWA = this.a.f(v_bmpObj.chan_a).d;//seems to lag when looked up by associative on each iteration
+		chanWI = this.a.f(v_bmpObj.chan_i).d;
+		chanFI = this.a.f(v_bmpObj.chan_f).d;
 		//Support drawing only the region that has changed to cut down lag.
 		//console.log( (rdX2- rdX1) + ' vs ' + rdW);
 		for(h = rdcY1;h < rdcY2;h++){
@@ -1485,7 +1497,7 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 						//  +-+-+-+
 						for(var v_aroundX = -1;v_aroundX < 2;v_aroundX++){
 							for(var v_aroundY = -1;v_aroundY < 2;v_aroundY++){
-								v_aroundCheckI = v_copyI + this.a.j.s.canvas_width * v_aroundY + v_aroundX;
+								v_aroundCheckI = v_copyI + this.save.canvas_width * v_aroundY + v_aroundX;
 								v_aroundIndex = chanWI[v_aroundCheckI];
 								if( v_aroundIndex &&
 								    v_aroundIndex != v_wireIndex &&
@@ -1539,16 +1551,16 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 				
 				//----------- end anti-leak test code --------------------------
 			}
-			//this.a.j.s.images[v_bmpI].chan_a[v_copyI] = 0;
-			//this.a.j.s.images[v_bmpI].chan_i[v_copyI] = 0;
-			//this.a.j.s.images[v_bmpI].chan_f[v_copyI] = 0;
+			//this.save.images[v_bmpI].chan_a[v_copyI] = 0;
+			//this.save.images[v_bmpI].chan_i[v_copyI] = 0;
+			//this.save.images[v_bmpI].chan_f[v_copyI] = 0;
 			v_rgbaI += 4;
 		}}//end of w and h loops.
 		this.cxB.putImageData(v_dataB, rdcX1, rdcY1);
 		}else if(v_bmpObj.type == 'embed'){//===================================== embed ===========================================================
 			this.cxB.save();
 			this.cxB.globalAlpha = v_onionAlpha;
-			var fObj = this.a.f[v_bmpObj.file];
+			var fObj = this.a.f(v_bmpObj.file);
 			if(fObj){//If not there, show a 'missing' placeholder.
 				var imgDOM = fObj.i;
 				//For some reason naturalWidth is not available here (Because not in DOM?), but just .width is working fine so far...
@@ -1754,9 +1766,9 @@ GraFlicImage.angleBetween = function(v_angleRotX1, v_angleRotY1, v_angleRotX2, v
 GraFlicImage.prototype.playNextFrameUnbound = function(){
 	if(!this.isPlaying){return;}
 	this.playingFrame++;
-	if(this.playingFrame >= this.a.j.s.frames.length){this.playingFrame = 0;}
+	if(this.playingFrame >= this.save.frames.length){this.playingFrame = 0;}
 	//Note that 0 is valid for setTimeout. Some frames could have delay of 0 to draw one regional area at the same time as updating a separate regional area and skip the spaces between.
-	setTimeout(this.playNextFrame, this.a.j.s.frames[this.playingFrame].delay === undefined ? this.a.j.s.global_delay : this.a.j.s.frames[this.playingFrame].delay);
+	setTimeout(this.playNextFrame, this.save.frames[this.playingFrame].delay === undefined ? this.save.global_delay : this.save.frames[this.playingFrame].delay);
 	this.requestRedraw();
 };
 
@@ -1778,9 +1790,9 @@ GraFlicImage.prototype.bucketFillUnbound = function(v_x, v_y){//alert('fillcall'
 	var chunkPix = 0;//When so many pixels have been processed, it will exit and proceed after a delay, to avoid lag/lock-up.
 	this.curToolState = 100;//Set it to being drawn state so that the visuals get updated.
 	//Bucket fills run very slow with associative array key lookups all the time so save a direct link to the current bitmap.
-	this.bucketWA = this.a.f[this.curImage.chan_a].d;
-	this.bucketWI = this.a.f[this.curImage.chan_i].d;
-	this.bucketFI = this.a.f[this.curImage.chan_f].d;
+	this.bucketWA = this.a.f(this.curImage.chan_a).d;
+	this.bucketWI = this.a.f(this.curImage.chan_i).d;
+	this.bucketFI = this.a.f(this.curImage.chan_f).d;
 	//Doing this as recursive is cripplingly slow and requires all kinds of workarounds due to call stack limits of JS
 	//So this simulates recursive-style logic while not being actually recursive.
 	//Make the call parameters for the first pixel where the flood starts. It will simulate recursive logic without being recursive and running into call stack limits by pushing the next 'calls' into an array that holds the parameters of the simulated calls.
@@ -1805,7 +1817,7 @@ GraFlicImage.prototype.bucketFillUnbound = function(v_x, v_y){//alert('fillcall'
 		np.m = 0;//Alpha Max
 		np.r = 0;//Alpha Repeat
 		nextPix = [np];
-		v_colorToUse = this.curDrawMode ? this.a.j.s.selected_color_index : 0;//color to fill with
+		v_colorToUse = this.curDrawMode ? this.save.selected_color_index : 0;//color to fill with
 		if(this.curTool == GraFlicImage.TOOL_FLOOD_FILL){//fill bucket
 			v_color2Replace = this.bucketFI[v_pixI];
 		}else if(this.curTool == GraFlicImage.TOOL_FLOOD_WIRE){//wire bucket
@@ -1944,7 +1956,7 @@ X|Z|O|Z|X
 	}else if(this.curTool == GraFlicImage.TOOL_FLOOD_WIRE){//====================== WIRE Bucket ===================
 		if(v_color2Replace){
 			if(this.bucketWI[v_pixI] == v_color2Replace){
-				// && this.a.f[this.curImage.chan_a].d[v_pixI]){
+				// && this.a.f(this.curImage.chan_a).d[v_pixI]){
 				//deleted wire pixels should always be set to reserved transparent [0]
 				//that way wires in wire intersect correction mode can be processed here (0 alpha, index non-zero)
 				//Filling a wire with reserved [0] transparent will totally erase it.
@@ -2038,8 +2050,8 @@ GraFlicImage.prototype.stopFlood = function(){
 };
 /*GraFlicImage.prototype.plugWires = function(){
 	this.pushUndoStack(GraFlicImage.UNDO_BITMAP_PIXELS);
-	var plugWA = this.a.f[this.curImage.chan_a].d;
-	var plugFI = this.a.f[this.curImage.chan_f].d;
+	var plugWA = this.a.f(this.curImage.chan_a).d;
+	var plugFI = this.a.f(this.curImage.chan_f).d;
 	var maxX = this.cvM.width;
 	var maxY = this.cvM.height;
 	var plugScore;
@@ -2230,8 +2242,8 @@ GraFlicImage.prototype.mMove = function(v_evt){
 	if(this.isDragging){//========================================================
 	this.minRegionX = Math.min(v_x, this.minRegionX);//keep track of what region has been dragged over.
 	this.minRegionY = Math.min(v_y, this.minRegionY);
-	this.maxRegionX = Math.min(this.a.j.s.canvas_width, Math.max(v_x, this.maxRegionX));
-	this.maxRegionY = Math.min(this.a.j.s.canvas_height, Math.max(v_y, this.maxRegionY));
+	this.maxRegionX = Math.min(this.save.canvas_width, Math.max(v_x, this.maxRegionX));
+	this.maxRegionY = Math.min(this.save.canvas_height, Math.max(v_y, this.maxRegionY));
 	if(this.curImage.type == 'WAIFU'){
 		if(this.isStrokeBasedTool() && this.curStroke.length){//pen (do not extent until the wire is started with one x,y coord from mousedown.)
 			//cut should only make the stroke if there is no cut BMP yet, otherwise it should drag the existing one.
@@ -2306,7 +2318,7 @@ GraFlicImage.prototype.mUp = function(v_evt){
 		this.curImage.y = cBoxY;
 		//Adjust to ensure aspect ratio for embeds if in preservation mode.
 		if(this.aspectRatioCropMode && this.curImage.type == 'embed'){
-			var fObj = this.a.f[this.curImage.file];
+			var fObj = this.a.f(this.curImage.file);
 			if(fObj){
 				var imgDOM = fObj.i;
 				var nWidth = imgDOM.natuarWidth ? imgDOM.natuarWidth : imgDOM.width;
@@ -2339,7 +2351,7 @@ GraFlicImage.prototype.mUp = function(v_evt){
 GraFlicImage.prototype.commitCutMove = function(){
 	//This will merge the cut BMP onto the current BMP.
 	//If the current bitmap has been changed, note that it is also moved to another layer.
-	//if this.cutX this.a.j.s.canvas_height
+	//if this.cutX this.save.canvas_height
 	//console.log('Committing cut move.');
 	var v_srcI, v_copyI;
 	var cmX1 = Math.max(this.cutBitmap.x, this.curImage.x);
@@ -2351,19 +2363,19 @@ GraFlicImage.prototype.commitCutMove = function(){
 	//for(var v_copyI = 0;v_copyI < this.channelBitmapBytes;v_copyI++){
 		v_copyI = (h - this.curImage.y) * this.curImage.w + w - this.curImage.x;
 		v_srcI = (h - this.cutBitmap.y) * this.cutBitmap.w + w - this.cutBitmap.x;
-		//v_srcI = v_copyI - this.cutBitmap.x - Math.round(this.cutBitmap.y * this.a.j.s.canvas_width);
+		//v_srcI = v_copyI - this.cutBitmap.x - Math.round(this.cutBitmap.y * this.save.canvas_width);
 		//palette indices in the cut bitmap override the current ones
-		if(this.a.f[this.cutBitmap.chan_f].d[v_srcI]){
+		if(this.a.f(this.cutBitmap.chan_f).d[v_srcI]){
 			//The following makes a fill on the cut part cover any wires on the destination,
 			//this behavior may be overridable in the future.
-			this.a.f[this.curImage.chan_a].d[v_copyI] = 0;
-			this.a.f[this.curImage.chan_i].d[v_copyI] = 0;
-			this.a.f[this.curImage.chan_f].d[v_copyI] = this.a.f[this.cutBitmap.chan_f].d[v_srcI];
+			this.a.f(this.curImage.chan_a).d[v_copyI] = 0;
+			this.a.f(this.curImage.chan_i).d[v_copyI] = 0;
+			this.a.f(this.curImage.chan_f).d[v_copyI] = this.a.f(this.cutBitmap.chan_f).d[v_srcI];
 		}
-		if(this.a.f[this.cutBitmap.chan_i].d[v_srcI]){
-			this.a.f[this.curImage.chan_i].d[v_copyI] = this.a.f[this.cutBitmap.chan_i].d[v_srcI];
+		if(this.a.f(this.cutBitmap.chan_i).d[v_srcI]){
+			this.a.f(this.curImage.chan_i).d[v_copyI] = this.a.f(this.cutBitmap.chan_i).d[v_srcI];
 		}
-		this.a.f[this.curImage.chan_a].d[v_copyI] |= this.a.f[this.cutBitmap.chan_a].d[v_srcI];
+		this.a.f(this.curImage.chan_a).d[v_copyI] |= this.a.f(this.cutBitmap.chan_a).d[v_srcI];
 	//}
 	}}
 	//Delete virtual files no longer needed to save memory.
@@ -2388,14 +2400,14 @@ GraFlicImage.prototype.export = function(v_imgSMode){
 		this.encoder.frames = [];
 		//clear and rebuild the metadata if present
 		if(this.encoder.metadata){delete this.encoder.metadata;}
-		for(var v_key in this.a.j.m.general){
+		for(var v_key in this.meta.general){
 			if(!this.encoder.metadata){this.encoder.metadata = {};}
-			this.encoder.metadata[v_key] = this.a.j.m.general[v_key];
+			this.encoder.metadata[v_key] = this.meta.general[v_key];
 		}
 		this.frameDrawingForSave++;
 	}
-	if(this.frameDrawingForSave == this.a.j.s.frames.length){
-		this.encoder.delay = this.a.j.s.global_delay;
+	if(this.frameDrawingForSave == this.save.frames.length){
+		this.encoder.delay = this.save.global_delay;
 		this.encoder.saveAnimatedFile();
 		return;
 	}
@@ -2403,12 +2415,12 @@ GraFlicImage.prototype.export = function(v_imgSMode){
 	//Draw all images that will be on the current frame being drawn for save.
 	var v_images2Draw = [];
 	var v_i2dParams;
-	for(var v_i = 0;v_i < this.a.j.s.images.length;v_i++){
-		var v_img2Draw = this.a.j.s.images[v_i];
+	for(var v_i = 0;v_i < this.save.images.length;v_i++){
+		var v_img2Draw = this.save.images[v_i];
 		var v_imgDoInsert = false;
 		if(v_img2Draw.plays_on_all_frames){v_imgDoInsert = true;}
 		for(var v_i2 = 0;v_i2 < v_img2Draw.plays_on_frames.length;v_i2++){
-			if(v_img2Draw.plays_on_frames[v_i2] == this.a.j.s.frames[this.frameDrawingForSave].id){
+			if(v_img2Draw.plays_on_frames[v_i2] == this.save.frames[this.frameDrawingForSave].id){
 				//Draw all images that play on the current frame BEING SAVED.
 				v_imgDoInsert = true;
 				break;
@@ -2423,7 +2435,7 @@ GraFlicImage.prototype.export = function(v_imgSMode){
 	}
 	this.drawFrame(v_images2Draw);
 
-	var v_frameBeingDrawn = this.a.j.s.frames[this.frameDrawingForSave];
+	var v_frameBeingDrawn = this.save.frames[this.frameDrawingForSave];
 	var v_frameParams = {};
 	if(v_frameBeingDrawn.delay !== undefined){//undefined for auto/default delay
 		v_frameParams.delay = v_frameBeingDrawn.delay;
@@ -2434,12 +2446,12 @@ GraFlicImage.prototype.export = function(v_imgSMode){
 		delete this.encoder.png;
 	}
 	if(this.imageSaveMode == 1){//export to PNG
-		v_saveScale = this.a.j.s.save_scale;
-		this.encoder.quality = this.a.j.s.export.quality;
-		this.encoder.dithering = this.a.j.s.export.dithering;
-		if(this.a.j.s.export.png && this.a.j.s.export.png.brute){
+		v_saveScale = this.save.save_scale;
+		this.encoder.quality = this.save.export.quality;
+		this.encoder.dithering = this.save.export.dithering;
+		if(this.save.export.png && this.save.export.png.brute){
 			this.encoder.png = {};
-			this.encoder.png.brute = this.a.j.s.export.png.brute;
+			this.encoder.png.brute = this.save.export.png.brute;
 		}
 	}
 	if(this.imageSaveMode == 2){//thumb
@@ -2499,39 +2511,39 @@ GraFlicImage.prototype.saveArchiveStage2 = function(){//Call this after the thum
 		this.a.addFile(v_fileEntry);
 		
 		//Thumbs are optional. If thumbs are contained, create a thumbs[] array with objects to describe them. Typically, one thumb at 256 size ought to be enough.
-		this.a.j.m.thumbs = [];//If thumbs[] is there, overwrite it. This editor will only make one 256 size thumb and that is all that should be there.
+		this.meta.thumbs = [];//If thumbs[] is there, overwrite it. This editor will only make one 256 size thumb and that is all that should be there.
 		var thumbObj = {};
 		thumbObj.width = this.encoder.outputWidth;
 		thumbObj.height = this.encoder.outputHeight;
 		thumbObj.file = thumbLoc;//path to the file in the ZIP
-		this.a.j.m.thumbs.push(thumbObj);
+		this.meta.thumbs.push(thumbObj);
 	}
-	this.a.j.m.version_editor = GraFlicImage.EDITOR_VERSION;
+	this.meta.version_editor = GraFlicImage.EDITOR_VERSION;
 	var vNeed = 0.01;
 	//Determine version_needed based on features used:
 	//As more versions get done, more logic will be here...
-	this.a.j.m.version_needed = vNeed;
+	this.meta.version_needed = vNeed;
 	
 	//Copy over the canvas width/height, so that when reading just the metadata the image dimensions can be known.
-	this.a.j.m.width = this.a.j.s.canvas_width;
-	this.a.j.m.height = this.a.j.s.canvas_height;
+	this.meta.width = this.save.canvas_width;
+	this.meta.height = this.save.canvas_height;
 
 	//Calculate the duration. Make this a function if useful elsewhere.
 	var duration = 0, dFrame;
-	for(i = 0;i < this.a.j.s.frames.length;i++){
-		dFrame = this.a.j.s.frames[i];
-		duration += (dFrame.delay === undefined ? this.a.j.s.global_delay : dFrame.delay) *
-			    ( (dFrame.delay_denom === undefined ? this.a.j.s.global_delay_denom : dFrame.delay_denom) / 1000 );
+	for(i = 0;i < this.save.frames.length;i++){
+		dFrame = this.save.frames[i];
+		duration += (dFrame.delay === undefined ? this.save.global_delay : dFrame.delay) *
+			    ( (dFrame.delay_denom === undefined ? this.save.global_delay_denom : dFrame.delay_denom) / 1000 );
 	}
-	this.a.j.m.duration = duration;//Duration in milliseconds.
+	this.meta.duration = duration;//Duration in milliseconds.
 	
 	//A bunch of OLD code follows that may be deleted:
 	/*
 	var v_bitmapsJSON = [];//A raw array can go into JSON with no object wrapper.
-	for(v_i = 0;v_i < this.a.j.s.images.length;v_i++){
+	for(v_i = 0;v_i < this.save.images.length;v_i++){
 		var v_bJSON = {};
-		for(var v_key in this.a.j.s.images[v_i]){
-			var v_val = this.a.j.s.images[v_i][v_key];
+		for(var v_key in this.save.images[v_i]){
+			var v_val = this.save.images[v_i][v_key];
 			if( (typeof v_val).match(/(string|number|boolean)/i)
 				|| v_key == 'plays_on_frames' ){
 				//plays_on_frames is a simple array of numbers, but arrays eval as type 'object'
@@ -2614,8 +2626,8 @@ Then once it is loaded use JS to find all the IMGs with custom attributes with z
 		"level":9
 	};
 	var v_procBMP;
-	for(v_i = 0;v_i < this.a.j.s.images.length;v_i++){
-		v_procBMP = this.a.j.s.images[v_i];
+	for(v_i = 0;v_i < this.save.images.length;v_i++){
+		v_procBMP = this.save.images[v_i];
 		v_fileEntry = {};
 		v_fileEntry.p = 'bitmaps/Line_A_' + v_i + '.dat.gz';
 		v_fileEntry.d = window.pako.gzip(v_procBMP.chan_a, v_pakoDO);
@@ -2659,21 +2671,27 @@ GraFlicImage.prototype.fileSelectLoadedHandlerUnbound = function(){
 GraFlicImage.prototype.loadFromU8A = function(v_u8a){
 	this.a.revokeAll();
 	this.a = new GraFlicArchive(v_u8a);
-	GraFlicUtil.absorbJSON(this.a.j.m, this.initMetadata());
+	this.a.onImageLoaded = GraFlicImage.onImageLoaded.bind(this);//Check if an image embed loads and do a redraw with the available image.
+	//Ensure s.json (save) and m.json (metadata) essential configuration files are reconstituted and live from the beginning.
+	this.save = this.a.f('s.json').j;//Link to the file's live JSON property
+	this.meta = this.a.f('m.json').j;
+	//console.log(JSON.stringify(this.a.f('m.json')))
+	//console.log('loaded meta: ' + this.meta);
+	GraFlicUtil.absorbJSON(this.meta, this.initMetadata());
 	//Note that when manually editing JSON some text editors put in non-ASCII quotations causing load failure.
-	this.curImage = this.a.j.s.images[this.a.j.s.selected_image_index];
+	this.curImage = this.save.images[this.save.selected_image_index];
 	this.cutBitmap = null;
-	this.curFrame = this.a.j.s.frames[this.a.j.s.selected_frame_index];
-	this.curPalette = this.a.j.s.palettes[this.a.j.s.selected_palette_index];//TODO: implement cascading
-	this.curPaletteColor = this.curPalette.colors[this.a.j.s.selected_color_index];
+	this.curFrame = this.save.frames[this.save.selected_frame_index];
+	this.curPalette = this.save.palettes[this.save.selected_palette_index];//TODO: implement cascading
+	this.curPaletteColor = this.curPalette.colors[this.save.selected_color_index];
 	//TODO: make sure any settings saved in the JSON have their UI updated on load.
 	//f_calcBitmapSizes();//these being off can mess calculations up elsewhere, so make sure this is set correct first
 	/*for(var k in this.a.f){
-		console.log(this.a.f[k].p + ' / ' + this.a.f[k].d);
+		console.log(this.a.f(k).p + ' / ' + this.a.f(k).d);
 	}*/
 	//Send the flags for size change AND bitmap pixels, so that it will now to copy the pixels for ALL images. Each image must start with something to undo to when the image is started or restored.
 	this.clearUndoRedo();
-	this.systemChangeCanvasSize(GraFlicImage.UNDO_IMAGE_ALL | GraFlicImage.UNDO_BITMAP_PIXELS, this.a.j.s.canvas_width, this.a.j.s.canvas_height);
+	this.systemChangeCanvasSize(GraFlicImage.UNDO_IMAGE_ALL | GraFlicImage.UNDO_BITMAP_PIXELS, this.save.canvas_width, this.save.canvas_height);
 	
 	if(this.onLoaded){
 		this.onLoaded(this.a);

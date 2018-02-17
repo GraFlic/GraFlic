@@ -45,17 +45,18 @@ Since the goal of this is restoring the state of a JS web app, '.json' files wil
 /*
 GraFlicArchive() constructor takes a Uint8Array and optional parameters.
 
-.f is an Object that has properties, who are named with strings based on the filename, including any folder path if applicable. Use a for loop to cycle thru the files or if the save has preset filenames that control parts of the save, access them directly.
+.files is an Object that has properties, who are named with strings based on the filename, including any folder path if applicable. Use a for loop to cycle thru the files or if the save has preset filenames that control parts of the save, access them directly.
 Examples:
-returnedObject.f['save.json']
-returnedObject.f['images/example.png']
+ga.f('save.json');
+ga.f('images/example.png');
+ga.f('bitmap.dat.gz');//Get the file for live access. If it has not already been fully decompressed and reconstituted the f() quick function will do that so that the returned virtual file object is ready to use.
 Each file in files is an object and will have .d (data) for the raw binary, and in some cases have .b (blob link) with the ObjectURL blob link.
 Other properties may be added later.
 Maybe a .metadata to retain metadata about files like creation/modification time?
 */
 function GraFlicArchive(zipDataUint8, paramz){
 	//'this' object will be returned to the caller with contents of the ZIP.
-	this.f = {};//each file will have potentially .d (data) containing the files, extracted and decompressed. The filename will be the key to access the file object in files. JSON will have .json containing the reconstituted JSON object. Text will have .t (text) containing the text string. JSON and text do not currently fill the .d property because it would not be very useful and would waste resources.
+	this.files = {};//each file will have potentially .d (data) containing the files, extracted and decompressed. The filename will be the key to access the file object in files. JSON will have .json containing the reconstituted JSON object. Text will have .t (text) containing the text string. JSON and text do not currently fill the .d property because it would not be very useful and would waste resources.
 	this.j = {};//short links to .json ( JS-parsed and ready live JSON for stuff.json would be accessed at .j.stuff )
 	//Images(PNG/JPG/GIF/WEBP) will have their raw binary appear in files in case metadata needs examining, and will also have an ObjectURL put here in images for easy loading by DOM elements in .b (blob link).
 	//Other properties may be added to this result object later if needed.
@@ -95,12 +96,12 @@ function GraFlicArchive(zipDataUint8, paramz){
 	var v_commentSize;
 	var v_payloadCompression;
 	var v_payloadSize;
+	var v_payloadUncompressedSize;
 	var v_extractedBytes;
 	var v_fileHeadStart;
 	var v_startCRC;
 	var v_calcCRC32;
 	var v_readCRC32;
-	var v_decompressor;
 	var v_compSig;//component signature
 	var v_bitFlags;
 	var v_relOffset;
@@ -135,6 +136,7 @@ function GraFlicArchive(zipDataUint8, paramz){
 		console.log('rel offset: ' + v_relOffset + ' starting at: ' + v_fileHeadStart);
 		v_pos = v_fileHeadStart;
 		v_payloadSize = GraFlicEncoder.readUint32(v_oct, v_cdPos + 20, true);//Read size out of central directory where it should be calculated. In the local file header it may be undefined if bit 3 of the flags is set. So far, this seems to reliably work to get payload size.
+		v_payloadUncompressedSize = GraFlicEncoder.readUint32(v_oct, v_cdPos + 24, true);
 		v_cdFilenameSize = GraFlicEncoder.readUint16(v_oct, v_cdPos + 28, true);
 		v_cdExtraFieldSize = GraFlicEncoder.readUint16(v_oct, v_cdPos + 30, true);//The extra field on central directory might be different from local file header.
 		v_commentSize = GraFlicEncoder.readUint16(v_oct, v_cdPos + 32, true);//Comment ONLY appears on central directory header, NOT the local file header.
@@ -157,11 +159,8 @@ function GraFlicArchive(zipDataUint8, paramz){
 		console.log('Reading ' + v_filename + ' out of ZIP.');
 		console.log('Local File Header sizes: payload: ' + v_payloadSize + ' filename: ' + v_filenameSize + ' extra: ' + v_extraFieldSize);
 		console.log('bit flags: 0x' + v_bitFlags.toString(16));
-		v_decompressor = GraFlicUtil.noCompression;//default to 0, no compression
-		console.log('compression mode: ' + v_payloadCompression);
-		if(v_payloadCompression == 8){//DEFLATE
-			v_decompressor = window.pako.inflateRaw;
-		}
+		
+		
 		if(v_filename.match(/(^|\/)\./)){           // || v_filename.match(/\..*\./)){
 			//Throw out files that start with a dot.
 			//These are probably system generated junk files, the save format does not use files named this way.
@@ -178,45 +177,14 @@ function GraFlicArchive(zipDataUint8, paramz){
 				console.log('The folder was repackaged inside of itself it seems. Filename fixed to: ' + v_filename);
 			}
 			var xFile = {};
+			xFile.reconst = false;//Has not been reconstituted. This will be done as needed if the file is accessed via .f('filepath'). That way resources are saved by not making every file live on load when not all files may be used right away, if even used at all.
+			xFile.compression = v_payloadCompression;//Compression method code as defined by ZIP.
+			xFile.uncompressed_size = v_payloadUncompressedSize;//Will need to know what size the original file is if re-packaging it.
+			//console.log('uncompressed size: ' + uncompressed_size);
 			xFile.p = v_filename;//keep a reference for what the path is in case object referenced elsewhere.
-			try{//-----------------------------------------------------------------------------------
-			if(v_filename.match(/\.gz$/i)){
-				//If .gz first decompress it with whatever compression method is defined in the ZIP entry (usually 0 none),
-				//then set the decompressor to ungzip because .gz has internal compression of its own.
-				v_extractedBytes = v_decompressor(v_extractedBytes);
-				v_decompressor = window.pako.ungzip;
-				console.log('.gz file, setting decompression to GZip, gz payload size: ' + v_extractedBytes.length);
-			}
-			//JSON and text will not have .d (data) populated since it is pretty useless in most cases and would waste resources.
-			if(v_filename.match(/\.json(\.gz)?$/i)){
-				//JSON needs extra logic to JSONize it into memory.
-				xFile.j = JSON.parse(v_decompressor(v_extractedBytes, {'to':'string'}));
-				//alert('extracted JSON(' + v_filename + '): ' + JSON.stringify(xFile));
-				this.j[v_filename.replace(/\.json(\.gz)?$/i, '')] = xFile.j;//Set up a quick link for accessing JSON.
-							//JSON files will typically contain the main configuration, parameters, and settings of a format
-							//and need to be accessed often so .j.config.valX is less cluttered than: .f['config.json'].valX
-							//do this after the file was successfully extracted
-			}else if(v_filename.match(/\.txt(\.gz)?$/i)){
-				xFile.t = v_decompressor(v_extractedBytes, {'to':'string'});
-			}else{
-				xFile.d = v_decompressor(v_extractedBytes);
-				//Some browser may truncate the array text when tracing to debug and look like all zeroes.
-				console.log('extracted U8Array(' + v_filename + '): ' + xFile + ' size: ' + xFile.d.length);
-			}
-			}catch(fileError){
-				console.log('error reconstituting ' + v_filename + ', it may be a junk or auto-generated file.');
-			}//-------------------------------- end try/catch ----------------------------------------
-
-			//else if(v_filename.match(/\.(a*png|jpe*g|giff*|webp)(\.gz)?$/i)){
-			//}
-				//Keep image Uint8Array linked in case it needs to be examined for metadata such as EXIF rotation.
-				//Also make a loadable BLOB ObjectURL so it can easily be loaded into images in the DOM.
-				//Since the Uint8Array is used to build the BLOB for the ObjectURL, it would seem that dereferencing
-				//it would probably not save any runtime resources, may as well keep it alive for analysis if needed.
-			//make BLOBs for all files too
-			xFile.d = v_decompressor(v_extractedBytes);
-			this.fileToBLOB(xFile);
-			this.f[v_filename] = xFile;//if completed with no errors, include it in the files object
+			
+			xFile.d = v_extractedBytes;//These bytes will be decompressed later if the archived file entry is reconstituted.
+			this.files[v_filename] = xFile;//if completed with no errors, include it in the files object
 			console.log('----------------------');
 		}
 		v_filesRead++;
@@ -233,67 +201,100 @@ GraFlicArchive.prototype.addFile = function(v_fileAdded){
 		//In many cases there is temp data needed to function at run time but not needed in the save.
 		//Setting these things up with separate logic can cause bloat and lots of redundant code in some cases.
 		//For the sake of consistency and keeping the code trimmed down, adding it to the archive but setting .temp may be better.
+	
+	//A file added at runtime with addFile() will be considered uncompressed and already reconstituted.
+	//An addArchivedFile() and/or archiveFile() function can be added if there is a need for adding files that should not be run-time live.
+	//Note that when accessing the properties of the file always get the file object and go from there. The properties such as .d .j .b etc may be overwritten with new objects and saving a link to them for later could be linking to a stranded object that is supposed to be garbage collected.
+	//When adding a file in this way note that the data .d property may not be set for types such as text or JSON that were built from live strings or JSON objects.
+	v_fileAdded.reconst = true;
+	v_fileAdded.compression = 0;//File stored code as defined by ZIP.
+	
 	if(v_fileAdded.p.match(/\/[^\/]+$/)){//If a file, ensure the containing directory exists.
 		var v_contDir = {};
 		v_contDir.p = v_fileAdded.p.match(/^(.+\/)[^\/]/)[1];
-		if(!this.f[v_contDir.p]){//If the folder already exists, leave it as it is. It may have properties like .temp set that should not be overwritten.
+		if(!this.files[v_contDir.p]){//If the folder already exists, leave it as it is. It may have properties like .temp set that should not be overwritten.
 			this.addFile(v_contDir);//(If the containing folder is in a folder, this will be done again in the recursive call.)
 		}
 	}
-	if(this.f[v_fileAdded.p] && this.f[v_fileAdded.p].b){
+	if(this.files[v_fileAdded.p] && this.files[v_fileAdded.p].b){
 		//If overwriting the file, first destroy the previous blob
-		URL.revokeObjectURL(this.f[v_fileAdded.p].b);
+		URL.revokeObjectURL(this.files[v_fileAdded.p].b);
 	}
 	if(v_fileAdded.j){//Set up short link for json since JSON is very often accessed.
 		//alert(v_fileAdded.p.replace(/\.json(\.gz)?$/i, ''));
 		this.j[v_fileAdded.p.replace(/\.json(\.gz)?$/i,'')] = v_fileAdded.j;
 	}
-	this.f[v_fileAdded.p] = v_fileAdded;
-	this.fileToBLOB(v_fileAdded);
+	this.files[v_fileAdded.p] = v_fileAdded;
+	this.fileToLiveBLOB(v_fileAdded);
 };//end .addFile()
 GraFlicArchive.prototype.deleteFile = function(v_fPath){
-	if(this.f[v_fPath]){
-		if(this.f[v_fPath].b){
-			URL.revokeObjectURL(this.f[v_fPath].b);
+	if(this.files[v_fPath]){
+		if(this.files[v_fPath].b){
+			URL.revokeObjectURL(this.files[v_fPath].b);
 		}
 		var v_fPathNoExt = v_fPath.replace(/\.[^\.]+(\.gz)?$/i, '');
-		if(this.j[v_fPathNoExt]){//if a quick access var for JS was created, remove it (example: .f['stuff.json'].j could be accessed at .j.stuff)
+		if(this.j[v_fPathNoExt]){//if a quick access var for JS was created, remove it (example: .files['stuff.json'].j could be accessed at .j.stuff)
 			delete this.j[v_fPathNoExt];
 		}
 		//TODO: would a this.t for quick .txt access be useful?
-		delete this.f[v_fPath];
+		delete this.files[v_fPath];
 	}else{
 		console.log('deleteFile(): ' + v_fPath + ' does not exist.');
 	}
 };
-GraFlicArchive.prototype.fileToBLOB = function(v_srcFile){
-	if(v_srcFile.d && v_srcFile.d.length){//BLOB creation may not be possible if .d (data) not set. BLOBs are mainly needed for things like images, which will have that
+GraFlicArchive.prototype.fileToLiveBLOB = function(f){
+	if(f.d && f.d.length){//BLOB creation may not be possible if .d (data) not set. BLOBs are mainly needed for things like images, which will have that
 			//Folders may extract as a 0 length octet stream and do not need a BLOB.
 		var objParamz = {};
 		objParamz.type = 'application/octet-stream';
 		//.gz will be auto decompressed on load, and auto-compressed internally on save (before being stored in the ZIP with method 0 no compression)
 		var v_isImg = false;
-		if(v_srcFile.p.match(/\.a*png(\.gz)?$/i)){objParamz.type = 'image/png';v_isImg = true;}
-		if(v_srcFile.p.match(/\.jpe*g(\.gz)?$/i)){objParamz.type = 'image/jpeg';v_isImg = true;}
-		if(v_srcFile.p.match(/\.giff*(\.gz)?$/i)){objParamz.type = 'image/gif';v_isImg = true;}
-		if(v_srcFile.p.match(/\.webp(\.gz)?$/i)){objParamz.type = 'image/webp';v_isImg = true;}
-		if(v_srcFile.p.match(/\.txt(\.gz)?$/i)){objParamz.type = 'text/plain';}
-		if(v_srcFile.p.match(/\.json(\.gz)?$/i)){objParamz.type = 'application/json';}
+		if(f.p.match(/\.a*png(\.gz)?$/i)){objParamz.type = 'image/png';v_isImg = true;}
+		if(f.p.match(/\.jpe*g(\.gz)?$/i)){objParamz.type = 'image/jpeg';v_isImg = true;}
+		if(f.p.match(/\.gif+(\.gz)?$/i)){objParamz.type = 'image/gif';v_isImg = true;}
+		if(f.p.match(/\.webp(\.gz)?$/i)){objParamz.type = 'image/webp';v_isImg = true;}
+		if(f.p.match(/\.txt(\.gz)?$/i)){objParamz.type = 'text/plain';}
+		if(f.p.match(/\.json(\.gz)?$/i)){objParamz.type = 'application/json';}
 		
-		v_srcFile.b = URL.createObjectURL(  new Blob([v_srcFile.d], objParamz)  );
+		f.b = URL.createObjectURL(  new Blob([f.d], objParamz)  );
 		if(v_isImg){//Create drawable image objects for images. The point of embedding images in web-app saves is to draw them!
-			v_srcFile.i = new Image();
-			v_srcFile.i.src = v_srcFile.b;
-			v_srcFile.i.alt = v_srcFile.p;
+			f.i = new Image();
+			f.i.src = f.b;
+			f.i.alt = f.p;
+			if(this.onImageLoaded){//Some things need to know when an image has been loaded and redraw with the image visuals available.
+				f.i.addEventListener('load', this.onImageLoaded);
+			}
+		}
+		//f.d is already required at the start of this func
+		if(GraFlicDecoder){
+			if(f.p.match(/\.a*png(\.gz)?$/i)){
+				//Check to see if this is an Animated PNG (If GraFlicDecoder class is present)
+				var sig, len, pos = 33;//Skip magic number, IHDR, etc
+				while(pos < f.d.length){
+					len = GraFlicEncoder.readUint32(f.d, pos);
+					sig = GraFlicEncoder.readFourCC(f.d, pos + 4);
+					//console.log('reading thru PNG for Archive LiveBLOB[' + pos +'], sig: ' + sig);
+					pos += 12 + len;//Skip sig, len, CRC
+					if(sig == 'acTL'){//Animation Control
+						//Set up .a as a GraFlicDecoder object handling an Animated PNG. This allows freeze frame for apps that need to draw it at a certain frame or sync frames across multiple animations.
+						f.a = new GraFlicDecoder(f.b);
+						break;
+					}
+				}
+			}
+			if(f.p.match(/\.gif+(\.gz)?$/i)){
+				//ALWAYS make the decoder for GIF. Non-Animated GIF is a rarity anymore so do not split hairs over extra resources of building a 1-frame decoder in that rare case. Do not need excessive file analyzing here.
+				f.a = new GraFlicDecoder(f.b);
+			}
 		}
 	}
-};//end .fileToBLOB()
+};//end .fileToLiveBLOB()
 GraFlicArchive.prototype.listDir = function(v_dir){
 	//Returns an array of files that are in the directory.
 	var ls = [];
-	for(var k in this.f){
-		if(this.f[k].p.indexOf(v_dir) == 0 && this.f[k].p != v_dir){//The dir path is at the start of the file path
-			ls.push(this.f[k]);
+	for(var k in this.files){
+		if(this.files[k].p.indexOf(v_dir) == 0 && this.files[k].p != v_dir){//The dir path is at the start of the file path
+			ls.push(this.files[k]);
 		}
 	}
 	return ls;
@@ -353,12 +354,14 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 	var curFileCompression;
 	var curFileUncompressedSize;//needed to save what the size was before deflating.
 	var v_fileCount = 0;
-	for(v_iKey in this.f){
+	for(v_iKey in this.files){
 		console.log('[' + v_iKey + ']');
-		curFile = this.f[v_iKey];
+		curFile = this.files[v_iKey];
 		if(curFile.temp){//Some files are temporarily used in run-time memory, but should not be saved to the archive.
 			console.log('skipping temporary file: ' + curFile.p);
-		}else{//--------------------- if not a temp file ------------------
+		}else if(curFile.reconst){//--------------------- if a live file that has been BLOBified for runtime ------------------
+		//Extra processing will have to be done to get it back to binary archived state.
+		//console.log('archiving file from reconstituted state...');
 		curFilePayload = curFile.d;
 		curFileCompression = 8;//Default to method 8, Deflate.
 		if(curFile.p.match(/\.json$/i)){
@@ -400,7 +403,17 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 			curFileUncompressedSize
 		);
 		v_fileCount++;
-		}//---------------- end not temp file --------------------------
+		}else{//---------------- end live blob --------------------------
+			//If an archived file that has NOT been reconstituted, but has simply had the binary stored in .d
+			//console.log('storing archived file that is not reconstituted...');
+			v_filesToWrite.push(
+				GraFlicEncoder.stringToBytesUTF8(curFile.p),//get UTF-8 compatible Uint8Array... (JS 16-bit string chars do not translate to UTF-8)
+				curFile.d,
+				curFile.compression,
+				curFile.uncompressed_size //Will have been saved in this prop when the archived entry was loaded
+			);
+			v_fileCount++;
+		}
 	}
 
 	for(v_i = 0;v_i < v_filesToWrite.length;v_i += 4){//count the size of everything that was queue to be added to the file.
@@ -599,11 +612,77 @@ GraFlicArchive.getFileFromAny = function(fPath){
 	var curArchive;
 	for(var i = 0;i < GraFlicArchive.archives.length;i++){
 		curArchive = GraFlicArchive.archives[i];
-		if(curArchive.f[fPath]){
-			return curArchive.f[fPath];
+		if(curArchive.files[fPath]){
+			return curArchive.files[fPath];
 		}
 	}
 	return false;
+};
+GraFlicArchive.prototype.f = function(p){
+	//Get the file that is located at the path.
+	//This will check if this has been reconstituted yet. If not, it will make it into a 'live' file before returning the file object.
+	//This approach avoids allocating extra resources to make runtime objects for things that are never accessed.
+	//It also helps reduce the change of problems with junk files created by some ZIP packaging programs or systems. Some of these have files with incorrect extensions such as .png or .jpg but are not that type and have junk data, causing problems if it is attempted to be runtimeified. This way those files typically will not be accessed because files are only reconstituted as needed when specifically asked for with archive.f('file.png').
+	var f = this.files[p];
+	if(!f){
+		console.log('could not load file: ' + p);
+		return false;
+	}
+	this.reconstituteFile(f);//Make things live in the file. (or just return the file object if that has already been done)
+	return f;
+};
+GraFlicArchive.prototype.reconstituteFile = function(f){
+	//Makes the properties in the file object live for runtime use (.b BLOB, .i image, etc) rather than just raw binary archive.
+	
+	if(f.reconst){return;}//Has previously been reconstituted, no more processing needed.
+	
+	var v_decompressor = GraFlicUtil.noCompression;//default to 0, no compression
+	console.log('reconstituting, compression mode: ' + f.compression);
+	if(f.compression == 8){//DEFLATE
+		v_decompressor = window.pako.inflateRaw;
+	}
+	try{//-----------------------------------------------------------------------------------
+		if(f.p.match(/\.gz$/i)){
+			//If .gz first decompress it with whatever compression method is defined in the ZIP entry (usually 0 none),
+			//then set the decompressor to ungzip because .gz has internal compression of its own.
+			f.d = v_decompressor(f.d);
+			v_decompressor = window.pako.ungzip;
+			console.log('.gz file, setting decompression to GZip, gz payload size: ' + f.d.length);
+		}
+		//JSON and text will not have .d (data) populated since it is pretty useless in most cases and would waste resources.
+		if(f.p.match(/\.json(\.gz)?$/i)){
+			//JSON needs extra logic to JSONize it into memory.
+			f.j = JSON.parse(v_decompressor(f.d, {'to':'string'}));
+			//alert('extracted JSON(' + f.p + '): ' + JSON.stringify(f));
+			/*this.j[f.p.replace(/\.json(\.gz)?$/i, '')] = f.j;//Set up a quick link for accessing JSON.
+						//JSON files will typically contain the main configuration, parameters, and settings of a format
+						//and need to be accessed often so .j.config.valX is less cluttered than: .f('config.json').valX
+						//do this after the file was successfully extracted
+			(this archive.j.x feature was removed, if there is a key JSON file that must be accessed allot, simply set a var = archive.f('x.json').j; for quick access)*/
+		}else if(f.p.match(/\.txt(\.gz)?$/i)){
+			f.t = v_decompressor(f.d, {'to':'string'});
+		}else{
+			f.d = v_decompressor(f.d);
+			//Some browser may truncate the array text when tracing to debug and look like all zeroes.
+			console.log('extracted U8Array(' + f.p + '): ' + f + ' size: ' + f.d.length);
+		}
+	}catch(fileError){
+		console.log('error reconstituting ' + f.p + ', it may be a junk or auto-generated file.');
+	}//-------------------------------- end try/catch ----------------------------------------
+	
+			//else if(v_filename.match(/\.(a*png|jpe*g|giff*|webp)(\.gz)?$/i)){
+			//}
+				//Keep image Uint8Array linked in case it needs to be examined for metadata such as EXIF rotation.
+				//Also make a loadable BLOB ObjectURL so it can easily be loaded into images in the DOM.
+				//Since the Uint8Array is used to build the BLOB for the ObjectURL, it would seem that dereferencing
+				//it would probably not save any runtime resources, may as well keep it alive for analysis if needed.
+			//make BLOBs for all files too
+			//f.d = v_decompressor(f.d);
+	this.fileToLiveBLOB(f);
+
+	f.compression = 0;//Set to 0 now that it has been reconstituted to non-archived, non-compressed form
+	f.reconst = true;//Mark the file as being reconstituted already
+	return;
 };
 GraFlicArchive.prototype.revokeAll = function(){
 	//This will remove the BLOB ObjectURL so that it frees memory and data used to build them can be garbage collected if dereferenced.
@@ -613,8 +692,8 @@ GraFlicArchive.prototype.revokeAll = function(){
 };
 GraFlicArchive.prototype.revokeFiles = function(){
 	var v_file;
-	for(var v_iKey in this.f){
-		v_file = this.f[v_iKey];
+	for(var v_iKey in this.files){
+		v_file = this.files[v_iKey];
 		if(v_file.b){URL.revokeObjectURL(v_file.b);}
 	}
 };
