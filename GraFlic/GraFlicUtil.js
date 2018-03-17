@@ -57,14 +57,15 @@ Maybe a .metadata to retain metadata about files like creation/modification time
 function GraFlicArchive(zipDataUint8, paramz){
 	//'this' object will be returned to the caller with contents of the ZIP.
 	this.files = {};//each file will have potentially .d (data) containing the files, extracted and decompressed. The filename will be the key to access the file object in files. JSON will have .json containing the reconstituted JSON object. Text will have .t (text) containing the text string. JSON and text do not currently fill the .d property because it would not be very useful and would waste resources.
-	this.j = {};//short links to .json ( JS-parsed and ready live JSON for stuff.json would be accessed at .j.stuff )
 	//Images(PNG/JPG/GIF/WEBP) will have their raw binary appear in files in case metadata needs examining, and will also have an ObjectURL put here in images for easy loading by DOM elements in .b (blob link).
 	//Other properties may be added to this result object later if needed.
 	
 	GraFlicArchive.archives.push(this);//Each archive created will be tracked here so that a file can be looked up if the path exists in any archive in memory with static getFileFromAny()
 	
 	var v_loadedFilename = '**__Unknown__**';
-	if(paramz){
+	if(!paramz){
+		paramz = {};//makes handling undefined vars easier if paramz.x is undefined it can just send undefined for optional x if needed without getting 'paramz is undefined'
+	}
 		if(paramz.filename){
 		//If the filename is provided, it can be used to check for the common ZIP repackaging mistake of packaging the extracted folder inside of itself and correct it.
 		//This often happens because ZIP extractors will extract the contents into a folder with the folder name based on the filename(without extension). 'A_file.zip' extracts into folder 'A_file/'. Naturally, after editing some of the ZIP contents, the user may context-click the folder and choose to compress. This seems like how it should work, but that will put everything in the new ZIP file into another layer of extra folder that was not in the original. A contained file 'images/example.png' would become 'A_file/images/example.png';
@@ -77,9 +78,16 @@ function GraFlicArchive(zipDataUint8, paramz){
 			//This is used when the custom:link rel="archive" element is detected to say that the page uses images/files stored in a zip file.
 		}
 		*/
-	}//end if paramz defined.
 	if(!zipDataUint8){
 		//If called without a binary ZIP to load, make a blank GraFlicArchive that can be filled with files programmatically and saved.
+		var paramApps = undefined;
+		if(paramz.app){//Single app string, convert to array for arc.json
+			paramApps = [paramz.app];
+		}
+		if(paramz.apps){
+			paramApps = paramz.apps;//.apps plural sent should be sent as array
+		}
+		this.addArcMeta(paramz.mime, paramz.extension, paramApps);
 		return;
 	}
 //Note when reading, other ZIP builders may insert data descriptor after local file header and payload, which apparently may or may not use a signature...
@@ -161,11 +169,15 @@ function GraFlicArchive(zipDataUint8, paramz){
 		console.log('bit flags: 0x' + v_bitFlags.toString(16));
 		
 		
-		if(v_filename.match(/(^|\/)\./)){           // || v_filename.match(/\..*\./)){
-			//Throw out files that start with a dot.
+		if(v_filename.match(/__MACOSX\//) || v_filename.match(/desktop.ini$/)){
+				// || v_filename.match(/(^|\/)\./)){           // || v_filename.match(/\..*\./)){
+			//Detect and throw out apparent non-user, OS-generated files.
+			//If a user repackages or builds a ZIP-based file with another packaging tool, these can end up creeping into the archive and they are not needed for the ZIP-based formats.
+			//Throw out files that start with a dot??
 			//These are probably system generated junk files, the save format does not use files named this way.
+			//However some users may have designed archives specifically using these types of files for some reason...
 			//In *nix operating systems starting with a dot(.) is a hidden file, often some kind of system file.
-			console.log('Skipping apparent junk file: ' + v_filename);
+			console.log('Skipping apparently irrelevant file: ' + v_filename);
 		}else{
 			v_extractedBytes = v_oct.subarray(v_pos, v_pos + v_payloadSize);
 			if(v_filename.match(/\//) && v_filename.split('/')[0].indexOf(v_loadedFilename) == 0){
@@ -220,10 +232,6 @@ GraFlicArchive.prototype.addFile = function(v_fileAdded){
 		//If overwriting the file, first destroy the previous blob
 		URL.revokeObjectURL(this.files[v_fileAdded.p].b);
 	}
-	if(v_fileAdded.j){//Set up short link for json since JSON is very often accessed.
-		//alert(v_fileAdded.p.replace(/\.json(\.gz)?$/i, ''));
-		this.j[v_fileAdded.p.replace(/\.json(\.gz)?$/i,'')] = v_fileAdded.j;
-	}
 	this.files[v_fileAdded.p] = v_fileAdded;
 	this.fileToLiveBLOB(v_fileAdded);
 };//end .addFile()
@@ -233,10 +241,6 @@ GraFlicArchive.prototype.deleteFile = function(v_fPath){
 			URL.revokeObjectURL(this.files[v_fPath].b);
 		}
 		var v_fPathNoExt = v_fPath.replace(/\.[^\.]+(\.gz)?$/i, '');
-		if(this.j[v_fPathNoExt]){//if a quick access var for JS was created, remove it (example: .files['stuff.json'].j could be accessed at .j.stuff)
-			delete this.j[v_fPathNoExt];
-		}
-		//TODO: would a this.t for quick .txt access be useful?
 		delete this.files[v_fPath];
 	}else{
 		console.log('deleteFile(): ' + v_fPath + ' does not exist.');
@@ -260,9 +264,10 @@ GraFlicArchive.prototype.fileToLiveBLOB = function(f){
 		if(v_isImg){//Create drawable image objects for images. The point of embedding images in web-app saves is to draw them!
 			f.i = new Image();
 			f.i.src = f.b;
-			f.i.alt = f.p;
+			f.i.alt = f.p;//This can be used to look up file on load event. The image will typically not be placed in the DOM, but be used as a drawable on a canvas.
+			f.i.title = f.p;
 			if(this.onImageLoaded){//Some things need to know when an image has been loaded and redraw with the image visuals available.
-				f.i.addEventListener('load', this.onImageLoaded);
+				f.i.addEventListener('load', GraFlicArchive.onImageLoadedHandler.bind(this));
 			}
 		}
 		//f.d is already required at the start of this func
@@ -294,11 +299,22 @@ GraFlicArchive.prototype.listDir = function(v_dir){
 	var ls = [];
 	for(var k in this.files){
 		if(this.files[k].p.indexOf(v_dir) == 0 && this.files[k].p != v_dir){//The dir path is at the start of the file path
-			ls.push(this.files[k]);
+			ls.push(this.files[k]);//make sure to send the file from files[] do NOT use .f('name.txt'), that would for reconstitution of a file that may have been never used. This is just listing what files are there.
 		}
 	}
 	return ls;
 };
+GraFlicArchive.onImageLoadedHandler = function(e){
+	//Setting up .onImageLoaded allows for apps using GraFlicArchive to refresh drawing when an image becomes loaded and drawable.
+	//Have the event done from this internal handler, then call the function given assigned to onImageLoaded. This way listener cleanup is done automatically.
+	var loadResult = {};//Send an object as the result that has links to basic things related to the load.
+	loadResult.event = e;
+	loadResult.archive = this;//Event used bind(this)
+	loadResult.file = this.files[e.target.alt];//do not potentially loop in odd cases with .f()
+	this.onImageLoaded(loadResult);
+	e.target.removeEventListener('load', GraFlicArchive.onImageLoadedHandler);
+};
+//TODO: move .noCompresion to GraFlicArchive?? It seems that is the only thing that uses it.
 GraFlicUtil.noCompression = function(fBytes, fParamZ){return fBytes;};//Do nothing with compression type 0, none.
 /*
 .saveToZIP()
@@ -595,7 +611,12 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 //Comment (Not written, comment length set to 0.)
 	//-----------------------------------------
 	
-	var blobParams = {'type':'application/zip'};
+	var blobParams = {'type':'application/zip'};//params for createObjectURL
+	var arcJ = this.f('arc.json').j;
+	if(arcJ && arcJ.mime && (typeof arcJ.mime) === 'string'){//arc.json will usually be present and may have had a mime type configured there.
+		blobParams.type = arcJ.mime;
+	}
+	//To override assigned mime type in arc.json, call with the mime param. Sometimes building blob with a more general mime type like application/zip increases chances of it being accepted by other apps and such that only accept certain files.
 	if(blobMimetype){
 		if( (typeof blobMimetype) === 'string'){
 			blobParams.type = blobMimetype;
@@ -604,6 +625,7 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 		}
 	}
 	this.b = URL.createObjectURL( new Blob([v_oct], blobParams) );
+	return this.b;
 };//end GraFlicArchive.saveBLOB()
 GraFlicArchive.archives = [];//A list of archives that have been loaded into memory. Useful for getting a file from any archive that has the path to it.
 GraFlicArchive.getFileFromAny = function(fPath){
@@ -623,9 +645,12 @@ GraFlicArchive.prototype.f = function(p){
 	//This will check if this has been reconstituted yet. If not, it will make it into a 'live' file before returning the file object.
 	//This approach avoids allocating extra resources to make runtime objects for things that are never accessed.
 	//It also helps reduce the change of problems with junk files created by some ZIP packaging programs or systems. Some of these have files with incorrect extensions such as .png or .jpg but are not that type and have junk data, causing problems if it is attempted to be runtimeified. This way those files typically will not be accessed because files are only reconstituted as needed when specifically asked for with archive.f('file.png').
+	//TODO: Could save a last-accessed property with the file, and if it is not access for a long time it could be auto-archived. However there would need to be a way to make sure there are no image.src or anything linking to the BLOB url.
+	//TODO: Could have files data into the browser DB then release the resources. Once the file is requested with f() it could be pulled out of the DB. This may help with releasing RAM for unused things if an extremely large archive is loaded. Kind of ugly and probably not worth doing for now, but in the future possibly. Would also need to make sure the temp DB gets cleared and does not just sit there hogging space afterwards.
 	var f = this.files[p];
 	if(!f){
-		console.log('could not load file: ' + p);
+		//Do not console this unless specifically debugging for it, systems that cascade archives may have lots of return false lookups and flood the console.
+		//console.log('could not load file: ' + p);
 		return false;
 	}
 	this.reconstituteFile(f);//Make things live in the file. (or just return the file object if that has already been done)
@@ -702,6 +727,70 @@ GraFlicArchive.prototype.revokeArchiveFile = function(){
 		URL.revokeObjectURL(this.b);
 	}
 };
+GraFlicArchive.prototype.addArcMeta = function(mime, ext, apps){
+	//If more vast params added, could check to see if first param is an object and use the properties of that and ignore other params, to make more flexible.
+	/*
+	Creates an arc.json file at the root of the archive file and returns the file object so that any needed modifications can be made.
+	Currently it is only being used for ZIP-based files, but it is general enough to be interoperable with other archive types like TAR. TAR might theoretically have other considerations for where arc.json is located dealing with absolute paths and such.
+	The focus of this spec is to give details about the file and how to open it or what to do with it. There are many ZIP-based/Archive-based formats and systems may not have software already installed to deal with them. It does not need to give an in-depth description of the file contents, the file design itself ought to do that it its own metadata if needed.
+	It contains properties that can be used to find/verify the type of file and in some cases, resolve conflicts with similar files.
+		----- ARC 1.0 (draft March 14th, 2018) -----
+	.arc        - The version of the ARC spec (will be higher than 1.0 if more features are added later.)
+	.mime       - The MIME type that should be associated with this file.
+	.extension  - The file extension that should be associated with this file. (Sometimes files get renamed/repackaged to .zip or the extension gets deleted or changed otherwise.)
+	.apps        - (optional, but recommended especially for non-mainstream types) An array of objects with info about supporting apps, in order of priority. 
+	.epoch      - (optional) An integer that can help extend the range of the MS-DOS date time format which cannot go past 2108.
+		If it is not past 2108 yet, this should probably be left undefined.
+		If defined, the ZIP-stored date time will be interpreted differently by supporting unpackagers.
+		In that case the date time year value will be interpreted as 'years since [.epoch integer value]'.
+		BC time could be represented with a negative number. This would be useful if archaeologists uncover pre-historic computers with files on them and those files are added to an archive.
+		Note that for this to work with no loss of date-time information, all files stored in the ZIP archive must have all date-times that are within a 128 year span.
+	  ----- timestamps (in modern timestamp format(unlike ZIP date-times), milliseconds since January 1st, 1970) -----
+	.created    - The date that the ZIP-based file was created. When unpacking and repacking together a ZIP after modifying the contained files, the creation date in the filesystem of the new .zip may be set to when it was repackaged, not when the original file was actually created.
+			The .created property can be used in some cases to resolve conflicts with similar files that have the same internal IDs. If one file is associated with another based on an internal ID, and multiple files are located with the same ID, it the file also has the created timestamp to go with the ID for the file it is associated with, it can compare the ID and the timestamp to find the most likely match. For example, the Deckromancy program uses this system to locate the card maker environment that a .card was created with and load it to be able to reconstruct the card.
+	.modified   - (optional) The date that the ZIP-based file was modified. Unlike .created, when a ZIP is repackaged the modified is usually updated by whatever software packages it or the OS filesystem itself. However, when uploaded to a website or such, the receiving site may or may not set the modified date correctly. Note that when manually packaging a ZIP based file this will not get updated unless the usr updates it manually. Can be used if file received as an octet-stream with no filesystem info like timestamps.
+		(note that defining a .accessed does not make sense. Files do not usually get written to when they are accessed, just when they are created or modified. An accessed property would not be reliable.)
+		Defining other attributes like owner and permissions does not currently seem to make sense either, since it will not change the actual permissions of the ZIP-based file and who can do what with it.
+	.protocols   - (optional, undecided on and experimental, may be moved to within .apps which can represent specific apps or generic app types) Ana array of protocol string teplates that can be used to build a URL to attempt to launch in a supporting app that is registered to handle the protocol, in order of priority.
+			Include a string with the 'protocol_string' and %p for where the path to the file goes, and anything else that might be needed in the protocol URL. Example: 'protocol_string:%p' or 'protocol_string://%p&param=x'. (use p for path to file, a-f are valid %AF hex escapes in a URL)
+			A website could use this to generate protocol links for files that should launch in specific programs
+	.locales     - (optional) An associative object that can add locale-specific overrides to properties (mostly used for .app suggest app name/type of app description phrase) Use pattern "locales":{"de-DE":{"app": "Deutsch String"}} to localize things.
+	.locale      - A BCP47 string such as "ja-JP". Tells what locale language-sensitive strings on the root of the object should be treated as.
+	*/
+	if(!mime){mime = 'application/zip';}//default mime/extension if none specified.
+	if(!ext){ext = 'zip';}
+	//The default, ZIP, is ubiquitous enough that it should be handleable with just the mime and extension, so leave .apps undefined if no specific info sent.
+	//The following is an example of an app entry:
+	/*if(!apps){
+		apps = [
+			{
+				"title": ".ZIP Archive Software",
+				"scheme": "archive"
+			}
+		];
+	}
+	Only .title is decided on, a string description of the suggested software to open this file. The strings can be the name of a specific program or a general description like "Animated PNG Image Editor". This could be used to launch a search request for the string if the software is not installed or cannot be located.
+	*/
+	var aFile = {};
+	aFile.p = 'arc.json';//arc.json is always put at the root of the archive and can be read to confirm the content type.
+	aFile.j = {};
+	aFile.j.arc = 1.0;
+	aFile.j.mime = mime;
+	aFile.j.extension = ext;
+	aFile.j.epoch = 1980;
+	var timeNow = Date.now();
+	aFile.j.created = timeNow;
+	aFile.j.modified = timeNow;
+	//aFile.j.locale = 'en';
+	if(apps){
+		aFile.j.apps = apps;
+	}
+	this.addFile(aFile);
+	return aFile;
+	//While arc.json would be at the root, an optional arc/ could contain things like arc/fext.json with the arc json properties for the extension. This will help identify how to deal with uncommon file types contained within the archive. If arc.json or arc/ is used for something else, then prefix to 0arc and increment(...3arc) until a name that is not taken is found.
+};
+
+//-----------------------------------------------------------
 
 GraFlicUtil.RGB2HSL = function(v_srcR,v_srcG,v_srcB){
  var v_destH;var v_destS;var v_destL;

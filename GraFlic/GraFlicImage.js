@@ -223,7 +223,6 @@ function GraFlicImage(v_fromArchive, v_params){
 };
 GraFlicImage.onImageLoaded = function(e){
 	this.requestRedraw();
-	e.target.removeEventListener('load', GraFlicImage.onImageLoaded);
 };
 GraFlicImage.EDITOR_VERSION = 0.01;//Set to 1.0 when stable enough to declare version.
 GraFlicImage.TOOL_PEN = 1;//Simple single width line that ignores pressure.
