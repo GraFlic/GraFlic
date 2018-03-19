@@ -81,13 +81,13 @@ function GraFlicArchive(zipDataUint8, paramz){
 	if(!zipDataUint8){
 		//If called without a binary ZIP to load, make a blank GraFlicArchive that can be filled with files programmatically and saved.
 		var paramApps = undefined;
-		if(paramz.app){//Single app string, convert to array for arc.json
+		if(paramz.app){//Single app string, convert to array for z.json
 			paramApps = [paramz.app];
 		}
 		if(paramz.apps){
 			paramApps = paramz.apps;//.apps plural sent should be sent as array
 		}
-		this.addArcMeta(paramz.mime, paramz.extension, paramApps);
+		this.addMetaZIP(paramz.mime, paramz.extension, paramApps);
 		return;
 	}
 //Note when reading, other ZIP builders may insert data descriptor after local file header and payload, which apparently may or may not use a signature...
@@ -169,7 +169,7 @@ function GraFlicArchive(zipDataUint8, paramz){
 		console.log('bit flags: 0x' + v_bitFlags.toString(16));
 		
 		
-		if(v_filename.match(/__MACOSX\//) || v_filename.match(/desktop.ini$/)){
+		if(v_filename.match(/desktop\.ini$/) || v_filename.match(/__MACOSX\//) || v_filename.match(/\.DS_Store$/)){
 				// || v_filename.match(/(^|\/)\./)){           // || v_filename.match(/\..*\./)){
 			//Detect and throw out apparent non-user, OS-generated files.
 			//If a user repackages or builds a ZIP-based file with another packaging tool, these can end up creeping into the archive and they are not needed for the ZIP-based formats.
@@ -338,6 +338,11 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 	//the result will be saved to this.b - An ObjectURL link to the BLOB of the zip
 	//TODO: include? zRes.d - The octet stream of the raw data. Maybe not because it does not need to usually be analyzed directly until loaded again via .loadFromZIP()
 	
+	var zipJ = this.f('z.json');
+	if(zipJ && zipJ.j && zipJ.zj){//If has the standard z.json general file metadata, update the modified date.
+		zipJ.j.modified = performance.now();
+	}
+	
 	//This format should be ZIP based and even keep the .zip extension. Custom extensions without a widely known mime-type have a hard time being handled correctly for download in the various browsers. This also tells users, they can extract it, analyze it, edit it, replace files, and rebuild the zip to do things like replace embedded images or edit the JSON directly. Typically only advanced users would do this, but it is good to have as an option.
 	//ZIP uses little-Endian for all values, unless specifically said otherwise.
 	//Zip version needed is 2.0, supports DEFLATE compression and folders.
@@ -452,12 +457,12 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 	//11111000 00000000 hours
 	//00000111 11100000 mins
 	//00000000 00011111 seconds
-	var dHour = jDate.getUTCHours();
+	var dHour = jDate.getUTCHours() << 11;
 		//OLD:((jDate.getUTCHours() + 18) % 24) << 11;//5 bits (seems to be in a timezone off by 2 hours of UTC)
 		//Subtract 6 hours. Add (24 -6) then mod for rollover. Regular subtraction could make invalid negative.
 		//Daylight savings time may mess with it. -5 was working before, now -6 gets correct time.
 	var dMin = jDate.getUTCMinutes() << 5;//6 bits
-	var dSec = (jDate.getUTCSeconds() / 2);//4 bits
+	var dSec = (jDate.getUTCSeconds() / 2);//4 bits (float will get converted to int on boolean op)
 	
 	//11111110 00000000 year
 	//00000001 11100000 month
@@ -612,11 +617,11 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 	//-----------------------------------------
 	
 	var blobParams = {'type':'application/zip'};//params for createObjectURL
-	var arcJ = this.f('arc.json').j;
-	if(arcJ && arcJ.mime && (typeof arcJ.mime) === 'string'){//arc.json will usually be present and may have had a mime type configured there.
+	var arcJ = this.f('z.json').j;
+	if(arcJ && arcJ.mime && (typeof arcJ.mime) === 'string'){//z.json will usually be present and may have had a mime type configured there.
 		blobParams.type = arcJ.mime;
 	}
-	//To override assigned mime type in arc.json, call with the mime param. Sometimes building blob with a more general mime type like application/zip increases chances of it being accepted by other apps and such that only accept certain files.
+	//To override assigned mime type in z.json, call with the mime param. Sometimes building blob with a more general mime type like application/zip increases chances of it being accepted by other apps and such that only accept certain files.
 	if(blobMimetype){
 		if( (typeof blobMimetype) === 'string'){
 			blobParams.type = blobMimetype;
@@ -727,25 +732,31 @@ GraFlicArchive.prototype.revokeArchiveFile = function(){
 		URL.revokeObjectURL(this.b);
 	}
 };
-GraFlicArchive.prototype.addArcMeta = function(mime, ext, apps){
+GraFlicArchive.prototype.addMetaZIP = function(mime, ext, apps){
 	//If more vast params added, could check to see if first param is an object and use the properties of that and ignore other params, to make more flexible.
 	/*
-	Creates an arc.json file at the root of the archive file and returns the file object so that any needed modifications can be made.
-	Currently it is only being used for ZIP-based files, but it is general enough to be interoperable with other archive types like TAR. TAR might theoretically have other considerations for where arc.json is located dealing with absolute paths and such.
+	Will use the file 'z.json'. ZIP is synonymous with archive, so it is broad enough to encompass other archive formats if more are supported in the future. However, ZIP 2.0 is the ubiquitous standard for archive-based file formats, so the focus will be on ZIP. Also, needs to support ZIP specific issue ZIP Epoch.
+	The z.json meta file may not make sense to use if building something like a tar.gz file. Tape Archives have the use case of preserving *NIX-specific file properties like executable, and options like absolute paths. TAR is useful to do things like build a tarball to send to a server and extract to configure a website for example. .tar.gz may not make sense for archive-based formats but would be useful for website editors or things like that.
+	
+	Creates an z.json file at the root of the archive file and returns the file object so that any needed modifications can be made.
+	Currently it is only being used for ZIP-based files, but it is general enough to be interoperable with other archive types like TAR. TAR might theoretically have other considerations for where z.json is located dealing with absolute paths and such.
+	'z.json' is used because it is short and tells that it is in standard JSON format. (file headers and central directory with file paths are uncompressed in ZIP) zip.json or zip_file.json could be used as alternates if a file has a z.json that does something else.
 	The focus of this spec is to give details about the file and how to open it or what to do with it. There are many ZIP-based/Archive-based formats and systems may not have software already installed to deal with them. It does not need to give an in-depth description of the file contents, the file design itself ought to do that it its own metadata if needed.
 	It contains properties that can be used to find/verify the type of file and in some cases, resolve conflicts with similar files.
-		----- ARC 1.0 (draft March 14th, 2018) -----
-	.arc        - The version of the ARC spec (will be higher than 1.0 if more features are added later.)
+		----- z.json 1.0 (draft March 14th, 2018) -----
+	.zj         - The version of the z.json spec (will be higher than 1.0 if more features are added later.) This is a float, though JSON serializers will strip off .0 if nothing after decimal point.
 	.mime       - The MIME type that should be associated with this file.
 	.extension  - The file extension that should be associated with this file. (Sometimes files get renamed/repackaged to .zip or the extension gets deleted or changed otherwise.)
-	.apps        - (optional, but recommended especially for non-mainstream types) An array of objects with info about supporting apps, in order of priority. 
-	.epoch      - (optional) An integer that can help extend the range of the MS-DOS date time format which cannot go past 2108.
-		If it is not past 2108 yet, this should probably be left undefined.
+	.apps       - (optional, but recommended especially for non-mainstream types) An array of objects with info about supporting apps, in order of priority. 
+	.zipoch     - (optional) ZIP Epoch, an integer that can help extend the range of the MS-DOS date time format which cannot go past 2107.
+		ZIP files have an epoch of 1980 and only a 0-127 year range in the date-time format used in ZIP file entries. Other timestamps elsewhere may be based on seconds or microseconds since *NIX epoch (Midnight January 1st, 1970).
+		If it is not past 2107 yet, this should probably be left undefined.
 		If defined, the ZIP-stored date time will be interpreted differently by supporting unpackagers.
 		In that case the date time year value will be interpreted as 'years since [.epoch integer value]'.
 		BC time could be represented with a negative number. This would be useful if archaeologists uncover pre-historic computers with files on them and those files are added to an archive.
 		Note that for this to work with no loss of date-time information, all files stored in the ZIP archive must have all date-times that are within a 128 year span.
-	  ----- timestamps (in modern timestamp format(unlike ZIP date-times), milliseconds since January 1st, 1970) -----
+	  ----- timestamps (in modern timestamp format(unlike ZIP date-times), microseconds(1,000,000ths) since January 1st, 1970) -----
+			JSON does not limit integer size, but readers may have their limits
 	.created    - The date that the ZIP-based file was created. When unpacking and repacking together a ZIP after modifying the contained files, the creation date in the filesystem of the new .zip may be set to when it was repackaged, not when the original file was actually created.
 			The .created property can be used in some cases to resolve conflicts with similar files that have the same internal IDs. If one file is associated with another based on an internal ID, and multiple files are located with the same ID, it the file also has the created timestamp to go with the ID for the file it is associated with, it can compare the ID and the timestamp to find the most likely match. For example, the Deckromancy program uses this system to locate the card maker environment that a .card was created with and load it to be able to reconstruct the card.
 	.modified   - (optional) The date that the ZIP-based file was modified. Unlike .created, when a ZIP is repackaged the modified is usually updated by whatever software packages it or the OS filesystem itself. However, when uploaded to a website or such, the receiving site may or may not set the modified date correctly. Note that when manually packaging a ZIP based file this will not get updated unless the usr updates it manually. Can be used if file received as an octet-stream with no filesystem info like timestamps.
@@ -772,13 +783,13 @@ GraFlicArchive.prototype.addArcMeta = function(mime, ext, apps){
 	Only .title is decided on, a string description of the suggested software to open this file. The strings can be the name of a specific program or a general description like "Animated PNG Image Editor". This could be used to launch a search request for the string if the software is not installed or cannot be located.
 	*/
 	var aFile = {};
-	aFile.p = 'arc.json';//arc.json is always put at the root of the archive and can be read to confirm the content type.
+	aFile.p = 'z.json';//z.json is always put at the root of the archive and can be read to confirm the content type.
 	aFile.j = {};
-	aFile.j.arc = 1.0;
+	aFile.j.zj = 1.0;
 	aFile.j.mime = mime;
 	aFile.j.extension = ext;
-	aFile.j.epoch = 1980;
-	var timeNow = Date.now();
+	aFile.j.zipoch = 1980;//optional, not really needed until 2107
+	var timeNow = performance.now();//Get time in microseconds.
 	aFile.j.created = timeNow;
 	aFile.j.modified = timeNow;
 	//aFile.j.locale = 'en';
@@ -787,7 +798,7 @@ GraFlicArchive.prototype.addArcMeta = function(mime, ext, apps){
 	}
 	this.addFile(aFile);
 	return aFile;
-	//While arc.json would be at the root, an optional arc/ could contain things like arc/fext.json with the arc json properties for the extension. This will help identify how to deal with uncommon file types contained within the archive. If arc.json or arc/ is used for something else, then prefix to 0arc and increment(...3arc) until a name that is not taken is found.
+	//While z.json would be at the root, an optional filetypes/ could contain things like filetypes/fext.json with the file json properties for the extension. This will help identify how to deal with uncommon file types contained within the archive. If z.json or filetypes/ is used for something else, then prefix to 0arc and increment(...3arc) until a name that is not taken is found.
 };
 
 //-----------------------------------------------------------
