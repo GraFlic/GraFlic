@@ -2677,12 +2677,27 @@ GraFlicEncoder.writeUint32 = function(out8,u32,pos,isLittleEndian){
 		out8[pos+3] = u32&0xFF;
 	}
 };
-GraFlicEncoder.readUint32 = function(in8, pos, isLittleEndian){
+GraFlicEncoder.readInt32 = function(in8, pos, isLittleEndian){
 	//These can be static functions they don't need the object ref.
+	//Use INT32 for reading CRCs (JS boolean ops numbers are converted to SIGNED Int 32)
+	//writeUint32 is fine for WRITING CRCs, the bits are the same, they are just interpreted differently in JS to be signed.
 	if(isLittleEndian){
 		return in8[pos + 0] | in8[pos + 1] << 8 | in8[pos + 2] << 16 | in8[pos + 3] << 24;
 	}else{
 		return in8[pos + 0] << 24 | in8[pos + 1] << 16 | in8[pos + 2] << 8 | in8[pos + 3];
+	}
+};
+GraFlicEncoder.readUint32 = function(in8, pos, isLittleEndian){
+	//readUint32 is fixed not to overflow,
+	//but the anti-overflow would alter the bytes read due to JS running 32-bit SIGNED for boolean ops, so use readInt32 for CRCs.
+	var highByte;//Boolean ops will convert to signed 32-bit ints when being done, causing large unsigned int32s to overflow.
+		//So use the more computationally expensive math to ensure correct value read. (default JS numbers are floats with 53 bit int length)
+	if(isLittleEndian){
+		highByte = in8[pos + 3] * 0x01000000;
+		return highByte + (in8[pos + 0] | in8[pos + 1] << 8 | in8[pos + 2] << 16);
+	}else{
+		highByte = in8[pos + 0] * 0x01000000;
+		return highByte + (in8[pos + 1] << 16 | in8[pos + 2] << 8 | in8[pos + 3]);
 	}
 };
 GraFlicEncoder.writeUint24 = function(out8,u24,pos,isLittleEndian){

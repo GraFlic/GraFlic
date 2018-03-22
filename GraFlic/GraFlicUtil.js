@@ -61,17 +61,11 @@ function GraFlicArchive(zipDataUint8, paramz){
 	//Other properties may be added to this result object later if needed.
 	
 	GraFlicArchive.archives.push(this);//Each archive created will be tracked here so that a file can be looked up if the path exists in any archive in memory with static getFileFromAny()
-	
-	var v_loadedFilename = '**__Unknown__**';
+	var zj = null;//will be populated if z.json type validator found.
+	var bloatFolder = null;//null for N/A, will be used to fix a common packaging mistake that wraps an extra folder around everything.
 	if(!paramz){
 		paramz = {};//makes handling undefined vars easier if paramz.x is undefined it can just send undefined for optional x if needed without getting 'paramz is undefined'
 	}
-		if(paramz.filename){
-		//If the filename is provided, it can be used to check for the common ZIP repackaging mistake of packaging the extracted folder inside of itself and correct it.
-		//This often happens because ZIP extractors will extract the contents into a folder with the folder name based on the filename(without extension). 'A_file.zip' extracts into folder 'A_file/'. Naturally, after editing some of the ZIP contents, the user may context-click the folder and choose to compress. This seems like how it should work, but that will put everything in the new ZIP file into another layer of extra folder that was not in the original. A contained file 'images/example.png' would become 'A_file/images/example.png';
-		v_loadedFilename = paramz.filename.replace(/\.[^\.\/]+$/, '');
-		//TODO: Another approach that may be more reliable since the user may rename the zip after doing this: Detect if the root is empty except for one folder. If that is the case, then strip off the first folder from the extracted filename strings. Do note however, if the developer for some reason designed a save format to have a root that is empty except one folder, this could mess it up.
-		}
 		/*
 		if(paramz.globalAsset){
 			//being called with globalAsset true will tell it to keep the files in memory and set up the linkage so that the file can be used to fill custom zip links within the page with the images once they are extracted.
@@ -107,13 +101,12 @@ function GraFlicArchive(zipDataUint8, paramz){
 	var v_payloadUncompressedSize;
 	var v_extractedBytes;
 	var v_fileHeadStart;
-	var v_startCRC;
-	var v_calcCRC32;
+	//var v_calcCRC32;
 	var v_readCRC32;
 	var v_compSig;//component signature
 	var v_bitFlags;
 	var v_relOffset;
-	var v_offsetMode = 0;//0 for normal, 1 for undocumented mode some writers use that store the offset from the start of the file.
+	//OLD, incorrect: var v_offsetMode = 0;//0 for normal, 1 for undocumented mode some writers use that store the offset from the start of the file.
 	console.log('Starting ZIP read. size: ' + v_oct.length);
 	//First find the start of the end of central directory, it has a variable length comment field so may not be in a set spot.
 	var v_cdPos = v_oct.length - 1;//Read the zip starting with the central directory at the end. This is more reliable, since the length and CRC may not be available in the local file header.
@@ -132,22 +125,27 @@ function GraFlicArchive(zipDataUint8, paramz){
 	while(v_filesRead < v_filesCountZIP){
 		console.log('CentDir pos: ' + v_cdPos + ' sig: ' + GraFlicEncoder.readUint32(v_oct, v_cdPos, true).toString(16));
 		v_relOffset = GraFlicEncoder.readUint32(v_oct, v_cdPos + 42, true);
-		if(v_relOffset == 0){v_offsetMode = 1;}
+		//if(v_relOffset == 0){v_offsetMode = 1;}
 		//0 is never valid for the offset from central directory defined in the spec. If the first offset is 0, it must use the undocumented mode that uses the offset from the start of the file.
-		if(v_offsetMode == 1){
-			v_fileHeadStart = v_relOffset;
-		}else{
-			v_fileHeadStart = v_cdPos - v_relOffset;//go backwards by the offset bytes to locate the local file header.
-		}
+		//if(v_offsetMode == 1){
+		v_fileHeadStart = v_relOffset;//In ZIP 2.0, it is always the position from the beginning of the file, the other way was incorrect.
+		//}else{
+		//	v_fileHeadStart = v_cdPos - v_relOffset;//go backwards by the offset bytes to locate the local file header.
+		//}
 		console.log('version made by, version: ' + v_oct[v_cdPos + 4] + ' OS: ' + v_oct[v_cdPos + 5]);
 		console.log('version needed to extract, version: ' + v_oct[v_cdPos + 6] + ' OS: ' + v_oct[v_cdPos + 7]);
 		console.log('rel offset: ' + v_relOffset + ' starting at: ' + v_fileHeadStart);
 		v_pos = v_fileHeadStart;
+		v_readCRC32 = GraFlicEncoder.readInt32(v_oct, v_cdPos + 16, true);
 		v_payloadSize = GraFlicEncoder.readUint32(v_oct, v_cdPos + 20, true);//Read size out of central directory where it should be calculated. In the local file header it may be undefined if bit 3 of the flags is set. So far, this seems to reliably work to get payload size.
 		v_payloadUncompressedSize = GraFlicEncoder.readUint32(v_oct, v_cdPos + 24, true);
+
 		v_cdFilenameSize = GraFlicEncoder.readUint16(v_oct, v_cdPos + 28, true);
 		v_cdExtraFieldSize = GraFlicEncoder.readUint16(v_oct, v_cdPos + 30, true);//The extra field on central directory might be different from local file header.
 		v_commentSize = GraFlicEncoder.readUint16(v_oct, v_cdPos + 32, true);//Comment ONLY appears on central directory header, NOT the local file header.
+
+		//console.log('i att(L): ' + GraFlicEncoder.readUint16(v_oct, v_cdPos + 36, true).toString(2));
+		//console.log('x att(L): ' + GraFlicEncoder.readUint32(v_oct, v_cdPos + 38, true).toString(2));
 
 		console.log('local file header sig: ' + GraFlicEncoder.readUint32(v_oct, v_pos, true).toString(16));
 		v_bitFlags = GraFlicEncoder.readUint16(v_oct, v_pos + 6, true);
@@ -180,31 +178,49 @@ function GraFlicArchive(zipDataUint8, paramz){
 			console.log('Skipping apparently irrelevant file: ' + v_filename);
 		}else{
 			v_extractedBytes = v_oct.subarray(v_pos, v_pos + v_payloadSize);
-			if(v_filename.match(/\//) && v_filename.split('/')[0].indexOf(v_loadedFilename) == 0){
-							//(Remember, extra things like (2) may get appended to the filename if it gets renamed due to existing file that it was extracted from.)
-				//If the files are in a folder with the same name as the loaded file, the user probably re-packed them
-				//incorrectly which is easy to do, given the unintuitive way ZIPs extract out to a folder, but if you
-				//compress the folder again, it puts the folder within the ZIP, so in that case, strip these out.
-				v_filename = v_filename.replace(/^[^\/]+\//, '');
-				console.log('The folder was repackaged inside of itself it seems. Filename fixed to: ' + v_filename);
-			}
+				//CRC is based on BEFORE being compressed, it will not be uncompressed until accessed...
+				//incorrect v_calcCRC32 = GraFlicEncoder.getCRC32(v_extractedBytes, 0, v_payloadSize);
+				//console.log('CRC calculated: ' + v_calcCRC32 + ' CRC read: ' + v_readCRC32);
 			var xFile = {};
 			xFile.reconst = false;//Has not been reconstituted. This will be done as needed if the file is accessed via .f('filepath'). That way resources are saved by not making every file live on load when not all files may be used right away, if even used at all.
 			xFile.compression = v_payloadCompression;//Compression method code as defined by ZIP.
 			xFile.uncompressed_size = v_payloadUncompressedSize;//Will need to know what size the original file is if re-packaging it.
+			xFile.zip_crc = v_readCRC32;//save the CRC that was generated over the full uncompressed payload by the ZIP packager.
 			//console.log('uncompressed size: ' + uncompressed_size);
 			xFile.p = v_filename;//keep a reference for what the path is in case object referenced elsewhere.
 			
 			xFile.d = v_extractedBytes;//These bytes will be decompressed later if the archived file entry is reconstituted.
 			this.files[v_filename] = xFile;//if completed with no errors, include it in the files object
 			console.log('----------------------');
+			if(v_filename.match(/(^|\/)z\.json$/)){
+				console.log('.-.-.-.-.z.json type validator.-.-.-.-.-.');
+				zj = this.f(v_filename).j;
+				if(zj.signature == 'z.json archive metadata'){//longish strong signature to prevent collision if other files happen to be named 'z.json' in other archives for other purposes.
+					console.log('confirmed to be type validator z.json v' + zj.version);
+					var partsZJ = v_filename.match(/^(.*\/)z\.json$/);//detect a bloat folder if packaging mistake was made.
+					if(partsZJ && partsZJ[1] && partsZJ[1].length){
+						bloatFolder = partsZJ[1];
+						console.log('User apparently made common mistake of packaging everything wrapped in an extra bloat folder. The bloat folder(' + bloatFolder + ') will be stripped from paths.');
+					}
+				}
+				console.log('.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.');
+			}
 		}
 		v_filesRead++;
 	}//end while
+	if(bloatFolder){//Remove the bloat folder portion from paths if a packaging mistake resulted in things being wrapped in a bloat folder. The next time this is saved by an app using GraFlicArchive, it will be properly packaged without the bloat folder.
+		var unbloatedFiles = {};
+		for(var key in this.files){
+			var bRepFile = this.files[key];
+			bRepFile.p = bRepFile.p.replace(new RegExp('^' + bloatFolder), '');
+			unbloatedFiles[bRepFile.p] = bRepFile;
+		}
+		this.files = unbloatedFiles;
+	}
 };//(semicolon not needed since function definition not = function, but it appears to not effect things being here...) end of GraFlicArchive() constructor
 GraFlicArchive.prototype.addFile = function(v_fileAdded){
 	//required params:
-	//.p (path)
+	//.p (path) -- if path string ends in '/' it will be considered a directory.
 	//some content, unless it is a folder
 	//(.d (data) or .j (json) or .t (text) )
 	//other properties:
@@ -375,16 +391,17 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 	var curFileCompression;
 	var curFileUncompressedSize;//needed to save what the size was before deflating.
 	var v_fileCount = 0;
+	var curFilePreZipCRC;
+	var f2w;
 	for(v_iKey in this.files){
 		console.log('[' + v_iKey + ']');
 		curFile = this.files[v_iKey];
 		if(curFile.temp){//Some files are temporarily used in run-time memory, but should not be saved to the archive.
-			console.log('skipping temporary file: ' + curFile.p);
+			console.log('skipping temporary file: ' + curFile.p);//TODO: this temp feature might not be used anymore...
 		}else if(curFile.reconst){//--------------------- if a live file that has been BLOBified for runtime ------------------
 		//Extra processing will have to be done to get it back to binary archived state.
 		//console.log('archiving file from reconstituted state...');
 		curFilePayload = curFile.d;
-		curFileCompression = 8;//Default to method 8, Deflate.
 		if(curFile.p.match(/\.json$/i)){
 			//TODO: in some cases maybe JSON is pre-stringified and in .t instead of .j ??
 			curFilePayload = GraFlicEncoder.stringToBytesUTF8(JSON.stringify(curFile.j, null, '\t'));//By default, use tab spacing to help readability.
@@ -394,13 +411,13 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 		if(curFile.p.match(/\.txt$/i)){
 			curFilePayload = GraFlicEncoder.stringToBytesUTF8(curFile.t);
 		}
-		if(curFile.p.match(/\.(gz|a*png|jpe*g|giff*|webp)$/i)){
+		/*if(curFile.p.match(/\.(gz|a*png|jpe*g|giff*|webp)$/i)){
 			//GZip compressed files and Images have their own built-in compression, so compressing already compressed data is not efficient.
+			//However, can attempt to let it compress, and use deflate if it gets smaller results.
 			curFileCompression = 0;
-		}
+		}*/
 		if(!curFilePayload){//if .d (data) is not set, then it is an empty entry like a folder
 			curFilePayload = new Uint8Array(new ArrayBuffer(0));//Make 0 length data object.
-			curFileCompression = 0;
 		}
 		if(curFile.p.match(/\.gz$/i)){//this will apply to ALL files with .gz at the end (.dat.gz, .png.gz, .txt.gz ...)
 			//ZIP compression will have been set to 0 none for having .gz at the end already,
@@ -412,33 +429,56 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 			//console.log('GZ magic number: ' + curFilePayload[0].toString(16) + ' ' + curFilePayload[1].toString(16));
 			//var v_unGZTest = window.pako.ungzip(curFilePayload);
 		}
+		//-------------------------------------------------------------
+		//Apparently the CRC is based on BEFORE the file was compressed. Do this once the payload has been initialized, but before it is compressed.
+		if(curFilePayload && curFilePayload.length){
+			curFilePreZipCRC = GraFlicEncoder.getCRC32(curFilePayload, 0, curFilePayload.length);
+		}else{//.d data might not be defined for folders with 0 bytes
+			curFilePreZipCRC = 0;//leaving CRC 0 in this case seems to work.
+		}
+		console.log('curfilePayload: ' + (curFilePayload ? curFilePayload.length : curFilePayload) + ' CRC: ' + curFilePreZipCRC.toString(16));
+		
 		curFileUncompressedSize = curFilePayload.length;//save size before the Deflate.. (however, be sure to do this after logic so .gz has the correct original size, not size before internal gz compression)
-		if(curFileCompression == 8){//if using compression. Only currently supports Deflate(8) or no compression (0).
-			curFilePayload = window.pako.deflateRaw(curFilePayload, v_pakoDO);
+		//The simplest way to pick what to compress or store is just compress it and if the compressed results are not better, just store.
+		if(curFilePayload.length){
+			var compressedPayload = window.pako.deflateRaw(curFilePayload, v_pakoDO);
+			if(compressedPayload.length < curFilePayload.length){
+				//If compressed payload is smaller, use Deflate(8). If it does not decrease size, use Store(0)
+				curFileCompression = 8;
+				curFilePayload = compressedPayload;
+			}else{
+				curFileCompression = 0;
+			}
+		}else{
+			curFileCompression = 0;//Empty array (such as dir), nothing to compress.
 		}
 		console.log('queuing file: ' + curFile.p + ' dataSize: ' + curFilePayload.length + ' compress mode: ' + curFileCompression + ' original size: ' + curFileUncompressedSize);
-		v_filesToWrite.push(
-			GraFlicEncoder.stringToBytesUTF8(curFile.p),//get UTF-8 compatible Uint8Array... (JS 16-bit string chars do not translate to UTF-8)
-			curFilePayload,
-			curFileCompression,
-			curFileUncompressedSize
-		);
-		v_fileCount++;
+		f2w = {};//pre-prepare properties needed for the write operation.
+		f2w.payload = curFilePayload;
+		f2w.path = curFile.p;
+		f2w.pathUTF8 = GraFlicEncoder.stringToBytesUTF8(curFile.p);//get UTF-8 compatible Uint8Array... (JS 16-bit string chars do not translate to UTF-8)
+		f2w.compression = curFileCompression;
+		f2w.uncompressed_size = curFileUncompressedSize;
+		f2w.crc = curFilePreZipCRC;
+		v_filesToWrite.push(f2w);
+		v_fileCount++;//TODO: remove this, may be able to just use .length now that simple object array.
 		}else{//---------------- end live blob --------------------------
 			//If an archived file that has NOT been reconstituted, but has simply had the binary stored in .d
 			//console.log('storing archived file that is not reconstituted...');
-			v_filesToWrite.push(
-				GraFlicEncoder.stringToBytesUTF8(curFile.p),//get UTF-8 compatible Uint8Array... (JS 16-bit string chars do not translate to UTF-8)
-				curFile.d,
-				curFile.compression,
-				curFile.uncompressed_size //Will have been saved in this prop when the archived entry was loaded
-			);
+			f2w = {};
+			f2w.payload = curFile.d;
+			f2w.path = curFile.p;
+			f2w.pathUTF8 = GraFlicEncoder.stringToBytesUTF8(curFile.p);//get UTF-8 compatible Uint8Array... (JS 16-bit string chars do not translate to UTF-8)
+			f2w.compression = curFile.compression;
+			f2w.uncompressed_size = curFile.uncompressed_size;//Will have been saved in this prop when the archived entry was loaded
+			f2w.crc = curFile.zip_crc;
+			v_filesToWrite.push(f2w);
 			v_fileCount++;
 		}
 	}
 
-	for(v_i = 0;v_i < v_filesToWrite.length;v_i += 4){//count the size of everything that was queue to be added to the file.
-		v_saveLen += 76 + v_filesToWrite[v_i].length * 2 + v_filesToWrite[v_i + 1].length;
+	for(v_i = 0;v_i < v_filesToWrite.length;v_i++){//count the size of everything that was queue to be added to the file.
+		v_saveLen += 76 + v_filesToWrite[v_i].pathUTF8.length * 2 + v_filesToWrite[v_i].payload.length;
 			//(30) ZIP local file header value lengths, + (46) central file header
 			//(filename appears in both headers, so * 2)
 	}
@@ -452,7 +492,7 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 	//Will write the current date to everything for now.
 	//TODO: Implement something to remember previous creation dates? It may not be applicable, this is for saving the state of runtime data components that are destroyed/rebuilt regularly.
 	var jDate = new Date();
-	jDate.setTime(jDate.getTime() - 21600000);//DATE time goes by -6 hours subtract that many milliseconds.
+	jDate.setTime(jDate.getTime() - 18000000);//DATE time goes by -5 hours subtract that many milliseconds.
 		//Still off on hours. If subtracting it goes to 12AM hours (0), if leaving as is it shows it modified tomorrow.
 	//11111000 00000000 hours
 	//00000111 11100000 mins
@@ -473,24 +513,27 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 	
 	var packedTime = dSec | dMin | dHour;
 	var packedDate = dCalDay | dMonth | dYear;
+
+	var localHeaderPos;
 	
-	for(v_i = 0;v_i < v_filesToWrite.length;v_i += 4){
+	for(v_i = 0;v_i < v_filesToWrite.length;v_i++){
 		//[filename, payload, compression, original size, central directory header ... ] method sets.
 		//Central directory will be null initially. It will be constructed here, since most of the values are the same as local file header, it is easy to copy. 
-		var v_filenameBytesUTF8 = v_filesToWrite[v_i];//was set to AE.stringToBytesUTF8
-		var v_filenameSize = v_filenameBytesUTF8.length;//Escaped %## for each UTF-8 byte. The stringByteLength func may not be needed since simple L/3 get it.
+		var v_filenameBytesUTF8 = v_filesToWrite[v_i].pathUTF8;//was set to AE.stringToBytesUTF8
+		var v_filenameSize = v_filenameBytesUTF8.length;
 		//The ZIP spec does not officially support UTF-8 with a bit flag until a later version than the ubiquitous 2.0, but since UTF-8 is backwards compatible with ASCII, and codepage-based encodings have long been out of favor, it seems systems may be defaulting to interpreting it as UTF-8 anyways. So support UTF-8 anyways.
-		var v_payload2Copy = v_filesToWrite[v_i + 1];
+		var v_payload2Copy = v_filesToWrite[v_i].payload;
 		var v_payloadSize = v_payload2Copy.length;
+		var v_fileCRC = v_filesToWrite[v_i].crc;
 		//cdh array has [position of file header, cdc binary ... ] pairs. It needs to calculate the offset based on where the local file header starts.
-		v_centralDirectoryHeaders.push(v_pos);
+		localHeaderPos = v_pos;
 		//local file header signature
 		GraFlicEncoder.writeUint32(v_oct, 0x04034B50, v_pos, true);
 		v_pos += 4;
 		var v_copyPosCDH = v_pos;//copy everything from here into the central directory header where it also appears.
-		//2.0, version needed to extract. Assuming the 2 bytes are major version, minor version.
+		//2.0, version needed to extract.
 		v_oct[v_pos] = 20;//Lower byte(little-Endian), version code * 10
-		v_oct[v_pos + 1] = 3;//Upper byte OS. 3 Is the code for *nix (Most general OS code, this is JS-based and the actual operating system cannot be reliably detected.)
+		v_oct[v_pos + 1] = 0;//Upper byte OS. Seems to often be zero regardless of what OS made by is.
 			//(It is unclear what to do with this upper byte. Specifying an OS dependency for file attributes seems counter-productive. Some writes set this to the DOS code 0, that might be what to do.)
 		v_pos += 2;
 		//general purpose bit flag
@@ -513,7 +556,7 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 		//Note: Do bits 1 and 2 need to be zeroed if uncompressed? Spec says it is undefined in that case so it seems it shouldn't matter...
 		
 		//compression method
-		GraFlicEncoder.writeUint16(v_oct, v_filesToWrite[v_i + 2], v_pos, true);
+		GraFlicEncoder.writeUint16(v_oct, v_filesToWrite[v_i].compression, v_pos, true);
 		v_pos += 2;
 		//MS-DOS format date and time.
 		GraFlicEncoder.writeUint16(v_oct, packedTime, v_pos, true);
@@ -521,14 +564,14 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 		GraFlicEncoder.writeUint16(v_oct, packedDate, v_pos, true);
 		v_pos += 2;
 		//CRC32 (Assuming CRC of the compressed or plain file itself.)
-		GraFlicEncoder.writeUint32(v_oct, GraFlicEncoder.getCRC32(v_payload2Copy, 0, v_payload2Copy.length), v_pos, true);
+		GraFlicEncoder.writeUint32(v_oct, v_fileCRC, v_pos, true);
 		v_pos += 4;
 		//compressed size
 		GraFlicEncoder.writeUint32(v_oct, v_payloadSize, v_pos, true);
 		v_pos += 4;
 		
 		//uncompressed size
-		GraFlicEncoder.writeUint32(v_oct, v_filesToWrite[v_i + 3], v_pos, true);
+		GraFlicEncoder.writeUint32(v_oct, v_filesToWrite[v_i].uncompressed_size, v_pos, true);
 		v_pos += 4;
 		
 		//filename length
@@ -540,14 +583,6 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 		v_pos += 2;
 		GraFlicEncoder.writeUbytes(v_oct, v_filenameBytesUTF8, v_pos);
 		v_pos += v_filenameBytesUTF8.length;
-		/*
-		//write filename (first remove first '%' and split to get the UTF-8 octet hex codes in an array)
-		v_filenameBytesUTF8 = v_filenameBytesUTF8.substring(1).split('%');
-		for(v_i2 = 0;v_i2 < v_filenameSize;v_i2++){
-			v_filenameBytesUTF8[v_i2] = parseInt(v_filenameBytesUTF8[v_i2], 16);//Write the Hex string as binary byte for each escaped UTF-8 byte.
-			v_oct[v_pos] = v_filenameBytesUTF8[v_i2];//(The parsed integer overwrites the string since this will be used later to writ it in CentralDir)
-			v_pos++;
-		}*/
 		//========== Build the central directory header to be inserted in the list at the end of the file. =============
 		v_centralDH = new Uint8Array(new ArrayBuffer(46 + v_filenameSize));
 		//central directory has 16 additional bytes that the local file header does not, and of course the 4 byte signature is different
@@ -559,15 +594,56 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 		
 		GraFlicEncoder.writeUint32(v_centralDH, 0x02014B50, 0, true);//signature
 		
-		v_centralDH[4] = 20;//Version made by * 10, 2.1
-		v_centralDH[5] = 3;//OS code 3 *nix
+		v_centralDH[4] = 20;//Version made by * 10
+		v_centralDH[5] = 0;//MS-DOS FAT seems to be the most widely supported in ZIP handlers, so use that.
+		//OS code 3 *NIX is the code for *nix (Most general OS code, this is JS-based and the actual operating system cannot be reliably detected.)
+		//*NIX has the OS-specific attributes, and the 'default' MS-DOS attributes on the lowest 6 bits (PKZIP was originally a DOS program), so that has the most options.
+		//*NIX permissions are not that useful without being able to restore the user id and group id. Unless it is a closed network, other computers out there will have different user and group IDs and there would be no way to reliable know what to set them to. Code 3 use case would mostly be backing up server files or things like that.
+		//Some of the other host OSes in the list may be historical/obscure, and not interoperable with many ZIP packagers/readers out there.
+		//TODO: Consider adding a configureable host OS option??? The platform-dependent attributes seem to have interoperability issues on other types of systems and it may not be good to rely on them.
 		//... copied from local file header ...
 		GraFlicEncoder.writeUint16(v_centralDH, 0, 30, true);//extra field length (do not use either of these extra/comment)
 		GraFlicEncoder.writeUint16(v_centralDH, 0, 32, true);//comment length
 		GraFlicEncoder.writeUint16(v_centralDH, 0x0000, 34, true);//disk number
-		GraFlicEncoder.writeUint16(v_centralDH, 0x0000, 36, true);//internal file attributes
-		GraFlicEncoder.writeUint32(v_centralDH, 0x00000000, 38, true);//external file attributes
-		GraFlicEncoder.writeUint32(v_centralDH, 0x00000000, 42, true);//relative offset to local file header (will be filled in when the position it is offsetting from is known.)
+		var iAttr = 0x0000;
+		if(v_filesToWrite[v_i].path.match(/\.(txt|json|css|csv)$/i)){
+			iAttr |= 0x0001;
+		}
+		GraFlicEncoder.writeUint16(v_centralDH, iAttr, 36, true);//internal file attributes
+			//internal attributes: bit0(0x1) - Treated as ASCII/text rather than binary,
+				//bit1(0x2) - indicates record controlling to support data transfer with mainframes (usually N/A)
+				//Bits 2-16 are apparently unused, at least in ZIP 2.0
+		//It seems FAT attributes are sometimes ignored in *NIX mode by some things.
+		var fAttr = 0x00000000;
+		if(v_filenameBytesUTF8[v_filenameSize - 1] == 0x2F){//Ends in /, isDirectory
+			//fAttr |= 0x40000010;//Set *NIX type and FAT Dir flag. <-- alternate way for code 3
+			//fAttr |= 0o0755 << 16;
+			fAttr |= 0x00000010;//Set FAT Dir flag.
+		}else{
+			//fAttr |= 0x80000000;//Regular file. <--- way for code 3
+			//fAttr |= 0o0644 << 16;
+			fAttr |= 0x00000020;//Setting A for non-dirs seems to be the convention.
+		}
+		//fAttr |= 0x00000002;//Test FAT Hidden (Does not seem to do anything on *NIX, maybe would work if .hidden or extended attribute were implemented on the system extracted to.)
+		//fAttr |= 0x00000001;//Test FAT Read-Only, seems to be interpreted in *NIX as r--r--r--(444/files) r-xr-x-r-x(555/dirs)
+							//Default on FAT seems to interpret to rw-r--r--(644/files) rwxr-x-r-x(755/dirs)
+		//fAttr |= 0o7777 << 16;//Test setting all *NIX permissions on.
+		//Still write in little Endian, even though not a number...
+		GraFlicEncoder.writeUint32(v_centralDH, fAttr, 38, true);//external file attributes
+			//The high byte bits 1-7 seem to be always MS-DOS FAT attributes:
+			//(Read-Only[0](0x1) / Hidden[1](0x2) / System[2] / Volume[3] / Directory[4](0x10) / Archive[5](0x20)) [6] may mean device in some later DOS versions. [7] is reserved, leave as 0.
+					//Archive bit means 'has not been backed up' when set???
+			//The other 3 bytes, if a host-OS other than MS-DOS, may contain other OS-specific attributes.
+			//For host 3, *NIX, the lowest 2 bytes store permissions, while the byte in the middle seems to be unused (Though somewhere it is mentioned in may have added extra things to put there, maybe user/group IDs??)
+			// use 0 prefix when setting for octal like 0o0644
+			//terminal special display --> (s)  (s)  (t)
+			//*NIX FS octals: [tttt][ugs][rwx][rwx][rwx] (<< 16 shift to get them in the high bytes)
+			//        type(4)--^     ^--special(3): set user id, set group id, sticky
+			//           Lower bytes always MS-DOS FAT: 00000000 00ADVSHR (only 6 bits seem to be used)
+			//some packagers seem to set this, unknown?--^
+			//For type, 1000(0o10) is regular file, 0100 is directory (0o04)
+				//0o01 named, 0o02 char/special, 0o06 block, 0o12 symbol, 0o14 socket
+		GraFlicEncoder.writeUint32(v_centralDH, localHeaderPos, 42, true);//Start of local header from beginning of file, only ZIP64 uses relative offset to local file header (could be filled in when the position it is offsetting from is known in that case.)
 		//Central directory header has filename too.
 		GraFlicEncoder.writeUbytes(v_centralDH, v_filenameBytesUTF8, 46);
 		/*for(v_i2 = 0;v_i2 < v_filenameSize;v_i2++){
@@ -586,10 +662,13 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 	}//end for
 	//The central directories have been previously built. now copy them to the central directory at the end.
 	var v_startCD = v_pos;//used to calculate central directory size and offset.
-	for(v_i = 0;v_i < v_centralDirectoryHeaders.length;v_i += 2){
-		v_centralDH = v_centralDirectoryHeaders[v_i + 1];
-		var v_correspondingFileHeaderPos = v_centralDirectoryHeaders[v_i];
-		GraFlicEncoder.writeUint32(v_centralDH, v_pos - v_correspondingFileHeaderPos, 42, true);//relative offset to local file header
+	for(v_i = 0;v_i < v_centralDirectoryHeaders.length;v_i++){//(stored in CD header, localHeaderPos pairs)
+		v_centralDH = v_centralDirectoryHeaders[v_i];
+		//var v_correspondingFileHeaderPos = v_centralDirectoryHeaders[v_i];//OLD, Incorrect way.
+		//(The offset can be pre-written in the pre-prepared header array because it is just offset from the start of the file.)
+		//GraFlicEncoder.writeUint32(v_centralDH, v_correspondingFileHeaderPos, 42, true);//relative offset to local file header
+		//Simply write the position from the start of the file thismode is the only mode that seems to be supported across all extractors.
+		//It looks like relative offset from CentDirHeader is for ZIP64, not ZIP 2.0: (v_pos - v_correspondingFileHeaderPos) ( BREAKS on many extractors but works on some.)
 		for(v_i2 = 0;v_i2 < v_centralDH.length;v_i2++){
 			v_oct[v_pos] = v_centralDH[v_i2];
 			v_pos++;
@@ -735,8 +814,8 @@ GraFlicArchive.prototype.revokeArchiveFile = function(){
 GraFlicArchive.prototype.addMetaZIP = function(mime, ext, apps){
 	//If more vast params added, could check to see if first param is an object and use the properties of that and ignore other params, to make more flexible.
 	/*
-	Will use the file 'z.json'. ZIP is synonymous with archive, so it is broad enough to encompass other archive formats if more are supported in the future. However, ZIP 2.0 is the ubiquitous standard for archive-based file formats, so the focus will be on ZIP. Also, needs to support ZIP specific issue ZIP Epoch.
-	The z.json meta file may not make sense to use if building something like a tar.gz file. Tape Archives have the use case of preserving *NIX-specific file properties like executable, and options like absolute paths. TAR is useful to do things like build a tarball to send to a server and extract to configure a website for example. .tar.gz may not make sense for archive-based formats but would be useful for website editors or things like that.
+	Will use the file 'z.json'. ZIP is synonymous with archive, so it is broad enough to encompass other archive formats if more are supported in the future. However, ZIP 2.0 is the ubiquitous standard for archive-based file formats, so the focus will be on ZIP. Also, needs to support ZIP specific issue ZIP Epoch. Even though newer archive formats , for an archive-based file format it is of less importance. Allot of the files being packed into the archive like images have their own internal compression anyways.
+	The z.json meta file may not make sense to use if building something like a tar.gz file. Tape Archives have the use case of preserving *NIX-specific file properties like executable, and options like absolute paths. TAR is useful to do things like build a tarball to send to a server and extract to configure a website for example. .tar.gz may not make sense for archive-based formats but would be useful for website editors or things like that. Note that ZIP supports some *NIX permissions when using host OS code 3.
 	
 	Creates an z.json file at the root of the archive file and returns the file object so that any needed modifications can be made.
 	Currently it is only being used for ZIP-based files, but it is general enough to be interoperable with other archive types like TAR. TAR might theoretically have other considerations for where z.json is located dealing with absolute paths and such.
@@ -747,6 +826,7 @@ GraFlicArchive.prototype.addMetaZIP = function(mime, ext, apps){
 	.zj         - The version of the z.json spec (will be higher than 1.0 if more features are added later.) This is a float, though JSON serializers will strip off .0 if nothing after decimal point.
 	.mime       - The MIME type that should be associated with this file.
 	.extension  - The file extension that should be associated with this file. (Sometimes files get renamed/repackaged to .zip or the extension gets deleted or changed otherwise.)
+	.name       - (optional) The full original name of the file including extension of the ZIP-based file. The filename may be lost if the file contents are sent through a stream without metadata, or may be renamed by a user or program. The separate extension property unambiguously clarifies what the extension is. Some files have multiple dots.
 	.apps       - (optional, but recommended especially for non-mainstream types) An array of objects with info about supporting apps, in order of priority. 
 	.zipoch     - (optional) ZIP Epoch, an integer that can help extend the range of the MS-DOS date time format which cannot go past 2107.
 		ZIP files have an epoch of 1980 and only a 0-127 year range in the date-time format used in ZIP file entries. Other timestamps elsewhere may be based on seconds or microseconds since *NIX epoch (Midnight January 1st, 1970).
@@ -785,10 +865,11 @@ GraFlicArchive.prototype.addMetaZIP = function(mime, ext, apps){
 	var aFile = {};
 	aFile.p = 'z.json';//z.json is always put at the root of the archive and can be read to confirm the content type.
 	aFile.j = {};
-	aFile.j.zj = 1.0;
+	aFile.j.signature = 'z.json archive metadata';
+	aFile.j.version = 1.0;
 	aFile.j.mime = mime;
 	aFile.j.extension = ext;
-	aFile.j.zipoch = 1980;//optional, not really needed until 2107
+	aFile.j.zipoch = 1980;//optional, not really needed until 2107 (there is a 0x5455 extra field out ther that adds 'extended timestamps' but it still has the 2107 limitation, only adds created/accessed in addition to modified. It would not be reliable to assume other packagers would retain extra fields anyways.)
 	var timeNow = performance.now();//Get time in microseconds.
 	aFile.j.created = timeNow;
 	aFile.j.modified = timeNow;
