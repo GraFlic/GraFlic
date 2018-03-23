@@ -174,8 +174,10 @@ function GraFlicImage(v_fromArchive, v_params){
 	
 	//this.wasX;//Used for dragging. (Not currently needed...)
 	//this.wasY;
-	this.dragStartX;
-	this.dragStartY;
+	this.dragStartX = 0;//Should be set on the first *down event. (Seems to be not happening on mobile some times.)
+	this.dragStartY = 0;
+	this.dragCurX = 0;//Make sure no errors for undefined.
+	this.dragCurY = 0;
 	this.isDragging = false;
 	this.cutBitmap = null;//For cut-paste functionality. null if nothing pasted.
 	//this.cutX = 0;//allows the dragging of the cut section.
@@ -189,14 +191,29 @@ function GraFlicImage(v_fromArchive, v_params){
 
 	//hook up events
 	//TODO: parameter to turn this off if only playback, not drawing is wanted.
+	this.cvM.style.touchAction = 'none';//Stop drawing from scrolling the page.
 	//PointerEvent inherits from MouseEvent, so everything mouse has pointer has, plus pressure.
 	var browserHasPE = (typeof PointerEvent) !== 'undefined';
-	this.cvM.addEventListener(browserHasPE ? 'pointerdown' : 'mousedown', this.mDown.bind(this));
-	this.cvM.addEventListener(browserHasPE ? 'pointermove' : 'mousemove', this.mMove.bind(this));
-	this.cvM.addEventListener(browserHasPE ? 'pointerup' : 'mouseup', this.mUp.bind(this));
-	this.cvM.addEventListener('touchstart', this.mDown.bind(this));//Also add these handlers as touch so that it works on mobile.
-	this.cvM.addEventListener('touchmove', this.mMove.bind(this));
-	this.cvM.addEventListener('touchend', this.mUp.bind(this));
+	//Add the events in the order of priority. preventDefault() should stop multiple events from overlapping.
+	//Pointer(stylus pen) is best for drawing, followed by mouse, then touch. (It is hard to draw with your hand/finger covering much of the screen and the accuracy on touch is not precise.)
+	if(browserHasPE){
+		this.cvM.addEventListener('pointerdown', this.mDown.bind(this));
+		this.cvM.addEventListener('pointermove', this.mMove.bind(this));
+		this.cvM.addEventListener('pointerup', this.mUp.bind(this));
+	}
+
+	this.cvM.addEventListener('mousedown', this.mDown.bind(this));
+	this.cvM.addEventListener('mousemove', this.mMove.bind(this));
+	this.cvM.addEventListener('mouseup', this.mUp.bind(this));
+
+	//NOTE: Touch events have been conflicting with pen events creating too duplicate events that mess up the drawing path. With preventDefault mouse and pointer events seem to not conflict with eachother. MouseEvents will log as firing, but only MouseMove when the pen is up and no no PointerEvents are happening. These MouseMoves of course do nothing because they are hovers and isDragging has been unset by the PointerUp.
+	
+	if(!browserHasPE){//Touch events should only be used to support mobile/touch input if the browser does not support PointerEvents. PointerEvents can handle pointers whether they are stylus, mouse, or touch. TouchEvents and PointerEvents may collide if both are hooked up. TouchEvents are useful when multitouch input is needed (two finger zoom or twist), but PointerEvent can potentially draw with pressure, which is useful for a stylus. TODO: Implement force property on devices that support that instead of pressure.
+		this.cvM.addEventListener('touchstart', this.mDown.bind(this));//Also add these handlers as touch so that it works on mobile.
+		this.cvM.addEventListener('touchmove', this.mMove.bind(this));
+		this.cvM.addEventListener('touchend', this.mUp.bind(this));
+	}
+	//TODO: Implement touchcancel, pointercancel ?
 	
 	this.bucketFill = this.bucketFillUnbound.bind(this);//Used for bucket fills to make the 'this' keyword work.
 	this.playNextFrame = this.playNextFrameUnbound.bind(this);
@@ -2188,9 +2205,33 @@ GraFlicImage.prototype.getMouseCalibratedXY = function(v_evt){
 		v_y = v_evt.offsetY / cScale;
 	}
 	if(v_evt.pressure === undefined){
-		//console.log('no pointer event available');
-		v_evt.pressure = 0.5;//If browser does not support PointerEvent/pressure, set it to the default in the middle.
+		/*
+		if(v_evt.force){//TODO: implement solution for browsers that support force instead of PointerEvent pressure
+			v_evt.pressure = v_evt.force;
+			//console.log('pressure .wf?: ' + v_evt.webkitForce);
+		}else if(v_evt.webkitForce){//Some browsers may have this instead of .pressure.
+			v_evt.pressure = v_evt.webkitForce;
+			console.log('wk-pressure detected: ' + v_evt.pressure);
+		}else{*/
+			//console.log('no pointer event available');
+			v_evt.pressure = 0.5;//If browser does not support PointerEvent/pressure, set it to the default in the middle.
+		//}
 	}
+
+	/*
+	//Extended analysis of stylus/draw events.
+	console.log('+----- ' + v_evt.type + ' event --------');
+	console.log('| ( ' + v_x + ', ' + v_y + ' )');
+	console.log('| pointerType: ' + v_evt.pointerType);
+	console.log('| pressure: ' + v_evt.pressure);
+	console.log('| tiltX: ' + v_evt.tiltX);
+	console.log('| tiltY: ' + v_evt.tiltY);
+	console.log('| isPrimary: ' + v_evt.isPrimary);
+	console.log('| pointerId: ' + v_evt.pointerId);
+	console.log('| width: ' + v_evt.width);
+	console.log('| width: ' + v_evt.height);
+	*/
+
 	//console.log(v_evt.pressure);
 	return [v_x, v_y];
 };
@@ -2227,6 +2268,8 @@ GraFlicImage.prototype.mDown = function(v_evt){
 	this.minRegionY = v_y;
 	this.maxRegionX = v_x;
 	this.maxRegionY = v_y;
+	this.dragCurX = v_x;//Must be updated here, or things that use cur - prev will break.
+	this.dragCurY = v_y;
 	this.isDragging = true;
 };
 GraFlicImage.prototype.mMove = function(v_evt){
