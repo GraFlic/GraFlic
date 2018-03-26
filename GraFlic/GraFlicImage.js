@@ -92,7 +92,8 @@ function GraFlicImage(v_fromArchive, v_params){
 
 	}else{//======================== init things only needed if not loaded from existing archive:===================
 	//==============================================================================================================
-	this.a = new GraFlicArchive(v_fromArchive);//Set up the virtual archive that will handle load/save and be directly manipulatable while live.
+	var paramzGA = {"mime":"image/x.graflic", "extension":"graflic"};
+	this.a = new GraFlicArchive(v_fromArchive, paramzGA);//Set up the virtual archive that will handle load/save and be directly manipulatable while live.
 	//.a for archive
 	this.a.onImageLoaded = GraFlicImage.onImageLoaded.bind(this);//Check if an image embed loads and do a redraw with the available image.
 	var v_initF;
@@ -2187,8 +2188,8 @@ GraFlicImage.prototype.getMouseCalibratedXY = function(v_evt){
 	v_evt.preventDefault();//Prevent both a mouse and touch from firing at the same time.
 	var v_x;//If mouse, not touch, use the x/y on the mouse event
 	var v_y;
+	var v_touch = null;
 	if(v_evt.touches){
-		var v_touch;
 		console.log('got touch');
 		//Touches must be handled to work on both desktop and mobile.
 		v_touch = v_evt.touches.item(0);
@@ -2204,22 +2205,10 @@ GraFlicImage.prototype.getMouseCalibratedXY = function(v_evt){
 		v_x = v_evt.offsetX / cScale;
 		v_y = v_evt.offsetY / cScale;
 	}
-	if(v_evt.pressure === undefined){
-		/*
-		if(v_evt.force){//TODO: implement solution for browsers that support force instead of PointerEvent pressure
-			v_evt.pressure = v_evt.force;
-			//console.log('pressure .wf?: ' + v_evt.webkitForce);
-		}else if(v_evt.webkitForce){//Some browsers may have this instead of .pressure.
-			v_evt.pressure = v_evt.webkitForce;
-			console.log('wk-pressure detected: ' + v_evt.pressure);
-		}else{*/
-			//console.log('no pointer event available');
-			v_evt.pressure = 0.5;//If browser does not support PointerEvent/pressure, set it to the default in the middle.
-		//}
-	}
-
 	/*
 	//Extended analysis of stylus/draw events.
+	console.log('+---------------------------------------');
+	console.log('.');
 	console.log('+----- ' + v_evt.type + ' event --------');
 	console.log('| ( ' + v_x + ', ' + v_y + ' )');
 	console.log('| pointerType: ' + v_evt.pointerType);
@@ -2231,6 +2220,32 @@ GraFlicImage.prototype.getMouseCalibratedXY = function(v_evt){
 	console.log('| width: ' + v_evt.width);
 	console.log('| width: ' + v_evt.height);
 	*/
+	if(v_evt.pressure === undefined){
+		//Note that there is some inconsistency on what force/pressure defaults to if pressure sensitive input could not be detected. PointerEvent supporting things seem to set pressure to 0.5 if no pressure input found. Some things might set force or pressure to 1.0 if no pressure input is found. Force may be this way because according to the spec, it needs to have a certain amount of force to trigger a 'force click'.
+		var fObj = v_touch ? v_touch : v_evt;//Try to get it off of the touch if this is a touch event. Check event root if no touches available.
+		//console.log('| touch~ force?: ' + fObj.force + ' wk-force?: ' + fObj.webkitForce);
+		if(fObj.force !== undefined){//TODO: implement solution for browsers that support force instead of PointerEvent pressure
+			v_evt.pressure = fObj.force;
+		}else if(fObj.webkitForce !== undefined){//Some browsers may have this instead of .pressure.
+			v_evt.pressure = fObj.webkitForce;
+		}
+		if(v_evt.pressure === undefined){//If still undefined after all of that, then there are not force-sensitive events available, set in the middle at 0.5
+			//console.log('no pointer event available');
+			v_evt.pressure = 0.5;//If browser does not support PointerEvent/pressure, set it to the default in the middle.
+		}else{//If .force did set the pressure, then it may have used some defaults that need to be adjusted.
+			if(v_evt.pressure == 0){//Make it default to 0.5 instead of 0.
+				//If the force is at absolute 0, then nothing is pressed down and it would not be active. This is either a hovering mousemove (which would not do anything drawing anyways) or it is a pressed down mouse move, but is defaulting to 0.
+				v_evt.pressure = 0.5;
+			}else if(v_evt.pressure == 1 && (v_evt.type == 'mousedown' || v_evt.type == 'mouseup') ){
+				//An initial state at mousedown would not start at 100% pressure, it would start lower pressure and get more as pressed down more.
+				//A final state at mouseup would not be at 100%, it would be decreasing in force as the touch/pen is lifted and finally no longer touching.
+				//This looks to be an emulated default value for force, set it in the middle at 0.5
+				v_evt.pressure = 0.5;
+			}
+		}
+		//console.log('| force-pressure: ' + v_evt.pressure);
+	}
+
 
 	//console.log(v_evt.pressure);
 	return [v_x, v_y];
@@ -2712,7 +2727,8 @@ GraFlicImage.prototype.fileSelectLoadedHandlerUnbound = function(){
 };
 GraFlicImage.prototype.loadFromU8A = function(v_u8a){
 	this.a.revokeAll();
-	this.a = new GraFlicArchive(v_u8a);
+	var paramzGA = {"mime":"image/x.graflic", "extension":"graflic"};
+	this.a = new GraFlicArchive(v_u8a, paramzGA);
 	this.a.onImageLoaded = GraFlicImage.onImageLoaded.bind(this);//Check if an image embed loads and do a redraw with the available image.
 	//Ensure s.json (save) and m.json (metadata) essential configuration files are reconstituted and live from the beginning.
 	this.save = this.a.f('s.json').j;//Link to the file's live JSON property

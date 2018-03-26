@@ -341,7 +341,9 @@ Uint8Arrays of raw data will be compressed as they are.
 */
 GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 	/*
-	blobMimetype will default to 'application/zip'. Many filetypes are just .zip with a different extension and mimetype.
+	Many filetypes are just .zip with a different extension and mimetype.
+	However, if using zip mime, some systems will download the file and extract it into a folder instead of keeping it as a single archive file, which can confuse users and they would have to manually repackage it to load it and restore their project.
+	blobMimetype will default to the very general 'application/octet-stream' (This will mostly be used for ZIP-based formats, but if wanting to just make a ZIP archive, GraFlicArchive can be initialized with mime 'application/zip')
 	A custom mimetype string can be specified, or an object with .type set to the mimetype can be sent that will be sent to the BLOB constructor. (Type is currently the only commonly used parameter in building blobs, but that functionality is there if more are added later.)
 	archiveFormat is currently unused. If more archive formats are ever supported it could accept strings like 'zip' or 'tar.gz'.
 	
@@ -695,7 +697,7 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 //Comment (Not written, comment length set to 0.)
 	//-----------------------------------------
 	
-	var blobParams = {'type':'application/zip'};//params for createObjectURL
+	var blobParams = {'type':'application/octet-stream'};//params for createObjectURL
 	var arcJ = this.f('z.json').j;
 	if(arcJ && arcJ.mime && (typeof arcJ.mime) === 'string'){//z.json will usually be present and may have had a mime type configured there.
 		blobParams.type = arcJ.mime;
