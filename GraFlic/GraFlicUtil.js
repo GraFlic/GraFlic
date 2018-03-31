@@ -711,7 +711,11 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 		}
 	}
 	this.b = URL.createObjectURL( new Blob([v_oct], blobParams) );
-	return this.b;
+	var blobRes = {};//Return an Object that contains the (o)ctet stream, the (b)lob link, and (m)ime type.
+	blobRes.b = this.b;
+	blobRes.o = v_oct;
+	blobRes.m = blobParams.type;//mime type
+	return blobRes;
 };//end GraFlicArchive.saveBLOB()
 GraFlicArchive.archives = [];//A list of archives that have been loaded into memory. Useful for getting a file from any archive that has the path to it.
 GraFlicArchive.getFileFromAny = function(fPath){

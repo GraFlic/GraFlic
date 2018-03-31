@@ -191,6 +191,12 @@ function GraFlicImage(v_fromArchive, v_params){
 
 
 	//hook up events
+
+	this.cvM.addEventListener('touchstart', this.tsDown.bind(this));//multitouch scrolling only, will not interfere with pointer events.
+	this.cvM.addEventListener('touchmove', this.tsMove.bind(this));
+	this.cvM.addEventListener('touchend', this.tsUp.bind(this));
+	
+
 	//TODO: parameter to turn this off if only playback, not drawing is wanted.
 	this.cvM.style.touchAction = 'none';//Stop drawing from scrolling the page.
 	//PointerEvent inherits from MouseEvent, so everything mouse has pointer has, plus pressure.
@@ -206,6 +212,9 @@ function GraFlicImage(v_fromArchive, v_params){
 	this.cvM.addEventListener('mousedown', this.mDown.bind(this));
 	this.cvM.addEventListener('mousemove', this.mMove.bind(this));
 	this.cvM.addEventListener('mouseup', this.mUp.bind(this));
+	
+	//Prevent context menu on the drawing canvas. Context menus interfere with stylus functionality.
+	this.cvM.addEventListener('contextmenu', evt => evt.preventDefault() );
 
 	//NOTE: Touch events have been conflicting with pen events creating too duplicate events that mess up the drawing path. With preventDefault mouse and pointer events seem to not conflict with eachother. MouseEvents will log as firing, but only MouseMove when the pen is up and no no PointerEvents are happening. These MouseMoves of course do nothing because they are hovers and isDragging has been unset by the PointerUp.
 	
@@ -466,13 +475,24 @@ GraFlicImage.prototype.initBitmapGeneral = function(v_excludeFromArchive, initX,
 	return v_initB;
 };
 GraFlicImage.prototype.initBitmapWAIFU = function(v_excludeFromArchive, initX, initY, initW, initH){
-	//Creates a bitmap in the WAIFU (Wire Alpha / Index, Fill, Unallocated) format.
-	//W is more distinguishable than L for line in lowercase. l can be confused with number 1 or uppercase i(I).
-	//Wire like the Wire-looking effects when in stained glass view with the fills partially transparent for analysis and to guide by surrounding animation frames.
-	//Each channels is in a separate array. Wire Alpha, Wire Index, and Fill (indexed, no alpha) are initially allocated.
-	//Supporting channels are initially unallocated, but may be added as needed. Currently not implemented yet.
-	//Supporting channels would be used for assigning things like gradients or textures to assign to an index.
-	//Other types of bitmaps like traditional RGBA could be added later, but WAIFU is the focus for now to handle the cell-based graphics that Animated PNGs are good at.
+	/* Creates a bitmap in the WAIFU (Wire Alpha / Index, Fill, Unallocated) format.
+	W is more distinguishable than L for line in lowercase. l can be confused with number 1 or uppercase i(I).
+	Wire like the Wire-looking effects when in stained glass view with the fills partially transparent for analysis and to guide by surrounding animation frames.
+	Each channels is in a separate array. Wire Alpha, Wire Index, and Fill (indexed, no alpha) are initially allocated.
+	Supporting channels are initially unallocated, but may be added as needed. Currently not implemented yet.
+	Supporting channels would be used for assigning things like gradients or textures to assign to an index.
+	Other types of bitmaps like traditional RGBA could be added later, but WAIFU is the focus for now to handle the cell-based graphics that Animated PNGs are good at.
+	If the alpha or index goes 16-bit this is how it will allocate the unallocated data needed:
+	b/1/1i.dat.gz will always contain the low bits, b/1/1i2.dat.gz would now contain higher bits (taken times 0x100) to support color indices over 255. Since the addition of a new color over the 255 range would be adding this the newly added extended index files could be initialized to all zeroes.
+	Repeat for higher bytes b/1/1i3.dat.gz, b/1/1i4.dat.gz.
+	Allocating extra alpha precision would work similarly, but b/1/1a2.dat.gz would become the lower byte. The newly allocated channel would add more fine precision. 140 would stay 140, but the lower byte would be added. Pixels currently with alpha below 0x80 would have the finer precision byte initialized to 0(keep fully transparent areas transparent), otherwise they would be initialized to 0xFF(keep fully opaque areas opaque).
+	Unallocated Special Drawing Channels could be allocated as needed. They would follow the byte-expanding scheme of indices if they need a higher value range.
+	Color objects could be defined as type 'gradient' or 'texture'
+	If it is a gradient type it would then look up the gradient scale position in b/1/1ig.dat.gz / b/1/1ig2.dat.gz for wire index.
+	TODO: in addition to plays_on_frames, there needs to be 'clip' objects. The frames will be assigned to a certain clip. This allows images and things to be reused to make similar animations within the same image, but by playing a different clip it will alter what is played.
+ 	there should be functions to swap between clips or palettes during playback time.
+	*/
+	//----------------------------------------------------------------------------------------------
 	var v_initB = this.initBitmapGeneral(v_excludeFromArchive, initX, initY, initW, initH);
 	v_initB.type = 'WAIFU';
 	//NOTE: These could be switched to Uint8ClampedArray if issues are encountered. So far there have not been problems and Clamped might have extra overhead.
@@ -1180,7 +1200,9 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 			for(v_i = 3;v_i < this.curStroke.length;v_i += 3){
 				strokeX = this.curStroke[v_i];
 				strokeY = this.curStroke[v_i + 1];
-				pointPScale = this.curStroke[v_i + 2] / 2;//Shape loops around each side of the stroke points, sticking out half each side. 
+				pointPScale = this.curStroke[v_i + 2];//Shape loops around each side of the stroke points,
+					//The old way  ( / 2 ) was sticking out half each side. 
+					//Now 0.5 will be at the full width, and 1.0 will be double the width due to extra pressure.
 					//Will push out half the amount on each side to span the whole amount symmetrically.
 				if(firstIter){firstIter = false;}//TODO: some things that only apply to first point.
 				wAngle = GraFlicImage.angleBetween(lastX, lastY, strokeX, strokeY);
@@ -2184,6 +2206,7 @@ GraFlicImage.prototype.getMouseCalibratedXY = function(v_evt){
 	//the XY needs to be adjusted to where it would relate to on the canvas coordiantes
 	//NOTE: If canvas is not on positioned 0,0 in the DOM the X/Y might have to have the position X/Y subtracted...
 	var cScale = this.cvM.clientWidth/this.cvM.width;
+	//v_evt.graflic_cScale = cScale;
 	//alert(this.cvM.parentNode.offsetX + ', ' + this.cvM.scrollX);
 	v_evt.preventDefault();//Prevent both a mouse and touch from firing at the same time.
 	var v_x;//If mouse, not touch, use the x/y on the mouse event
@@ -2207,8 +2230,8 @@ GraFlicImage.prototype.getMouseCalibratedXY = function(v_evt){
 	}
 	/*
 	//Extended analysis of stylus/draw events.
-	console.log('+---------------------------------------');
-	console.log('.');
+	//console.log('+---------------------------------------');
+	//console.log('.');
 	console.log('+----- ' + v_evt.type + ' event --------');
 	console.log('| ( ' + v_x + ', ' + v_y + ' )');
 	console.log('| pointerType: ' + v_evt.pointerType);
@@ -2219,7 +2242,10 @@ GraFlicImage.prototype.getMouseCalibratedXY = function(v_evt){
 	console.log('| pointerId: ' + v_evt.pointerId);
 	console.log('| width: ' + v_evt.width);
 	console.log('| width: ' + v_evt.height);
+	console.log('| button: ' + v_evt.button + ' buttons: ' + v_evt.buttons);//button(s) might only apply to pen pointer, not sure if touches have 'buttons'.
 	*/
+	
+	
 	if(v_evt.pressure === undefined){
 		//Note that there is some inconsistency on what force/pressure defaults to if pressure sensitive input could not be detected. PointerEvent supporting things seem to set pressure to 0.5 if no pressure input found. Some things might set force or pressure to 1.0 if no pressure input is found. Force may be this way because according to the spec, it needs to have a certain amount of force to trigger a 'force click'.
 		var fObj = v_touch ? v_touch : v_evt;//Try to get it off of the touch if this is a touch event. Check event root if no touches available.
@@ -2260,6 +2286,7 @@ GraFlicImage.prototype.isStrokeBasedVariableWidthTool = function(){
 	return this.isStrokeBasedTool() && this.curTool != GraFlicImage.TOOL_CUT_LASSO;
 };
 GraFlicImage.prototype.mDown = function(v_evt){
+	if(this.isScrolling){return;}//Scrolling instead of drawing/editing.
 	var v_calXY = this.getMouseCalibratedXY(v_evt);
 	var v_x = v_calXY[0];
 	var v_y = v_calXY[1];
@@ -2286,8 +2313,13 @@ GraFlicImage.prototype.mDown = function(v_evt){
 	this.dragCurX = v_x;//Must be updated here, or things that use cur - prev will break.
 	this.dragCurY = v_y;
 	this.isDragging = true;
+	/*if(v_evt.type == 'pointerdown' && v_evt.button == 2){//pen touching with barrel button pressed.
+		//This is a 'context' down not a normal down that would be used for drawing.
+		this.notDrawing = true;
+	}*/
 };
 GraFlicImage.prototype.mMove = function(v_evt){
+	if(this.isScrolling){return;}//Scrolling instead of drawing/editing.
 	var v_calXY = this.getMouseCalibratedXY(v_evt);
 	var v_x = v_calXY[0];
 	var v_y = v_calXY[1];
@@ -2295,12 +2327,16 @@ GraFlicImage.prototype.mMove = function(v_evt){
 	this.dragPrevY = this.dragCurY;
 	this.dragCurX = v_x;
 	this.dragCurY = v_y;
-	
 	if(this.isDragging){//========================================================
 	this.minRegionX = Math.min(v_x, this.minRegionX);//keep track of what region has been dragged over.
 	this.minRegionY = Math.min(v_y, this.minRegionY);
 	this.maxRegionX = Math.min(this.save.canvas_width, Math.max(v_x, this.maxRegionX));
 	this.maxRegionY = Math.min(this.save.canvas_height, Math.max(v_y, this.maxRegionY));
+	
+	//Experimental, not reliable, and specific to pen input.
+	//if(v_evt.type == 'mousemove' && v_evt.button == 2){//Pen barrel button pressed.
+	//}
+	
 	if(this.curImage.type == 'WAIFU'){
 		if(this.isStrokeBasedTool() && this.curStroke.length){//pen (do not extent until the wire is started with one x,y coord from mousedown.)
 			//cut should only make the stroke if there is no cut BMP yet, otherwise it should drag the existing one.
@@ -2338,6 +2374,7 @@ GraFlicImage.prototype.mMove = function(v_evt){
 	}//======================= end isDragging ==========================
 };
 GraFlicImage.prototype.mUp = function(v_evt){
+	if(this.isScrolling || !this.isDragging){return;}//Scrolling instead of drawing/editing, or dragging was turned off mid-move by scrolling disruption.
 	var v_calXY = this.getMouseCalibratedXY(v_evt);
 	var v_x = v_calXY[0];
 	var v_y = v_calXY[1];
@@ -2404,6 +2441,67 @@ GraFlicImage.prototype.mUp = function(v_evt){
 	this.isDragging = false;
 };
 
+GraFlicImage.prototype.antiScrollCollide = function(v_evt){
+	this.isScrolling = (v_evt.touches.length > 1);
+	if(this.isScrolling){//Any dragging(used for drawing) is now blocked if multiple touches down. Reset the tool state to inactive so that any drawing started gets discarded because this is now a scroll action instead.
+		this.isDragging = false;
+		this.curToolState = GraFlicImage.TOOL_STATE_STOP;
+	}
+	if(v_evt.touches.length == 2){
+		this.pinchCurD = Math.hypot(v_evt.touches[0].pageX - v_evt.touches[1].pageX, v_evt.touches[0].pageY - v_evt.touches[1].pageY);
+		if(!this.pinchPrevD){
+			this.pinchPrevD = this.pinchCurD;
+			var styleWidth = this.cvM.width;
+			if(this.cvM.style.width){
+				var styleMatch = this.cvM.style.width.match(/([0-9\.]+)px/i);
+				if(styleMatch){
+					styleWidth = Math.round(parseFloat(styleMatch[0]));
+				}
+			}
+			this.pinchBaseScale = styleWidth / this.cvM.width;
+		}
+	}else{
+		this.pinchPrevD = false;
+	}
+};
+GraFlicImage.prototype.tsDown = function(v_evt){
+	v_evt.preventDefault();
+	this.scrollCurX = v_evt.touches.item(0).clientX;
+	this.scrollCurY = v_evt.touches.item(0).clientY;
+	this.antiScrollCollide(v_evt);
+};
+GraFlicImage.prototype.tsMove = function(v_evt){//support only scrolling via touch if PointerEvents available.
+	v_evt.preventDefault();//Prevent mobile page zooms, etc
+	this.scrollPrevX = this.scrollCurX;
+	this.scrollPrevY = this.scrollCurY;
+	this.scrollCurX = v_evt.touches.item(0).clientX;
+	this.scrollCurY = v_evt.touches.item(0).clientY;
+	this.antiScrollCollide(v_evt);
+	if(this.isScrolling){//multiple fingers, scroll instead of draw.
+		//It seems that both pointermove and mousemove fire for 'hovers' mousemove can more reliably get the context button state.
+		//Some trackpads my not have button/buttons set possibly because they are buttonless trackpads.
+		//must have parentNode to be in DOM and firing events.
+		//console.log('scroll pen S ' + this.cvM.parentNode.scrollLeft);
+		//console.log('out  ' + ((this.dragCurX - this.dragPrevX)) );
+		//Note: this would break when trying to have pen button scroll, because mouse and pointer moves happen and the difference ends up being zero due to being modified by the previous event.
+		this.cvM.parentNode.scrollLeft -= (this.scrollCurX - this.scrollPrevX);//Round not needed here and may wipe small values.
+		this.cvM.parentNode.scrollTop -= (this.scrollCurY - this.scrollPrevY);
+		//console.log('scroll pen E ' + this.cvM.parentNode.scrollLeft);
+		if(v_evt.touches.length == 2){
+			var zoomedScale = this.pinchBaseScale + (this.pinchCurD - this.pinchPrevD) * 0.005;
+			this.cvM.style.width = Math.round(zoomedScale * this.cvM.width) + 'px';
+			this.cvM.style.height = Math.round(zoomedScale * this.cvM.height) + 'px';
+		}
+	}
+};
+GraFlicImage.prototype.tsUp = function(v_evt){
+	v_evt.preventDefault();
+	this.scrollCurX = v_evt.touches.item(0).clientX;
+	this.scrollCurY = v_evt.touches.item(0).clientY;
+	//this.scrollPrevX = v_evt.touches.item(0).clientX;
+	//this.scrollPrevY = v_evt.touches.item(0).clientY;
+	this.antiScrollCollide(v_evt);
+};
 
 GraFlicImage.prototype.commitCutMove = function(){
 	//This will merge the cut BMP onto the current BMP.

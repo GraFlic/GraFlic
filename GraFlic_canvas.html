@@ -1143,6 +1143,21 @@ function f_zoomChange(v_evt){
 	GraFlicC_main_canvas.style.width = (GraFlicC_main_canvas.width * v_zoomPercent) + 'px';
 	GraFlicC_main_canvas.style.height = (GraFlicC_main_canvas.height * v_zoomPercent) + 'px';
 }
+function f_zoomMut(muts){
+	for(var mut of muts){
+		if(mut.type == 'attributes'){
+			if(mut.attributeName == 'style'){
+				//canvas style width change
+				var widthNow = parseFloat(GraFlicC_main_canvas.style.width.match(/([0-9\.]+)px/i)[0]);
+				var zoomTxt = Math.round((widthNow / GraFlicC_main_canvas.width) * 100);
+				var zoomRng = zoomTxt - (zoomTxt % 5);
+				GraFlicC_zoom_rng.value = zoomRng;
+				GraFlicC_zoom_txt.value = zoomTxt.toString();
+				//console.log('mut zoom ' + zoomNow + ' /% ' + zoomRng);
+			}
+		}
+	}
+}
 function f_penWidthChange(v_evt){
 	v_curGraFlic.penWidth = parseFloat(v_evt.target.value);
 	if(isNaN(v_curGraFlic.penWidth) || v_curGraFlic.penWidth < 0.1){
@@ -1362,8 +1377,14 @@ function f_init(){
 	GraFlicC_embed_del_file_btn.addEventListener('click', f_embedDelFile);
 	GraFlicC_new_image_embed_btn.addEventListener('click', f_embedNew);
 	//----------------------------------------------
+
+	var zObs = new MutationObserver(f_zoomMut);//Mutation observer to observe touch zoom. That way this UI can remain separate from the class.
+	zObs.observe(GraFlicC_main_canvas, {"attributes":true});
+
+	//-------------------
 	
 	//################### now do stuff that resets when a new image is started ##############
+	//TODO: move this section to a 'new image' function that clears the current image and makes a new blank one.
 	var v_params = {};
 	v_params.canvasPlayback = GraFlicC_main_canvas;
 	v_params.canvasPreviewFrame = GraFlicC_mini_canvas;
