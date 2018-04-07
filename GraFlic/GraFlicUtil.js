@@ -74,6 +74,7 @@ function GraFlicArchive(zipDataUint8, paramz){
 		*/
 	if(!zipDataUint8){
 		//If called without a binary ZIP to load, make a blank GraFlicArchive that can be filled with files programmatically and saved.
+		/*
 		var paramApps = undefined;
 		if(paramz.app){//Single app string, convert to array for z.json
 			paramApps = [paramz.app];
@@ -81,7 +82,10 @@ function GraFlicArchive(zipDataUint8, paramz){
 		if(paramz.apps){
 			paramApps = paramz.apps;//.apps plural sent should be sent as array
 		}
-		this.addMetaZIP(paramz.mime, paramz.extension, paramApps);
+		//Note that these extra parameters and logic may not be needed. It may be better to just set the properties of the z.json object after the GraFlicArchive is initialized to match what the given software or format needs. This would simplify the constructor. Falling back to the generic application/octet-stream type will probably not be devastating if properties are not customized after creation.
+			//paramz.mime, paramz.extension, paramApps);
+		*/
+		this.addMetaZIP();
 		return;
 	}
 //Note when reading, other ZIP builders may insert data descriptor after local file header and payload, which apparently may or may not use a signature...
@@ -195,8 +199,8 @@ function GraFlicArchive(zipDataUint8, paramz){
 			if(v_filename.match(/(^|\/)z\.json$/)){
 				console.log('.-.-.-.-.z.json type validator.-.-.-.-.-.');
 				zj = this.f(v_filename).j;
-				if(zj.signature == 'z.json archive metadata'){//longish strong signature to prevent collision if other files happen to be named 'z.json' in other archives for other purposes.
-					console.log('confirmed to be type validator z.json v' + zj.version);
+				if(zj.z_signature == 'z.json metadata'){//verify it is for this purpose
+					console.log('confirmed to be type validator z.json v' + zj.z_version);
 					var partsZJ = v_filename.match(/^(.*\/)z\.json$/);//detect a bloat folder if packaging mistake was made.
 					if(partsZJ && partsZJ[1] && partsZJ[1].length){
 						bloatFolder = partsZJ[1];
@@ -357,11 +361,11 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 	//TODO: include? zRes.d - The octet stream of the raw data. Maybe not because it does not need to usually be analyzed directly until loaded again via .loadFromZIP()
 	
 	var zipJ = this.f('z.json');
-	if(zipJ && zipJ.j && zipJ.zj){//If has the standard z.json general file metadata, update the modified date.
-		zipJ.j.modified = performance.now();
+	if(zipJ && zipJ.j && zipJ.j.z_signature == 'z.json metadata'){//If has the standard z.json general file metadata, update the modified date.
+		zipJ.j.modified = GraFlicUtil.getMicrosecondsTimestamp();
 	}
 	
-	//This format should be ZIP based and even keep the .zip extension. Custom extensions without a widely known mime-type have a hard time being handled correctly for download in the various browsers. This also tells users, they can extract it, analyze it, edit it, replace files, and rebuild the zip to do things like replace embedded images or edit the JSON directly. Typically only advanced users would do this, but it is good to have as an option.
+	//By making a file ZIP-based, users can extract it, analyze it, edit it, replace files, and rebuild the zip to do things like replace embedded images or edit the JSON directly. Typically only advanced users would do this, but it is good to have as an option.
 	//ZIP uses little-Endian for all values, unless specifically said otherwise.
 	//Zip version needed is 2.0, supports DEFLATE compression and folders.
 	var v_saveLen = 22;//(End of Central Directory length)
@@ -442,6 +446,7 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 		
 		curFileUncompressedSize = curFilePayload.length;//save size before the Deflate.. (however, be sure to do this after logic so .gz has the correct original size, not size before internal gz compression)
 		//The simplest way to pick what to compress or store is just compress it and if the compressed results are not better, just store.
+		//Images ought to have their own internal compression, however if the implementation that encoded that image was inefficient or poorly optimized it may still benefit from compression. Something like inserting a large metadata entry but not compressing it could have bloated the size.
 		if(curFilePayload.length){
 			var compressedPayload = window.pako.deflateRaw(curFilePayload, v_pakoDO);
 			if(compressedPayload.length < curFilePayload.length){
@@ -817,7 +822,7 @@ GraFlicArchive.prototype.revokeArchiveFile = function(){
 		URL.revokeObjectURL(this.b);
 	}
 };
-GraFlicArchive.prototype.addMetaZIP = function(mime, ext, apps){
+GraFlicArchive.prototype.addMetaZIP = function(){
 	//If more vast params added, could check to see if first param is an object and use the properties of that and ignore other params, to make more flexible.
 	/*
 	Will use the file 'z.json'. ZIP is synonymous with archive, so it is broad enough to encompass other archive formats if more are supported in the future. However, ZIP 2.0 is the ubiquitous standard for archive-based file formats, so the focus will be on ZIP. Also, needs to support ZIP specific issue ZIP Epoch. Even though newer archive formats , for an archive-based file format it is of less importance. Allot of the files being packed into the archive like images have their own internal compression anyways.
@@ -828,34 +833,237 @@ GraFlicArchive.prototype.addMetaZIP = function(mime, ext, apps){
 	'z.json' is used because it is short and tells that it is in standard JSON format. (file headers and central directory with file paths are uncompressed in ZIP) zip.json or zip_file.json could be used as alternates if a file has a z.json that does something else.
 	The focus of this spec is to give details about the file and how to open it or what to do with it. There are many ZIP-based/Archive-based formats and systems may not have software already installed to deal with them. It does not need to give an in-depth description of the file contents, the file design itself ought to do that it its own metadata if needed.
 	It contains properties that can be used to find/verify the type of file and in some cases, resolve conflicts with similar files.
-		----- z.json 1.0 (draft March 14th, 2018) -----
-	.zj         - The version of the z.json spec (will be higher than 1.0 if more features are added later.) This is a float, though JSON serializers will strip off .0 if nothing after decimal point.
-	.mime       - The MIME type that should be associated with this file.
-	.extension  - The file extension that should be associated with this file. (Sometimes files get renamed/repackaged to .zip or the extension gets deleted or changed otherwise.)
-	.name       - (optional) The full original name of the file including extension of the ZIP-based file. The filename may be lost if the file contents are sent through a stream without metadata, or may be renamed by a user or program. The separate extension property unambiguously clarifies what the extension is. Some files have multiple dots.
-	.apps       - (optional, but recommended especially for non-mainstream types) An array of objects with info about supporting apps, in order of priority. 
-	.zipoch     - (optional) ZIP Epoch, an integer that can help extend the range of the MS-DOS date time format which cannot go past 2107.
-		ZIP files have an epoch of 1980 and only a 0-127 year range in the date-time format used in ZIP file entries. Other timestamps elsewhere may be based on seconds or microseconds since *NIX epoch (Midnight January 1st, 1970).
-		If it is not past 2107 yet, this should probably be left undefined.
-		If defined, the ZIP-stored date time will be interpreted differently by supporting unpackagers.
-		In that case the date time year value will be interpreted as 'years since [.epoch integer value]'.
-		BC time could be represented with a negative number. This would be useful if archaeologists uncover pre-historic computers with files on them and those files are added to an archive.
-		Note that for this to work with no loss of date-time information, all files stored in the ZIP archive must have all date-times that are within a 128 year span.
-	  ----- timestamps (in modern timestamp format(unlike ZIP date-times), microseconds(1,000,000ths) since January 1st, 1970) -----
-			JSON does not limit integer size, but readers may have their limits
-	.created    - The date that the ZIP-based file was created. When unpacking and repacking together a ZIP after modifying the contained files, the creation date in the filesystem of the new .zip may be set to when it was repackaged, not when the original file was actually created.
-			The .created property can be used in some cases to resolve conflicts with similar files that have the same internal IDs. If one file is associated with another based on an internal ID, and multiple files are located with the same ID, it the file also has the created timestamp to go with the ID for the file it is associated with, it can compare the ID and the timestamp to find the most likely match. For example, the Deckromancy program uses this system to locate the card maker environment that a .card was created with and load it to be able to reconstruct the card.
-	.modified   - (optional) The date that the ZIP-based file was modified. Unlike .created, when a ZIP is repackaged the modified is usually updated by whatever software packages it or the OS filesystem itself. However, when uploaded to a website or such, the receiving site may or may not set the modified date correctly. Note that when manually packaging a ZIP based file this will not get updated unless the usr updates it manually. Can be used if file received as an octet-stream with no filesystem info like timestamps.
+
+------- z.json 1.0 (draft April 6th, 2018) 80-width/terminal-compatible -------
+
+z.json is a simple, easy to ready, JSON file that describes properties general
+enough to apply to any file, or any file of a broad type media such as images.
+The JSON format makes it easy to use in javascript-based apps via JSON.parse().
+A growing number of powerful javascript/HTML5 web-apps are now emerging.
+JSON is also widely supported on other platforms and easily human-readable if
+viewed as plain text.
+
+This lightweight design makes it easy for developers to make software
+interoperable with the JSON-based metadata rather than having to add huge
+overhead or a sprawling patchwork of dependencies to their code to read and
+write to a highly complicated structure.
+Overly complicated structures are like using a space-age cybernetic robot arm
+as a eating utensil instead of just using fork.
+
+z.json can be used for type resolution, archive-root resolution, and
+collision resolution.
+
+Magic numbers are not an option for ZIP-based files. You could put a specific
+file with a specific name at the start of the ZIP to act as a Magic Number, but
+if the archive gets unpackaged, edited, and packaged with other archiving
+software, it will put the files in any order it chooses, so that would be
+unreliable and subject to being altered. Using a ZIP extra field as a magic
+number would be even more unreliable because they will almost certainly be lost
+if the archive is unpackaged onto a filesystem. Many ZIP archivers support few,
+if any, extra fields.
+
+Root resolution will fix a common packaging mistake by looking for the z.json
+root location.
+Due to the wonky, unintuitive way that packaging is typically handled, users
+will often right-click the folder and archive the folder rather than select and
+archive folder contents, resulting in files being buried in a redundant folder.
+If they select the files and do it the right way, then the archive will be
+built correctly, but can end up in the same folder as the contained files on
+the filesystem, which is also awkward...
+
+Any non-general app-specific or vendor-specific metadata ought to be stored by
+the app elsewhere, probably in another JSON file. There is not much that can be
+ascertained from such properties unless the reader is specifically designed
+with knowledge of a specific type of file format.
+
+This is primarily designed for formats that are based on ZIP or other Archive
+formats, but it could be inserted into other types of files IF REALLY NEEDED.
+For example a custom sub-chunk wrapped within the "INFO" chunk in RIFF-based
+formats.
+A 4-byte ASCII code for RIFF should be: "ZJSN"
+A variable-length string identifier or chunk tag should be: "z.json"
+(For example writing it as an "iTXt" PNG chunk.)
+
+Usually, the standard PNG "tEXt" chunks are enough to handle what is actually
+needed in a final PNG file.
+For RIFF-based formats such as WebP, metadata needs can in most cases be met
+with standard "INFO" sub-chunks such as: "ICMT" (Comment), "IART" (Artist),
+"ISFT" (Software created by), "ICOP" (Copyright), "IDPI" (DPI), "INAM" (Title),
+and others.
+
+All properties are optional except: .z_signature
+Always do a simple is-defined test to see if the property is defined, or do a
+for-in loop to process the properties when reading programatically.
+
+.z_signature    - (required) always equal to "z.json metadata"
+This is a longish strong signature to prevent collision if other files happen
+to be named 'z.json' in other archives for other purposes.
+
+.z_version      - The version of the z.json spec (will be higher than 1.0 if
+more features are added later.) This is a float, though JSON serializers will
+strip off .0 if nothing after decimal point.
+The version is just a hint. Always do is-defined checking and look for desired
+properties.
+
+.mime           - The MIME type that should be associated with this file.
+
+.extension      - The file extension that should be associated with this file.
+(Sometimes files get renamed/repackaged to .zip or the extension gets deleted
+or changed otherwise.)
+
+.name           - The full original name of the file including extension of
+the ZIP-based file. The filename may be lost if the file contents are sent
+through a stream without metadata, or may be renamed by a user orprogram. The
+separate extension property unambiguously clarifies what the extension is.
+Remember that some files have multiple dots.
+
+.apps           - An array of objects with info about supporting apps, in order
+of priority. Recommended for non-mainstream types.
+
+.zipoch         - ZIP Epoch, an integer that can help extend the range of the
+MS-DOS date time format which cannot go past 2107. ZIP files have an epoch of
+1980 and only a 0-127 year range in the date-time format used in ZIP file
+entries. If it is not past 2107 yet, this should probably be left undefined.
+If defined, the ZIP-stored date time will be interpreted differently by
+supporting unpackagers. In that case the date time year value will be
+interpreted as 'years since [.zipoch integer value]'.
+Note that ZIP MS-DOS date times are based on UTC - 5. (U.S. Eastern Time)
+BC time could be represented with a negative number. This would be useful
+if archaeologists uncover pre-historic computers with files on them and those
+files are added to an archive. This is for the times stored in the ZIP file
+headers, not those in this JSON file.
+
+Note that for this to work with no loss of date-time information, all files
+stored in the ZIP archive must have all date-times that are within a 128 year
+span.
+
+Timestamps in z.json may be based on milliseconds since *NIX epoch
+(Midnight January 1st, 1970). There may be thousandths of a millisecond
+precision after the decimal point.(microseconds)
+JSON does not limit integer size, but readers may have their limits.
+
+.created        - The date that the ZIP-based file was created. When
+unpacking and repacking together a ZIP after modifying the contained files, the
+creation date in the filesystem of the new .zip may be set to when it was
+repackaged, not when the original file was actually created.
+
+The .created property can be used in some cases to resolve conflicts with
+similar files that have the same internal IDs. If one file is associated with
+another based on an internal ID, and multiple files are located with the same
+ID, it the file also has the created timestamp to go with the ID for the file
+it is associated with, it can compare the ID and the timestamp to find the most
+likely match. For example, the Deckromancy program uses this system to locate
+the card maker environment that a .card was created with and load it to be able
+to reconstruct the card.
+
+.modified       - The date that the ZIP-based file was modified.
+Unlike .created, when a ZIP is repackaged the modified is usually updated by
+whatever software packages it. However, when uploaded to a website or such, the
+receiving site may or may not set the modified date correctly. Note that when
+manually packaging a ZIP based file this will not get updated unless the user
+updates it manually. Can be used if file received as an octet-stream with no
+filesystem info like timestamps.
+
 		(note that defining a .accessed does not make sense. Files do not usually get written to when they are accessed, just when they are created or modified. An accessed property would not be reliable.)
 		Defining other attributes like owner and permissions does not currently seem to make sense either, since it will not change the actual permissions of the ZIP-based file and who can do what with it.
-	.protocols   - (optional, undecided on and experimental, may be moved to within .apps which can represent specific apps or generic app types) Ana array of protocol string teplates that can be used to build a URL to attempt to launch in a supporting app that is registered to handle the protocol, in order of priority.
-			Include a string with the 'protocol_string' and %p for where the path to the file goes, and anything else that might be needed in the protocol URL. Example: 'protocol_string:%p' or 'protocol_string://%p&param=x'. (use p for path to file, a-f are valid %AF hex escapes in a URL)
-			A website could use this to generate protocol links for files that should launch in specific programs
-	.locales     - (optional) An associative object that can add locale-specific overrides to properties (mostly used for .app suggest app name/type of app description phrase) Use pattern "locales":{"de-DE":{"app": "Deutsch String"}} to localize things.
-	.locale      - A BCP47 string such as "ja-JP". Tells what locale language-sensitive strings on the root of the object should be treated as.
+
+***experimental***
+.protocols            - (optional, undecided on and experimental, may be moved to within .apps which can represent specific apps or generic app types) Ana array of protocol string teplates that can be used to build a URL to attempt to launch in a supporting app that is registered to handle the protocol, in order of priority.
+	Include a string with the 'protocol_string' and %p for where the path to the file goes, and anything else that might be needed in the protocol URL. Example: 'protocol_string:%p' or 'protocol_string://%p&param=x'. (use p for path to file, a-f are valid %AF hex escapes in a URL)
+A website could use this to generate protocol links for files that should launch in specific programs
+
+
+.locale         - A BCP47 string such as "ja-JP". Tells what locale
+language-sensitive strings on the root of the object should be treated as.
+
+.locales        - An associative object that can add locale-specific overrides
+to properties (mostly used for .app suggest app name/type of app description
+phrase) Use pattern this to localize things:
+"locales":{"de-DE":{"apps": [{"title":"Deutsch String"}]}}
+
+.thumbs         - An array of thumbs in this format:
+[{"file":"thumb_name.png", "width":100, "height":100}]
+Allows type-agnostic access to thumbnail images in the archive. A file browser
+or similar thing may use this to display a preview. The .file property within
+points to the location within the ZIP/archive.
+
+.images         - An array of large images if the document can be rasterized.
+The structure is the same as .thumbs. The difference is that .images is for
+files that can be rasterized and store large resolution images internally,
+rather than just some tiny images for previews. Some files might store just one
+full image. Others might store different images at different resolutions.
+
+.prefaces       - An array of objects with strings to use for a text-based
+preview in non-graphical files.
+They are wrapped in an object to stay extensible.
+A file browser can select a preface of appropriate size by examining the
+.text.length property. The format is:
+[
+ {"text":"This is a tiny preface."},
+ {"text":"This is a medium preface with more stuff!"}
+] 
+      * If there are localized thumbs, images, or prefaces, put them within
+        locale structure such as: "locales":{"es-MX":{"thumbs":[ ... ]}}
+
+.width,        - Numbers representing the width and height in pixels.
+.height        
+
+.ppm,          - Pixels per meter. A number that can be used with width and
+height to describe the physical size of a file such as an image.
+Note that an inch is 0.0254 meters if wanting to convert PPI.
+
+.title         - A non-verbose string briefly describing the file.
+This is not the file name in file systems. Feel free to use spaces, symbols and
+characters that are avoided in file names.
+
+.author        - A string containing the author of the file.
+
+.copyright     - A string to put copyright notices in.
+
+.warning       - A string with warnings such as sensitive content.
+
+.disclaimer    - A string with legal disclaimer text.
+
+.comment       - A miscellaneous comment string.
+
+.software      - The software that created this file.
+
+.duration      - The numeric duration in milliseconds for files such as videos
+or animation that have a simple duration of play.
+
+.website       - String contains a link to a website. http:// or https:// are
+not needed. Since this is a website specifically, those protocols can be
+assumed and both can be attempted.
+
+.id            - A string that is an identifier representing the file.
+Some files may reference other files that they need to retrieve information or
+assets from.
+Some formats might uses number based IDs, but in that case those are often so
+large that they would surpass the capacity that JSON readers would likely have
+for the foreseeable future and ought to be converted to a string.
+If it is a string representation of a number, it should be a normal base 10
+number string, allowing the most basic 'parseInt' logic possible to work on it.
+
+.version_needed - A numeric value representing the version of the associated
+software needed to open this file. It can be an integer or a float depending on
+how the associated software formats the version number. Some software might
+present a string as the version like "beta 0.8.2c", but usually has a number
+internally representing the version, as is the best practice.
+Doing a version >= version_needed comparison is easier and more reliable with
+numeric values.
+
+.version_used  - The same as version_needed, except this represent the version
+of the associated software that was used to create this file.
+
+.edit          - An integer representing the number of times this incarnation
+of the file has been edited.
+
+.internal_metadata - A string linking to a file within the ZIP file or archive
+that contains internal metadata specific to the format, which is not general
+enough to be included in z.json. Example: "internal_folder/m.json"
+
 	*/
-	if(!mime){mime = 'application/zip';}//default mime/extension if none specified.
-	if(!ext){ext = 'zip';}
+	
 	//The default, ZIP, is ubiquitous enough that it should be handleable with just the mime and extension, so leave .apps undefined if no specific info sent.
 	//The following is an example of an app entry:
 	/*if(!apps){
@@ -871,25 +1079,27 @@ GraFlicArchive.prototype.addMetaZIP = function(mime, ext, apps){
 	var aFile = {};
 	aFile.p = 'z.json';//z.json is always put at the root of the archive and can be read to confirm the content type.
 	aFile.j = {};
-	aFile.j.signature = 'z.json archive metadata';
-	aFile.j.version = 1.0;
-	aFile.j.mime = mime;
-	aFile.j.extension = ext;
-	aFile.j.zipoch = 1980;//optional, not really needed until 2107 (there is a 0x5455 extra field out ther that adds 'extended timestamps' but it still has the 2107 limitation, only adds created/accessed in addition to modified. It would not be reliable to assume other packagers would retain extra fields anyways.)
-	var timeNow = performance.now();//Get time in microseconds.
+	aFile.j.z_signature = 'z.json metadata';
+	aFile.j.z_version = 1.0;
+	aFile.j.mime = 'application/octet-stream';
+	aFile.j.extension = 'zip';
+	aFile.j.zipoch = 1980;//optional, not really needed until 2107 (there is a 0x5455 extra field out there that adds 'extended timestamps' but it still has the 2107 limitation, only adds created/accessed in addition to modified. It would not be reliable to assume other packagers would retain extra fields anyways.)
+	var timeNow = GraFlicUtil.getMicrosecondsTimestamp();//Get time in microseconds.
 	aFile.j.created = timeNow;
 	aFile.j.modified = timeNow;
 	//aFile.j.locale = 'en';
-	if(apps){
-		aFile.j.apps = apps;
-	}
 	this.addFile(aFile);
 	return aFile;
-	//While z.json would be at the root, an optional filetypes/ could contain things like filetypes/fext.json with the file json properties for the extension. This will help identify how to deal with uncommon file types contained within the archive. If z.json or filetypes/ is used for something else, then prefix to 0arc and increment(...3arc) until a name that is not taken is found.
+	//While z.json would be at the root, an optional filetypes/ could contain things like filetypes/fext.json with the file json properties for the extension. This will help identify how to deal with uncommon file types contained within the archive. If z.json or filetypes/ is used for something else, then prefix to 0z and increment(...3z) until a name that is not taken is found.
 };
 
 //-----------------------------------------------------------
-
+GraFlicUtil.getMicrosecondsTimestamp = function(){
+	if(window.performance && window.performance.timing && window.performance.timing.navigationStart && window.performance.now){
+		return  window.performance.now() + window.performance.timing.navigationStart;
+	}
+	return Date.now();
+};
 GraFlicUtil.RGB2HSL = function(v_srcR,v_srcG,v_srcB){
  var v_destH;var v_destS;var v_destL;
  //v_srcR/=255;v_srcG/=255;v_srcB/=255;//keep the main RGB selected a float. 48 bit color could someday be supported and 0-255 int would cause problems with that.
