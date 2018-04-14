@@ -964,8 +964,7 @@ GraFlicImage.prototype.initPaletteColorRGBA = function(v_palR, v_palG, v_palB, v
 	v_palColor.hsl = GraFlicUtil.RGB2HSL(v_palR, v_palG, v_palB);//[h, s, l] array
 	v_palColor.hsv = GraFlicUtil.RGB2HSV(v_palR, v_palG, v_palB);//[h, s, v] array
 	GraFlicImage.calcRGBAForBitDepth(v_palColor);
-	v_palColor.style = 'flat';//Currently only supports flat colors. In the future gradients or textures may be supported.
-		//TODO: change palcolor.style to .type? 'style' implies some thing like CSS
+	v_palColor.type = 'flat';//Currently only supports flat colors. In the future gradients or textures may be supported.
 	return v_palColor;
 };
 GraFlicImage.prototype.initPalette = function(){
@@ -1677,30 +1676,42 @@ GraFlicImage.prototype.drawFrame = function(v_images2DrawUnordered){
 			var fObj = this.a.f(v_bmpObj.file);
 			if(fObj){//If not there, show a 'missing' placeholder.
 				var imgDOM = fObj.i;
+				//NOTE: There may be a more efficient way to draw only where the embed-based image and updated region intersect.
+				//However, that logic is currently very buggy, so it has been switched to simplified logic for now so that it is stable.
 				//For some reason naturalWidth is not available here (Because not in DOM?), but just .width is working fine so far...
 				var nWidth = imgDOM.natuarWidth ? imgDOM.natuarWidth : imgDOM.width;
 				var nHeight = imgDOM.natuarHeight ? imgDOM.natuarHeight : imgDOM.height;
 				var eScaleX = v_bmpObj.w / nWidth;
 				var eScaleY = v_bmpObj.h / nHeight;
+				/*
 				var eSrcX = 0;
 				var eSrcY = 0;
 				var erdX = Math.max(v_bmpObj.x, rdcX1);//If another image is being drawn, and this must be redrawn underneath it.
 				var erdY = Math.max(v_bmpObj.y, rdcY1);
 				var erdW = Math.min(v_bmpObj.w, rdcW);
 				var erdH = Math.min(v_bmpObj.h, rdcH);
+				var eVisibleW = v_bmpObj.w -   Math.max(0, v_bmpObj.x + v_bmpObj.w - this.s.canvas_width);
+				var eVisibleH = v_bmpObj.h -   Math.max(0, v_bmpObj.y + v_bmpObj.h - this.s.canvas_height);
 				var erdDifX = rdcX1 - v_bmpObj.x;
 				var erdDifY = rdcY1 - v_bmpObj.y;
 				if(v_bmpObj.x < 0){
 					erdDifX += v_bmpObj.x;
+					eVisibleW += v_bmpObj.x;
 				}
 				if(v_bmpObj.y < 0){
 					erdDifY += v_bmpObj.y;
-				}
+					eVisibleH += v_bmpObj.y;
+				}*/
 				//this.cxB.fillRect(erdX, erdY, erdW, erdH);
-				this.cxB.drawImage(imgDOM,
+				/*this.cxB.drawImage(imgDOM,
 					(Math.max(0, -v_bmpObj.x) + erdDifX) / eScaleX, (Math.max(0, -v_bmpObj.y) + erdDifY) / eScaleY,	
 					Math.min(nWidth, rdcW) / eScaleX, Math.min(nHeight, rdcH) / eScaleY,
-					erdX, erdY, erdW, erdH);//0, 0);
+					erdX, erdY, erdW, erdH);//0, 0);*/
+					//Math.max(1, eVisibleW ) / eScaleX, Math.max(1, eVisibleH ) / eScaleY,
+				this.cxB.drawImage(imgDOM,
+					(Math.max(0, rdcX1 -v_bmpObj.x)) / eScaleX, (Math.max(0, rdcY1 -v_bmpObj.y)) / eScaleY,	
+					rdcW / eScaleX, rdcH /eScaleY,
+					rdcX1, rdcY1, rdcW, rdcH);//0, 0);
 			}else{
 				this.cxB.fillStyle = '#FF00007F';
 				this.cxB.fillRect(rdcX1, rdcY1, rdcW, rdcH);

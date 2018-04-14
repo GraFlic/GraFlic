@@ -129,7 +129,7 @@ Visit <a href="http://AnimatedPNGs.com" target="_blank">AnimatedPNGs.com</a> for
 <label for="GraFlicC_stained_glass_chk" class="GraFlic_j">💎</label>
 ┆<input type="checkbox" id="GraFlicC_dictionary_chk"/>
 <label for="GraFlicC_dictionary_chk" class="GraFlic_j">📝</label>
-┆<button id="GraFlicC_undo_btn" title="z" style="font-weight:bold;">↩</button><button id="GraFlicC_redo_btn" title="y">↪</button>
+┆<span id="GraFlicC_undo_btn" title="z" style="font-weight:bold;" class="GraFlic_b">↩</span><span id="GraFlicC_redo_btn" title="y" class="GraFlic_b">↪</span>
 <input type="range" id="GraFlicC_zoom_rng" value="50" min="20" max="500" step="5" style="float:right;width:40%;"/>
 </td>
 <td style="min-width:6em;">
@@ -182,8 +182,8 @@ Visit <a href="http://AnimatedPNGs.com" target="_blank">AnimatedPNGs.com</a> for
 <tr>
 <td>
 <span class="GraFlic_j">🖼</span><select id="GraFlicC_bitmap_sel"></select>
-<button id="GraFlicC_new_bitmap_btn">➕</button>
-<button id="GraFlicC_del_bitmap_btn">❌</button>
+<span id="GraFlicC_new_bitmap_btn" class="GraFlic_b">➕</span>
+<span id="GraFlicC_del_bitmap_btn" class="GraFlic_b">❌</span>
 <input type="text" id="GraFlicC_bitmap_title_txt" value="🖼" style="width:16em;"/>
 &nbsp;<input type="text" id="GraFlicC_bitmap_z_index_txt" value="0" style="width:3em;"/><span class="GraFlic_j">🕴</span>
 &nbsp;<input type="text" id="GraFlicC_bitmap_z_index_w_txt" value="" style="width:3em;" placeholder="--"/><span class="GraFlic_j">⌇&#xFEFF;🕴</span>
@@ -207,22 +207,22 @@ Visit <a href="http://AnimatedPNGs.com" target="_blank">AnimatedPNGs.com</a> for
 <tr>
 <td>
 <span class="GraFlic_j">🎞</span><select id="GraFlicC_frame_sel"></select>
-<button id="GraFlicC_new_frame_btn">➕</button>
-<button id="GraFlicC_del_frame_btn">❌</button>
+<span id="GraFlicC_new_frame_btn" class="GraFlic_b">➕</span>
+<span id="GraFlicC_del_frame_btn" class="GraFlic_b">❌</span>
 <input type="text" id="GraFlicC_frame_title_txt" value="🎞" style="width:8em;"/>
 &nbsp;<input type="text" id="GraFlicC_frame_ms_txt" value="" style="width:5em;"/><span class="GraFlic_j">⏳</span>
 &nbsp;<input type="text" id="GraFlicC_frame_global_ms_txt" value="200" style="width:5em;"/><span class="GraFlic_j">🌐⏳</span>
-<button id="GraFlicC_play_pause_btn" class="GraFlic_j">⏯</button>
+<span id="GraFlicC_play_pause_btn" class="GraFlic_b">⏯</span>
 </td>
 </tr>
 
 
 <tr>
 <td>
-🗂┯┯┑
+<span class="GraFlic_j">🗂┯┯┑</span>
 <input type="file" id="GraFlicC_embed_file_btn" accept="image/*" style="display:none"/>
-<label for="GraFlicC_embed_file_btn">➕💾</label>
-┆<span id="GraFlicC_embed_del_file_btn">❌💾</span>
+<label for="GraFlicC_embed_file_btn" class="GraFlic_b">➕💾</label>
+┆<span id="GraFlicC_embed_del_file_btn" class="GraFlic_b">❌💾</span>
 ┆<select id="GraFlicC_embed_sel" style="vertical-align:top;">
 <option value="" selected>--</option>
 </select>
@@ -232,14 +232,14 @@ Visit <a href="http://AnimatedPNGs.com" target="_blank">AnimatedPNGs.com</a> for
 <option value="fill">┆←🖼→┆</option>
 <option value="real">┆🖼&nbsp;&nbsp;┆</option>
 </select>
-<span id="GraFlicC_new_image_embed_btn">➕🖼</span>
+<span id="GraFlicC_new_image_embed_btn" class="GraFlic_b">➕🖼</span>
 </td>
 </tr>
 
 
 <tr>
 <td>
-<span id="GraFlicC_save_Animated_PNG_btn" class="GraFlic_j">💾🎬</span>┆
+<span id="GraFlicC_save_Animated_PNG_btn" class="GraFlic_b">💾🎬</span>┆
 <input type="range" id="GraFlicC_scale_down_rng" value="0.5" min="0.1" max="1" step="0.01"/>
 <span style="font-size:0.35em;">🖼</span>
 <span style="font-size:0.70em;">🖼</span>
@@ -248,8 +248,8 @@ Visit <a href="http://AnimatedPNGs.com" target="_blank">AnimatedPNGs.com</a> for
 <a id="GraFlicC_download_image_link" target="_blank" href="#"></a>
 
 
-┆<input type="file" id="GraFlicC_load_work_btn" accept=".graflic,.zip" style="display:none;"/><label for="GraFlicC_load_work_btn" class="GraFlic_j">💾📦↑</label>┆
-<span id="GraFlicC_save_work_btn" class="GraFlic_j">💾📦↓</span>┆↓
+┆<input type="file" id="GraFlicC_load_work_btn" accept=".graflic,.zip" style="display:none;"/><label for="GraFlicC_load_work_btn" class="GraFlic_b">💾📦↑</label>┆
+<span id="GraFlicC_save_work_btn" class="GraFlic_b">💾📦↓</span>┆↓
 <!-- ,image/graflic,application/zip NOTE: some browsers will not allow file selects for custom extensions if extensions AND mime types are listed. It treats it as needing to match extension AND mime apparently. Since custom types are not going to have a mime-type defined on user devices it will leave those unelectable. -->
 <a id="GraFlicC_download_work_link" target="_blank" href="#"></a>
 </td>
@@ -266,7 +266,7 @@ x
  
 🔪→<input type="text" id="GraFlicC_canvas_size_crop_x_txt" value="0" style="width:7em;" placeholder="±"/>
  🔪↓<input type="text" id="GraFlicC_canvas_size_crop_y_txt" value="0" style="width:7em;" placeholder="±"/>
-<button id="GraFlicC_canvas_size_btn">🖼↕</button>
+<span id="GraFlicC_canvas_size_btn" class="GraFlic_b">🖼↕</span>
 <br/>
 <!--span class="GraFlic_x">Negative crop values will push the existing pixels rightwards, downwards.</span-->
 </td>
@@ -308,8 +308,8 @@ x
 <td colspan="3">
 <input type="checkbox" id="GraFlicC_palette_zw_chk"/>
 <label for="GraFlicC_palette_zw_chk" class="GraFlic_j">⌇&#xFEFF;🕴</label>
-<button id="GraFlicC_palette_revert_btn">&#x21A9;</button>
-<button id="GraFlicC_palette_new_color_btn">&#x2795;&#x1F3A8;</button>
+<span id="GraFlicC_palette_revert_btn" class="GraFlic_b">&#x21A9;</span>
+<span id="GraFlicC_palette_new_color_btn" class="GraFlic_b">&#x2795;&#x1F3A8;</span>
 </td>
 </tr>
 
@@ -470,7 +470,7 @@ x
 <td>
 <select id="GraFlicC_metadata_sel" class="GraFlic_j" style="vertical-align:top;">
 <option value="meta_title" selected>📛</option>
-<option value="meta_author">👤</option>
+<option value="meta_author">👩🏽‍🎨</option>
 <option value="meta_copyright">©</option>
 <option value="meta_description">📝</option>
 <option value="meta_warning">⚠️</option>
@@ -1268,7 +1268,7 @@ function f_makeFilename(){
 	if(!v_curGraFlic.z.title){
 		v_filename = Date.now().toString();//v_hostname + '_' + Date.now();
 	}else{
-		v_filename = GraFlicUtil.filenameSafe(v_curGraFlic.z.title);// + '_' + v_hostname;
+		v_filename = GraFlicEncoder.filenameSafe(v_curGraFlic.z.title);// + '_' + v_hostname;
 	}
 	return v_filename;
 }

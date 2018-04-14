@@ -118,6 +118,9 @@ could be encoded with 8 bit indexed color is mandated to stay 32 bit RGBA.
 
 However, GraFlicEncoder can be comboed with Zopfli or pako for enhanced compression.
 
+Relying on pulling the payload out of the browser toDataURL() encode may be inefficient/unreliable and is not recommended.
+Include pako and/or Zopfli for the best results.
+
 https://github.com/imaya/zopfli.js (The Apache License 2.0)
 ( ported from https://github.com/google/zopfli )  (The Apache License 2.0)
 
@@ -129,6 +132,29 @@ much faster scanline filter efficiency tests for faster saves and that does not 
 If the pako script has been included in the page, it will be detected and made use of if possible.
 Images that can encode well with indexed PNG8 for additional savings will use pako's deflate()
 function to build custom IDAT/fdAT image data streams.
+
+Dependency graph:
+
+pako.js DEFLATE (Provides compression needed for efficiently encoding
+^                Animated PNG images and making compressed ZIP archives.)
+|
+AND
+|  /
+*---OR---> zopfli.js DEFLATE (Provides advanced brute-force compression for
+^                             processor intensive, but smaller Animated PNG
+|                             and ZIP files.)
+requires                           *TODO: Implement Zopfli in GraFlicArchive
+|
+GraFlicEncoder.js (Handles simply making an Animated PNG
+^                  out of a sequence of images.)
+|
+ \ _ _ requires _ _ GraFlicUtil.js (Needs binary I/O, UTF conversion,
+                    ^               CRC, etc. from GraFlicEncoder.js)
+                    |
+                     \ _ _ requires _ _ GraFlicImage.js (Needs utilities and
+                                                         GraFlicArchive class
+                                                         from GraFlicUtil.js)
+                                        
 
 USAGE:
 var paramz = {
@@ -2855,6 +2881,18 @@ GraFlicEncoder.stringToBytesUTF8 = function(str){
 		strBytesUTF8[i] = parseInt(str[i], 16);//Write the Hex sting as binary byte for each escaped UTF-8 byte.
 	}
 	return strBytesUTF8;
+};
+GraFlicEncoder.filenameSafe = function(fnStr, onlyASCII){
+	//Remove non-filename-safe characters. This should be the non-letter, non-number ASCII characters.
+	//non-ASCII UTF-8 characters are all, it would seem, safe for filenames
+	//limit to one space in a row and make spacing all underscores
+	fnStr = fnStr.replace(/[\x00-\x2C\x2E\x2F\x3A-\x40\x5B-\x60\x7B-\x7F]+/g, '_');
+	if(onlyASCII){//If var defined and true.
+		fnStr = fnStr.replace(/[^\x00-\x7F]/g, '_');
+	}
+	fnStr = fnStr.replace(/(^_|_$)/g, '');//no leading or trailing space
+	//leave only 0x2D(hyphen), 0x30 - 0x39 (0-9), 0x41 - 0x5A (A-Z), 0x61 - 0x7A (a-z)
+	return fnStr;
 };
 GraFlicEncoder.writeUbytes = function(out8, bytesU8, pos){
 	//Writes unsigned bytes to a octet stream (Uint8Array)

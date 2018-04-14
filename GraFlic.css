@@ -295,3 +295,57 @@ textarea.GraFlic_y,
 	vertical-align: middle;
 	cursor:pointer;
 }
+
+.GraFlic_b{
+	display: inline-block;
+	border-radius: 5px;
+	background-color: #FEFEFE;
+	background-image: linear-gradient(
+		180deg,
+		#D7D7D700,
+		#D7D7D7FF 100%
+	);
+	/*border:solid 2px black;*/
+	box-shadow: 0px 0px 3px #000000AF;
+	padding: 3px 8px 3px 8px;
+	margin-right: 2px;
+	margin-left: 2px;
+	cursor: pointer;
+	font-size: 16px;
+	font-family: inherit;
+	font-weight: bold;
+
+	animation-name: GraFlic_anim_button_unhover;
+	animation-duration: 0.5s;
+	animation-fill-mode: forwards;
+}
+
+@keyframes GraFlic_anim_button_unhover{
+	from{
+		background-color: #C0FEFE;
+		box-shadow: 0px 0px 5px #003F3F;
+	}
+	to{
+		background-color: #FEFEFE;
+		box-shadow: 0px 0px 3px #000000AF;
+	}
+}
+.GraFlic_b:hover{
+	animation-name: GraFlic_anim_button_hover;
+	animation-duration: 0.5s;
+	animation-fill-mode: forwards;
+}
+@keyframes GraFlic_anim_button_hover{
+	from{
+		background-color: #FEFEFE;
+		box-shadow: 0px 0px 3px #000000AF;
+	}
+	to{
+		background-color: #C0FEFE;
+		box-shadow: 0px 0px 5px #003F3F;
+	}
+}
+
+
+
+

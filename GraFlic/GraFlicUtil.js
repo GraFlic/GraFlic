@@ -83,7 +83,7 @@ function GraFlicArchive(zipDataUint8, paramz){
 			paramApps = paramz.apps;//.apps plural sent should be sent as array
 		}
 		//Note that these extra parameters and logic may not be needed. It may be better to just set the properties of the z.json object after the GraFlicArchive is initialized to match what the given software or format needs. This would simplify the constructor. Falling back to the generic application/octet-stream type will probably not be devastating if properties are not customized after creation.
-			//paramz.mime, paramz.extension, paramApps);
+			//paramz.mime, paramz.type, paramApps);
 		*/
 		this.addMetaZIP();
 		return;
@@ -273,8 +273,9 @@ GraFlicArchive.prototype.fileToLiveBLOB = function(f){
 		objParamz.type = 'application/octet-stream';
 		//.gz will be auto decompressed on load, and auto-compressed internally on save (before being stored in the ZIP with method 0 no compression)
 		var v_isImg = false;
+		var v_isJPEG = f.p.match(/\.jpe*g(\.gz)?$/i);
 		if(f.p.match(/\.a*png(\.gz)?$/i)){objParamz.type = 'image/png';v_isImg = true;}
-		if(f.p.match(/\.jpe*g(\.gz)?$/i)){objParamz.type = 'image/jpeg';v_isImg = true;}
+		if(v_isJPEG){objParamz.type = 'image/jpeg';v_isImg = true;}
 		if(f.p.match(/\.gif+(\.gz)?$/i)){objParamz.type = 'image/gif';v_isImg = true;}
 		if(f.p.match(/\.webp(\.gz)?$/i)){objParamz.type = 'image/webp';v_isImg = true;}
 		if(f.p.match(/\.txt(\.gz)?$/i)){objParamz.type = 'text/plain';}
@@ -286,9 +287,12 @@ GraFlicArchive.prototype.fileToLiveBLOB = function(f){
 			f.i.src = f.b;
 			f.i.alt = f.p;//This can be used to look up file on load event. The image will typically not be placed in the DOM, but be used as a drawable on a canvas.
 			f.i.title = f.p;
-			if(this.onImageLoaded){//Some things need to know when an image has been loaded and redraw with the image visuals available.
-				f.i.addEventListener('load', GraFlicArchive.onImageLoadedHandler.bind(this));
+			//Some things need to know when an image has been loaded and redraw with the image visuals available.
+			//JPEGs may need to be fixed due to exif rotation.
+			if(v_isJPEG){
+				f.i.temp_octetStream = f.d;
 			}
+			f.i.addEventListener('load', GraFlicArchive.onImageLoadedHandler.bind(this));
 		}
 		//f.d is already required at the start of this func
 		if(GraFlicDecoder){
@@ -327,12 +331,162 @@ GraFlicArchive.prototype.listDir = function(v_dir){
 GraFlicArchive.onImageLoadedHandler = function(e){
 	//Setting up .onImageLoaded allows for apps using GraFlicArchive to refresh drawing when an image becomes loaded and drawable.
 	//Have the event done from this internal handler, then call the function given assigned to onImageLoaded. This way listener cleanup is done automatically.
-	var loadResult = {};//Send an object as the result that has links to basic things related to the load.
-	loadResult.event = e;
-	loadResult.archive = this;//Event used bind(this)
-	loadResult.file = this.files[e.target.alt];//do not potentially loop in odd cases with .f()
-	this.onImageLoaded(loadResult);
-	e.target.removeEventListener('load', GraFlicArchive.onImageLoadedHandler);
+	if(this.onImageLoaded){
+		var loadResult = {};//Send an object as the result that has links to basic things related to the load.
+		loadResult.event = e;
+		loadResult.archive = this;//Event used bind(this)
+		loadResult.file = this.files[e.target.alt];//do not potentially loop in odd cases with .f()
+			
+		this.onImageLoaded(loadResult);
+	}
+	var imgObj = e.target;
+	imgObj.removeEventListener('load', GraFlicArchive.onImageLoadedHandler);
+	var v_img8 = imgObj.temp_octetStream;//May be undefined, and will eval false.
+	if(v_img8 && v_img8[0] == 255 && v_img8[1] == 216 ){//JPEG start of image (SOI) marker
+		var v_exifOri = -1;//-1 for not there
+		//alert('JPG!');
+		var v_jSigA = v_img8[2];//APP Marker Signature
+		var v_jSigB = v_img8[3];
+		var v_img8I = 4;//Skip SOI and app marker signature.
+		var v_chunkSig;
+		while(!(v_jSigA == 0xFF && v_jSigB == 0xDA)){//Exit if end of image (SOS)
+			v_chunkSig = String.fromCharCode(v_img8[v_img8I+2]) + String.fromCharCode(v_img8[v_img8I+3])
+				  + String.fromCharCode(v_img8[v_img8I+4]) + String.fromCharCode(v_img8[v_img8I+5]); 
+			//alert(v_chunkSig + ' sig ' + v_img8I);
+			if(v_chunkSig == 'Exif'){
+				var v_exifI = v_img8I + 6;
+				var v_iiAlign =  v_img8[v_exifI + 2] == 0x0049;
+				v_exifI += 6;
+				var v_idOffset;
+				if(v_iiAlign){
+					v_idOffset = v_img8[v_exifI]
+						  + v_img8[v_exifI + 1] * 0x100
+						  + v_img8[v_exifI + 2] * 0x10000
+						  + v_img8[v_exifI + 3] * 0x1000000; 
+				}else{
+					v_idOffset = v_img8[v_exifI]    * 0x1000000
+						  + v_img8[v_exifI + 1] * 0x10000
+						  + v_img8[v_exifI + 2] * 0x100
+						  + v_img8[v_exifI + 3]; 
+				}
+				//alert('iialig: ' + v_iiAlign);
+				//alert('offset ' + v_idOffset);
+				v_exifI += 4 + v_idOffset - 8;
+				var v_exifNEntries;
+				if(v_iiAlign){
+					v_exifNEntries = v_img8[v_exifI]
+						      + v_img8[v_exifI + 1] * 0x100; 
+				}else{
+					v_exifNEntries = v_img8[v_exifI] * 0x100
+						      + v_img8[v_exifI + 1]; 
+				}
+				v_exifI += 2;
+				//alert('n entries: ' + v_exifNEntries);
+				for(var v_exLoopI = 0;v_exLoopI < v_exifNEntries;v_exLoopI++){
+					var v_exifTagType = v_iiAlign? v_img8[v_exifI] + v_img8[v_exifI + 1] * 0x100
+								      : v_img8[v_exifI] * 0x100 + v_img8[v_exifI + 1];
+					v_exifI += 2;
+					var v_exifTagFormat = v_iiAlign? v_img8[v_exifI] + v_img8[v_exifI + 1] * 0x100
+								      : v_img8[v_exifI] * 0x100 + v_img8[v_exifI + 1];
+					v_exifI += 2;
+					var v_exifTagComp = v_iiAlign?   v_img8[v_exifI] +               v_img8[v_exifI + 1] * 0x100 //number of components
+								      + v_img8[v_exifI + 2] * 0x10000 + v_img8[v_exifI + 3] * 0x1000000
+								    :   v_img8[v_exifI] * 0x1000000 +   v_img8[v_exifI + 1] * 0x10000
+								      + v_img8[v_exifI + 2] * 0x100 +   v_img8[v_exifI + 3];
+					v_exifI += 4;
+					var v_bytesPerComp = 1;
+					if(v_exifTagFormat == 3 ){v_bytesPerComp = 2;}
+					if(v_exifTagFormat == 4 ){v_bytesPerComp = 4;}
+					if(v_exifTagFormat == 5 ){v_bytesPerComp = 8;}
+					if(v_exifTagFormat == 8 ){v_bytesPerComp = 2;}
+					if(v_exifTagFormat == 9 ){v_bytesPerComp = 4;}
+					if(v_exifTagFormat == 10){v_bytesPerComp = 8;}
+					if(v_exifTagFormat == 11){v_bytesPerComp = 4;}
+					if(v_exifTagFormat == 12){v_bytesPerComp = 8;}
+					var v_dataOrOffset = 1;
+					if(v_exifTagComp * v_bytesPerComp > 4){//If more than 4 bytes long, it is a 4 byte offset to where data starts.
+						v_exifI += 4;
+					}else{
+						if(v_exifTagFormat == 3){//This is used by Orientation, the only Exif data currently needed.
+							v_dataOrOffset = v_iiAlign ? v_img8[v_exifI] + v_img8[v_exifI + 1] * 0x100
+										    : v_img8[v_exifI] * 0x100 + v_img8[v_exifI + 1];
+						}
+					}
+					if(v_exifTagType == 274){
+						v_exifOri = v_dataOrOffset;
+//Orientation values:
+//0001 1 = Normal
+//0010 2 = Mirror horizontally
+//0011 3 = Rotate 180 degrees
+//0100 4 = Mirror horizontally, Rotate 180 degrees
+//0101 5 = Mirror horizontally, Rotate 90 degrees CCW
+//0110 6 = Rotate 90 degrees CCW
+//0111 7 = Mirror horizontally, Rotate 90 degrees CW
+//1000 8 = Rotate 90 degrees CW
+					}
+				}
+			}
+			v_img8I += v_img8[v_img8I] * 256 + v_img8[v_img8I + 1];//The length apparently includes length counter and FourCC
+			v_jSigA = v_img8[v_img8I];
+			v_jSigB = v_img8[v_img8I + 1];
+			v_img8I += 2;
+		}
+		//alert('EXIF rot: ' + v_exifOri);
+
+
+
+		var v_pImage2Draw = document.createElement('canvas');
+		var v_pI2DCX = v_pImage2Draw.getContext('2d');
+		//v_exifOri = 1;//forcing test value
+		//alert('testing simulated orientation: ' + v_exifOri);
+		if(v_exifOri > 4){
+			v_pImage2Draw.width  = imgObj.naturalHeight;
+			v_pImage2Draw.height = imgObj.naturalWidth;
+		}else{
+			v_pImage2Draw.width  = imgObj.naturalWidth;
+			v_pImage2Draw.height = imgObj.naturalHeight;
+		}
+		if(v_exifOri == 2){
+			v_pI2DCX.translate(v_pImage2Draw.width, 0);
+			v_pI2DCX.scale(-1, 1);
+		}
+		if(v_exifOri == 3){
+			v_pI2DCX.translate(v_pImage2Draw.width, v_pImage2Draw.height);
+			v_pI2DCX.rotate(180 * Math.PI / 180);//180 degrees
+		}
+		if(v_exifOri == 4){
+			v_pI2DCX.translate(0, v_pImage2Draw.height);
+			v_pI2DCX.rotate(180 * Math.PI / 180);//180 degrees
+			v_pI2DCX.scale(-1, 1);
+		}
+		if(v_exifOri == 5){
+			v_pI2DCX.rotate(270 * Math.PI / 180);//90 degrees CCW
+			v_pI2DCX.scale(-1, 1);
+		}
+		if(v_exifOri == 6){
+			v_pI2DCX.translate(v_pImage2Draw.width, 0);
+			v_pI2DCX.rotate(90 * Math.PI / 180);//90 degrees CW
+		}
+		if(v_exifOri == 7){
+			v_pI2DCX.translate(v_pImage2Draw.width, v_pImage2Draw.height);
+			v_pI2DCX.rotate(90 * Math.PI / 180);//90 degrees CW
+			v_pI2DCX.scale(-1, 1);
+		}
+		if(v_exifOri == 8){
+			v_pI2DCX.translate(0, v_pImage2Draw.height);
+			v_pI2DCX.rotate(270 * Math.PI / 180);//90 degrees CCW
+			//v_pI2DCX.translate(v_pImage2Draw.width, 0);
+			//v_pI2DCX.rotate(90 * Math.PI / 180);//90 degrees CW
+			//v_pI2DCX.scale(-1, 1);
+		}
+		v_pI2DCX.drawImage(imgObj, 0, 0);
+
+		imgObj.src = v_pImage2Draw.toDataURL();//Set it to the redrawn image that is no longer upside-down, twisted or flipped due to wonky EXIF orientation.
+
+
+
+		delete imgObj.temp_octetStream;//Release temp prop once finished.
+	}//end if JPEG
 };
 //TODO: move .noCompresion to GraFlicArchive?? It seems that is the only thing that uses it.
 GraFlicUtil.noCompression = function(fBytes, fParamZ){return fBytes;};//Do nothing with compression type 0, none.
@@ -834,7 +988,7 @@ GraFlicArchive.prototype.addMetaZIP = function(){
 	The focus of this spec is to give details about the file and how to open it or what to do with it. There are many ZIP-based/Archive-based formats and systems may not have software already installed to deal with them. It does not need to give an in-depth description of the file contents, the file design itself ought to do that it its own metadata if needed.
 	It contains properties that can be used to find/verify the type of file and in some cases, resolve conflicts with similar files.
 
-------- z.json 1.0 (draft April 6th, 2018) 80-width/terminal-compatible -------
+------- z.json 1.0 (draft April 8th, 2018) 80-width/terminal-compatible -------
 
 z.json is a simple, easy to ready, JSON file that describes properties general
 enough to apply to any file, or any file of a broad type media such as images.
@@ -843,15 +997,27 @@ A growing number of powerful javascript/HTML5 web-apps are now emerging.
 JSON is also widely supported on other platforms and easily human-readable if
 viewed as plain text.
 
+This project is proposing z.json as a standard for simple, easy to work with
+general metadata for archive-based formats that provides file type resolution,
+archive root resolution, and in some cases, conflicting file resolution. Root
+resolution helps handle archive-based files that have been unpacked, manually
+edited, and repackaged, possibly causing the contents to be nested in extra
+folders. See below for more information on that.
+
+ * Note that this is not currently backed by
+   any mainstream standards organization.
+
+This open source project seeks to make these useful features available to all
+developers and sees it as a potential standard for making ZIP-based or
+archive-based files easier to work with for apps, web-apps and type-agnostic
+use cases like file browsers or file information utilities.
+
 This lightweight design makes it easy for developers to make software
 interoperable with the JSON-based metadata rather than having to add huge
 overhead or a sprawling patchwork of dependencies to their code to read and
 write to a highly complicated structure.
 Overly complicated structures are like using a space-age cybernetic robot arm
 as a eating utensil instead of just using fork.
-
-z.json can be used for type resolution, archive-root resolution, and
-collision resolution.
 
 Magic numbers are not an option for ZIP-based files. You could put a specific
 file with a specific name at the start of the ZIP to act as a Magic Number, but
@@ -870,6 +1036,10 @@ archive folder contents, resulting in files being buried in a redundant folder.
 If they select the files and do it the right way, then the archive will be
 built correctly, but can end up in the same folder as the contained files on
 the filesystem, which is also awkward...
+
+The .id property in combination with the .created timestamp property can be
+used in the case of a collision to resolve a conflict between files with the
+same or similar name or id.
 
 Any non-general app-specific or vendor-specific metadata ought to be stored by
 the app elsewhere, probably in another JSON file. There is not much that can be
@@ -907,15 +1077,15 @@ properties.
 
 .mime           - The MIME type that should be associated with this file.
 
-.extension      - The file extension that should be associated with this file.
+.type           - The file extension that should be associated with this file.
 (Sometimes files get renamed/repackaged to .zip or the extension gets deleted
 or changed otherwise.)
 
-.name           - The full original name of the file including extension of
+.file           - The full original name of the file including extension of
 the ZIP-based file. The filename may be lost if the file contents are sent
 through a stream without metadata, or may be renamed by a user orprogram. The
 separate extension property unambiguously clarifies what the extension is.
-Remember that some files have multiple dots.
+Remember that some files have multiple dots or even omit the extension.
 
 .apps           - An array of objects with info about supporting apps, in order
 of priority. Recommended for non-mainstream types.
@@ -963,14 +1133,6 @@ receiving site may or may not set the modified date correctly. Note that when
 manually packaging a ZIP based file this will not get updated unless the user
 updates it manually. Can be used if file received as an octet-stream with no
 filesystem info like timestamps.
-
-		(note that defining a .accessed does not make sense. Files do not usually get written to when they are accessed, just when they are created or modified. An accessed property would not be reliable.)
-		Defining other attributes like owner and permissions does not currently seem to make sense either, since it will not change the actual permissions of the ZIP-based file and who can do what with it.
-
-***experimental***
-.protocols            - (optional, undecided on and experimental, may be moved to within .apps which can represent specific apps or generic app types) Ana array of protocol string teplates that can be used to build a URL to attempt to launch in a supporting app that is registered to handle the protocol, in order of priority.
-	Include a string with the 'protocol_string' and %p for where the path to the file goes, and anything else that might be needed in the protocol URL. Example: 'protocol_string:%p' or 'protocol_string://%p&param=x'. (use p for path to file, a-f are valid %AF hex escapes in a URL)
-A website could use this to generate protocol links for files that should launch in specific programs
 
 
 .locale         - A BCP47 string such as "ja-JP". Tells what locale
@@ -1062,6 +1224,21 @@ of the file has been edited.
 that contains internal metadata specific to the format, which is not general
 enough to be included in z.json. Example: "internal_folder/m.json"
 
+
+
+
+
+
+*******************
+		(note that defining a .accessed does not make sense. Files do not usually get written to when they are accessed, just when they are created or modified. An accessed property would not be reliable.)
+		Defining other attributes like owner and permissions does not currently seem to make sense either, since it will not change the actual permissions of the ZIP-based file and who can do what with it.
+
+***experimental***
+.protocols            - (optional, undecided on and experimental, may be moved to within .apps which can represent specific apps or generic app types) Ana array of protocol string teplates that can be used to build a URL to attempt to launch in a supporting app that is registered to handle the protocol, in order of priority.
+	Include a string with the 'protocol_string' and %p for where the path to the file goes, and anything else that might be needed in the protocol URL. Example: 'protocol_string:%p' or 'protocol_string://%p&param=x'. (use p for path to file, a-f are valid %AF hex escapes in a URL)
+A website could use this to generate protocol links for files that should launch in specific programs
+*******************
+
 	*/
 	
 	//The default, ZIP, is ubiquitous enough that it should be handleable with just the mime and extension, so leave .apps undefined if no specific info sent.
@@ -1082,7 +1259,7 @@ enough to be included in z.json. Example: "internal_folder/m.json"
 	aFile.j.z_signature = 'z.json metadata';
 	aFile.j.z_version = 1.0;
 	aFile.j.mime = 'application/octet-stream';
-	aFile.j.extension = 'zip';
+	aFile.j.type = 'zip';
 	aFile.j.zipoch = 1980;//optional, not really needed until 2107 (there is a 0x5455 extra field out there that adds 'extended timestamps' but it still has the 2107 limitation, only adds created/accessed in addition to modified. It would not be reliable to assume other packagers would retain extra fields anyways.)
 	var timeNow = GraFlicUtil.getMicrosecondsTimestamp();//Get time in microseconds.
 	aFile.j.created = timeNow;
@@ -1221,18 +1398,6 @@ GraFlicUtil.HSV2RGB = function(h, s, v){
 	}
 	return [v, p, q];//i == 5
 };
-GraFlicUtil.filenameSafe = function(fnStr, onlyASCII){
-	//Remove non-filename-safe characters. This should be the non-letter, non-number ASCII characters.
-	//non-ASCII UTF-8 characters are all, it would seem, safe for filenames
-	//limit to one space in a row and make spacing all underscores
-	fnStr = fnStr.replace(/[\x00-\x2C\x2E\x2F\x3A-\x40\x5B-\x60\x7B-\x7F]+/g, '_');
-	if(onlyASCII){//If var defined and true.
-		fnStr = fnStr.replace(/[^\x00-\x7F]/g, '_');
-	}
-	fnStr = fnStr.replace(/(^_|_$)/g, '');//no leading or trailing space
-	//leave only 0x2D(hyphen), 0x30 - 0x39 (0-9), 0x41 - 0x5A (A-Z), 0x61 - 0x7A (a-z)
-	return fnStr;
-}
 GraFlicUtil.absorbJSON = function(jPrim, jSec, paramz){
 	//jPrim, primary, will absorb the jSec (secondary) and the values in primary override secondary and are only copied if missing in primary.
 	//This function is used to ensure initialization properties are set. If a JSON is missing required init properties, it will inherit the ones from jSec, which would usually be sent as a default initialized JSON.
