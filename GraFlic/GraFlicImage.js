@@ -94,10 +94,10 @@ function GraFlicImage(v_fromArchive, v_params){
 	//==============================================================================================================
 	this.a = new GraFlicArchive(v_fromArchive);//Set up the virtual archive that will handle load/save and be directly manipulatable while live.
 	//.a for archive
-	this.z = this.a.f('z.json').j;//z.json will be automatically created inside by the GraFlicArchive initialization.
-	this.z.mime = "image/x.graflic";
-	this.z.extension = "graflic";
-	this.z.apps = [{
+	this.archiveMetadata = this.a.f('archive-metadata.json').j;//archive-metadata.json will be automatically created inside by the GraFlicArchive initialization.
+	this.archiveMetadata.mime = "image/x.graflic";
+	this.archiveMetadata.type = "graflic";
+	this.archiveMetadata.apps = [{
 		"title": "GraFlic",
 		"website": "GraFlic.com"
 	}];
@@ -113,14 +113,14 @@ function GraFlicImage(v_fromArchive, v_params){
 	v_initF.p = '𝕿æßt_Д_ÜTF-8_フォルダ/';
 	this.a.addFile(v_initF);*/
 	
-	//s.json contains the main JSON configurations for the project that will save to the project save file.
+	//state.json contains the main JSON configurations for the project that will save to the project save file.
 	v_initF = {};
-	v_initF.p = 's.json';
+	v_initF.p = 'state.json';
 	v_initF.j = this.initSaveJSON();
 	this.a.addFile(v_initF);
 	this.s = v_initF.j;//Link to the file's live (s)tate JSON property
 	
-	/* Everything here was moved to z.json
+	/* Everything here was moved to archive-metadata.json
 	//JSON data for the metadata of the project(Title, Author, Description, etc).
 	v_initF = {};
 	v_initF.p = 'm.json';
@@ -185,8 +185,8 @@ function GraFlicImage(v_fromArchive, v_params){
 	*/
 	
 	this.s.images = [];
-	this.s.canvas_width = 512;//canvas_width in s.json, not just width in z.json because there potentially could be other width/height vars in play if vectors ever get added.
-	this.s.canvas_height = 512;//What is listed on the z.json metadata as width / height might vary based on such variables. There could also be things like margins or variable-dimensions clips added potentially at some point, making it more ambiguous.
+	this.s.canvas_width = 512;//canvas_width in state.json, not just width in archive-metadata.json because there potentially could be other width/height vars in play if vectors ever get added.
+	this.s.canvas_height = 512;//What is listed on the archive-metadata.json metadata as width / height might vary based on such variables. There could also be things like margins or variable-dimensions clips added potentially at some point, making it more ambiguous.
 	this.s.index_bit_depth = 8;//May have to raise to 16 if more than 256 palette entries
 	this.s.alpha_bit_depth = 8;//May one day be raisable to 16 for 48 bit color with 16 bit alpha.
 			//Raising bit depths would require all the channels for each bitmap to be converted into Uint16Array.
@@ -328,7 +328,7 @@ GraFlicImage.TOOL_STATE_DONE = 200;
 
 GraFlicImage.prototype.initSaveJSON = function(){
 	var configInit = {};
-	//Init the save with required properties. If a save is loaded, what it has saved in the s.json will override this.
+	//Init the save with required properties. If a save is loaded, what it has saved in the state.json will override this.
 	//But this is used to ensure all required vars are populated. In future versions more things may be added that old saves do not have.
 	//Some early vars that are very foundational may not be checked here.
 	//Generally, if a new property is added later, that property being undefined would default to a default behavior.
@@ -374,9 +374,10 @@ GraFlicImage.prototype.initMetadata = function(){
 				//TODO: Have not thought of anything to do with .project, remove it???
 	//v_metadata.filetype = 'graflic';//extension
 	//v_metadata.mimetype = 'image/graflic';//now handled elsewhere
-	v_metadata.version_editor = GraFlicImage.EDITOR_VERSION;//Version used to create this file.
-	v_metadata.version_needed = GraFlicImage.EDITOR_VERSION;//Minimum version needed to open.
-	v_metadata.locales = {};//Data set in locale can cascade over metadata properties (other than .locales itself obviously).
+	v_metadata.versionUsed = GraFlicImage.EDITOR_VERSION;//Version used to create this file.
+	v_metadata.versionNeeded = GraFlicImage.EDITOR_VERSION;//Minimum version needed to open.
+	//OLD: v_metadata.locales = {};//Data set in locale can cascade over metadata properties (other than .locales itself obviously).
+	//TODO: fix documentation here. Now lc-CC locales will be added as needed within the object level of whatever they need to localize, so that whole chains of objects do not have to be duplicated!
 		//For example create 'de-DE' in .locales and create the chain of properties "locales":{"de-DE":{"general":{"Title":"Deutsch Titel"}}}
 		//non-plural .locale sets the default locale on the root level. For entries in locales, .locale is considered overridden by the locale string key.
 		//Use dashes, not underscores so that it is a valid BCP47 locale string.
@@ -809,7 +810,7 @@ GraFlicImage.prototype.pushUndoStack = function(undoFlags){
 	//Cannot redo on top of a change that was done after undoing.
 	while(this.redoStack.length){this.deleteUndoRedoResources(this.redoStack.pop());}
 	//Most objects can be handled by simple a stringify save state. Images require special handling in addition to this beause they can contain bitmaps, which would be horrible on resources and performance being JSON stringified.
-	undoObj.framesJSON = JSON.stringify(this.s.frames);//This stringifies some things in the s.json save state. It does not include the metadata.
+	undoObj.framesJSON = JSON.stringify(this.s.frames);//This stringifies some things in the state.json save state. It does not include the metadata.
 	undoObj.imagesJSON = JSON.stringify(this.s.images);
 	undoObj.pixelStates = [];
 	this.undoRedoLastFlags = undoFlags;//Flags for what the last action changed. (pixels, all images, etc)
@@ -2640,7 +2641,7 @@ GraFlicImage.prototype.export = function(v_imgSMode){
 	if(this.frameDrawingForSave == -1){//in pre-init state -1
 		this.encoder.frames = [];
 		//clear and rebuild the metadata if present
-		this.encoder.z_json = this.z;
+		this.encoder.archiveMetadata = this.archiveMetadata;
 		/* OLD WAY:
 		if(this.encoder.metadata){delete this.encoder.metadata;}
 		for(var v_key in this.meta.general){
@@ -2754,22 +2755,22 @@ GraFlicImage.prototype.saveArchiveStage2 = function(){//Call this after the thum
 		this.a.addFile(v_fileEntry);
 		
 		//Thumbs are optional. If thumbs are contained, create a thumbs[] array with objects to describe them. Typically, one thumb at 256 size ought to be enough.
-		this.z.thumbs = [];//If thumbs[] is there, overwrite it. This editor will only make one 256 size thumb and that is all that should be there.
+		this.archiveMetadata.thumbs = [];//If thumbs[] is there, overwrite it. This editor will only make one 256 size thumb and that is all that should be there.
 		var thumbObj = {};
 		thumbObj.width = this.encoder.outputWidth;
 		thumbObj.height = this.encoder.outputHeight;
 		thumbObj.file = thumbLoc;//path to the file in the ZIP
-		this.z.thumbs.push(thumbObj);
+		this.archiveMetadata.thumbs.push(thumbObj);
 	}
-	this.z.version_editor = GraFlicImage.EDITOR_VERSION;
+	this.archiveMetadata.versionUsed = GraFlicImage.EDITOR_VERSION;
 	var vNeed = 0.01;
 	//Determine version_needed based on features used:
 	//As more versions get done, more logic will be here...
-	this.z.version_needed = vNeed;
+	this.archiveMetadata.versionNeeded = vNeed;
 	
 	//Copy over the canvas width/height, so that when reading just the metadata the image dimensions can be known.
-	this.z.width = this.s.canvas_width;
-	this.z.height = this.s.canvas_height;
+	this.archiveMetadata.width = this.s.canvas_width;
+	this.archiveMetadata.height = this.s.canvas_height;
 
 	//Calculate the duration. Make this a function if useful elsewhere.
 	var duration = 0, dFrame;
@@ -2778,7 +2779,7 @@ GraFlicImage.prototype.saveArchiveStage2 = function(){//Call this after the thum
 		duration += (dFrame.delay === undefined ? this.s.global_delay : dFrame.delay) *
 			    ( (dFrame.delay_denom === undefined ? this.s.global_delay_denom : dFrame.delay_denom) / 1000 );
 	}
-	this.z.duration = duration;//Duration in milliseconds.
+	this.archiveMetadata.duration = duration;//Duration in milliseconds.
 	
 	//A bunch of OLD code follows that may be deleted:
 	/*
@@ -2915,13 +2916,13 @@ GraFlicImage.prototype.loadFromU8A = function(v_u8a){
 	this.a.revokeAll();
 	this.a = new GraFlicArchive(v_u8a);
 	this.a.onImageLoaded = GraFlicImage.onImageLoaded.bind(this);//Check if an image embed loads and do a redraw with the available image.
-	//Ensure s.json (save) and m.json (metadata) essential configuration files are reconstituted and live from the beginning.
-	this.s = this.a.f('s.json').j;//Link to the file's live JSON property
-	//this.meta = this.a.f('m.json').j;//Everything here was moved to z.json
-	this.z = this.a.f('z.json').j;
+	//Ensure state.json (state) and m.json (metadata) essential configuration files are reconstituted and live from the beginning.
+	this.s = this.a.f('state.json').j;//Link to the file's live JSON property
+	//this.meta = this.a.f('m.json').j;//Everything here was moved to archive-metadata.json
+	this.archiveMetadata = this.a.f('archive-metadata.json').j;
 	//console.log(JSON.stringify(this.a.f('m.json')))
 	//console.log('loaded meta: ' + this.meta);
-	GraFlicUtil.absorbJSON(this.z, this.initMetadata());
+	GraFlicUtil.absorbJSON(this.archiveMetadata, this.initMetadata());
 	//Note that when manually editing JSON some text editors put in non-ASCII quotations causing load failure.
 	this.curClip = this.s.clips[this.s.selected_clip_index];
 	this.curImage = this.s.images[this.s.selected_image_index];

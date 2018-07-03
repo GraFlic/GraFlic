@@ -61,7 +61,7 @@ function GraFlicArchive(zipDataUint8, paramz){
 	//Other properties may be added to this result object later if needed.
 	
 	GraFlicArchive.archives.push(this);//Each archive created will be tracked here so that a file can be looked up if the path exists in any archive in memory with static getFileFromAny()
-	var zj = null;//will be populated if z.json type validator found.
+	var jAM = null;//will be populated if archive-metadata.json type validator found.
 	var bloatFolder = null;//null for N/A, will be used to fix a common packaging mistake that wraps an extra folder around everything.
 	if(!paramz){
 		paramz = {};//makes handling undefined vars easier if paramz.x is undefined it can just send undefined for optional x if needed without getting 'paramz is undefined'
@@ -76,16 +76,16 @@ function GraFlicArchive(zipDataUint8, paramz){
 		//If called without a binary ZIP to load, make a blank GraFlicArchive that can be filled with files programmatically and saved.
 		/*
 		var paramApps = undefined;
-		if(paramz.app){//Single app string, convert to array for z.json
+		if(paramz.app){//Single app string, convert to array for archive-metadata.json
 			paramApps = [paramz.app];
 		}
 		if(paramz.apps){
 			paramApps = paramz.apps;//.apps plural sent should be sent as array
 		}
-		//Note that these extra parameters and logic may not be needed. It may be better to just set the properties of the z.json object after the GraFlicArchive is initialized to match what the given software or format needs. This would simplify the constructor. Falling back to the generic application/octet-stream type will probably not be devastating if properties are not customized after creation.
+		//Note that these extra parameters and logic may not be needed. It may be better to just set the properties of the archive-metadata.json object after the GraFlicArchive is initialized to match what the given software or format needs. This would simplify the constructor. Falling back to the generic application/octet-stream type will probably not be devastating if properties are not customized after creation.
 			//paramz.mime, paramz.type, paramApps);
 		*/
-		this.addMetaZIP();
+		this.addArchiveMetadata();
 		return;
 	}
 //Note when reading, other ZIP builders may insert data descriptor after local file header and payload, which apparently may or may not use a signature...
@@ -196,14 +196,21 @@ function GraFlicArchive(zipDataUint8, paramz){
 			xFile.d = v_extractedBytes;//These bytes will be decompressed later if the archived file entry is reconstituted.
 			this.files[v_filename] = xFile;//if completed with no errors, include it in the files object
 			console.log('----------------------');
-			if(v_filename.match(/(^|\/)z\.json$/)){
-				console.log('.-.-.-.-.z.json type validator.-.-.-.-.-.');
-				zj = this.f(v_filename).j;
-				if(zj.z_signature == 'z.json metadata'){//verify it is for this purpose
-					console.log('confirmed to be type validator z.json v' + zj.z_version);
-					var partsZJ = v_filename.match(/^(.*\/)z\.json$/);//detect a bloat folder if packaging mistake was made.
-					if(partsZJ && partsZJ[1] && partsZJ[1].length){
-						bloatFolder = partsZJ[1];
+			
+			var partsAM = v_filename.match(/^(.*\/)archive-metadata\.json$/);//detect a bloat folder if packaging mistake was made.
+			if(partsAM){//If matches at all
+				console.log('.-.-.-.-. archive metadata (validate file type) .-.-.-.-.-.');
+				jAM = this.f(v_filename).j;
+				//The archive-metadata.json filename is long and unique enough that it out to block most collisions with other files out there on its own.
+				//however, an additional check can optionally be done with .signature in case some archive somewhere has an archive-metadata.json that does something different.
+				if(jAM.archiveMetadata && jAM.archiveMetadata.signature == 'archive metadata'){//verify it is for this purpose
+					console.log('confirmed to be metadata/type validator: archive-metadata.json');	
+					if(jAM.archiveMetadata.version){//Already checked .archiveMetadata in previous if.
+						//The version number is optional and merely a hint for what properties might be defined.
+						console.log('archive-metadata.json version: ' + jAM.archiveMetadata.version);
+					}
+					if(partsAM && partsAM[1] && partsAM[1].length){
+						bloatFolder = partsAM[1];
 						console.log('User apparently made common mistake of packaging everything wrapped in an extra bloat folder. The bloat folder(' + bloatFolder + ') will be stripped from paths.');
 					}
 				}
@@ -514,9 +521,10 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 	//the result will be saved to this.b - An ObjectURL link to the BLOB of the zip
 	//TODO: include? zRes.d - The octet stream of the raw data. Maybe not because it does not need to usually be analyzed directly until loaded again via .loadFromZIP()
 	
-	var zipJ = this.f('z.json');
-	if(zipJ && zipJ.j && zipJ.j.z_signature == 'z.json metadata'){//If has the standard z.json general file metadata, update the modified date.
-		zipJ.j.modified = GraFlicUtil.getMicrosecondsTimestamp();
+	var fAM = this.f('archive-metadata.json');
+	if(fAM && fAM.j && fAM.j.archiveMetadata && fAM.j.archiveMetadata.signature == 'archive metadata'){
+		//If has the standard archive-metadata.json general file metadata, update the modified date.
+		fAM.j.modified = (new Date()).toISOString();
 	}
 	
 	//By making a file ZIP-based, users can extract it, analyze it, edit it, replace files, and rebuild the zip to do things like replace embedded images or edit the JSON directly. Typically only advanced users would do this, but it is good to have as an option.
@@ -856,12 +864,12 @@ GraFlicArchive.prototype.saveBLOB = function(blobMimetype, archiveFormat){
 //Comment (Not written, comment length set to 0.)
 	//-----------------------------------------
 	
-	var blobParams = {'type':'application/octet-stream'};//params for createObjectURL
-	var arcJ = this.f('z.json').j;
-	if(arcJ && arcJ.mime && (typeof arcJ.mime) === 'string'){//z.json will usually be present and may have had a mime type configured there.
+	var blobParams = {"type": "application/octet-stream"};//params for createObjectURL
+	var arcJ = this.f('archive-metadata.json').j;
+	if(arcJ && arcJ.archiveMetadata && arcJ.archiveMetadata.signature == 'archive metadata' && arcJ.mime && (typeof arcJ.mime) === 'string'){//archive-metadata.json will usually be present and may have had a mime type configured there.
 		blobParams.type = arcJ.mime;
 	}
-	//To override assigned mime type in z.json, call with the mime param. Sometimes building blob with a more general mime type like application/zip increases chances of it being accepted by other apps and such that only accept certain files.
+	//To override assigned mime type in archive-metadata.json, call with the mime param. Sometimes building blob with a more general mime type like application/zip increases chances of it being accepted by other apps and such that only accept certain files.
 	if(blobMimetype){
 		if( (typeof blobMimetype) === 'string'){
 			blobParams.type = blobMimetype;
@@ -976,28 +984,28 @@ GraFlicArchive.prototype.revokeArchiveFile = function(){
 		URL.revokeObjectURL(this.b);
 	}
 };
-GraFlicArchive.prototype.addMetaZIP = function(){
+GraFlicArchive.prototype.addArchiveMetadata = function(){
 	//If more vast params added, could check to see if first param is an object and use the properties of that and ignore other params, to make more flexible.
 	/*
-	Will use the file 'z.json'. ZIP is synonymous with archive, so it is broad enough to encompass other archive formats if more are supported in the future. However, ZIP 2.0 is the ubiquitous standard for archive-based file formats, so the focus will be on ZIP. Also, needs to support ZIP specific issue ZIP Epoch. Even though newer archive formats , for an archive-based file format it is of less importance. Allot of the files being packed into the archive like images have their own internal compression anyways.
-	The z.json meta file may not make sense to use if building something like a tar.gz file. Tape Archives have the use case of preserving *NIX-specific file properties like executable, and options like absolute paths. TAR is useful to do things like build a tarball to send to a server and extract to configure a website for example. .tar.gz may not make sense for archive-based formats but would be useful for website editors or things like that. Note that ZIP supports some *NIX permissions when using host OS code 3.
+	Will use the file 'archive-metadata.json'. ZIP 2.0 is the ubiquitous standard for archive-based file formats, so the focus will be on ZIP for now. Also, needs to support ZIP specific issue ZIP Epoch. Even though newer archive formats , for an archive-based file format it is of less importance. Allot of the files being packed into the archive like images have their own internal compression anyways.
+	The archive-metadata.json meta file may not make sense to use if building something like a tar.gz file. Tape Archives have the use case of preserving *NIX-specific file properties like executable, and options like absolute paths. TAR is useful to do things like build a tarball to send to a server and extract to configure a website for example. .tar.gz may not make sense for archive-based formats but would be useful for website editors or things like that. Note that ZIP supports some *NIX permissions when using host OS code 3.
 	
-	Creates an z.json file at the root of the archive file and returns the file object so that any needed modifications can be made.
-	Currently it is only being used for ZIP-based files, but it is general enough to be interoperable with other archive types like TAR. TAR might theoretically have other considerations for where z.json is located dealing with absolute paths and such.
-	'z.json' is used because it is short and tells that it is in standard JSON format. (file headers and central directory with file paths are uncompressed in ZIP) zip.json or zip_file.json could be used as alternates if a file has a z.json that does something else.
+	Creates an archive-metadata.json file at the root of the archive file and returns the file object so that any needed modifications can be made.
+	Currently it is only being used for ZIP-based files, but it is general enough to be interoperable with other archive types like TAR. TAR might theoretically have other considerations for where archive-metadata.json is located dealing with absolute paths and such.
+	'archive-metadata.json' is used because it is short and tells that it is in standard JSON format. (file headers and central directory with file paths are uncompressed in ZIP) zip.json or zip_file.json could be used as alternates if a file has a archive-metadata.json that does something else.
 	The focus of this spec is to give details about the file and how to open it or what to do with it. There are many ZIP-based/Archive-based formats and systems may not have software already installed to deal with them. It does not need to give an in-depth description of the file contents, the file design itself ought to do that it its own metadata if needed.
 	It contains properties that can be used to find/verify the type of file and in some cases, resolve conflicts with similar files.
 
-------- z.json 1.0 (draft April 8th, 2018) 80-width/terminal-compatible -------
+---- archive-metadata.json current draft ----
 
-z.json is a simple, easy to ready, JSON file that describes properties general
+archive-metadata.json is a simple, easy to ready, JSON file that describes properties general
 enough to apply to any file, or any file of a broad type media such as images.
 The JSON format makes it easy to use in javascript-based apps via JSON.parse().
 A growing number of powerful javascript/HTML5 web-apps are now emerging.
 JSON is also widely supported on other platforms and easily human-readable if
 viewed as plain text.
 
-This project is proposing z.json as a standard for simple, easy to work with
+This project is proposing archive-metadata.json as a standard for simple, easy to work with
 general metadata for archive-based formats that provides file type resolution,
 archive root resolution, and in some cases, conflicting file resolution. Root
 resolution helps handle archive-based files that have been unpacked, manually
@@ -1028,7 +1036,7 @@ number would be even more unreliable because they will almost certainly be lost
 if the archive is unpackaged onto a filesystem. Many ZIP archivers support few,
 if any, extra fields.
 
-Root resolution will fix a common packaging mistake by looking for the z.json
+Root resolution will fix a common packaging mistake by looking for the archive-metadata.json
 root location.
 Due to the wonky, unintuitive way that packaging is typically handled, users
 will often right-click the folder and archive the folder rather than select and
@@ -1050,8 +1058,8 @@ This is primarily designed for formats that are based on ZIP or other Archive
 formats, but it could be inserted into other types of files IF REALLY NEEDED.
 For example a custom sub-chunk wrapped within the "INFO" chunk in RIFF-based
 formats.
-A 4-byte ASCII code for RIFF should be: "ZJSN"
-A variable-length string identifier or chunk tag should be: "z.json"
+A 4-byte ASCII code for RIFF should be: "AMJS"
+A variable-length string identifier or chunk tag should be: "archive-metadata.json"
 (For example writing it as an "iTXt" PNG chunk.)
 
 Usually, the standard PNG "tEXt" chunks are enough to handle what is actually
@@ -1061,15 +1069,23 @@ with standard "INFO" sub-chunks such as: "ICMT" (Comment), "IART" (Artist),
 "ISFT" (Software created by), "ICOP" (Copyright), "IDPI" (DPI), "INAM" (Title),
 and others.
 
-All properties are optional except: .z_signature
+All properties are optional.
 Always do a simple is-defined test to see if the property is defined, or do a
 for-in loop to process the properties when reading programatically.
 
-.z_signature    - (required) always equal to "z.json metadata"
-This is a longish strong signature to prevent collision if other files happen
-to be named 'z.json' in other archives for other purposes.
+"archiveMetadata" with signature and version is recommended, such as:
 
-.z_version      - The version of the z.json spec (will be higher than 1.0 if
+"archiveMetadaa": {
+	"signature": "archive metadata",
+	"version": 0.7
+}
+
+
+archiveMetadata.signature    - (recommended) always equal to "archive metadata"
+This is a longish strong signature to prevent collision if other files happen
+to be named 'archive-metadata.json' in other archives for other purposes.
+
+archiveMetadata.version      - The version of the archive-metadata.json spec (will be higher than 1.0 if
 more features are added later.) This is a float, though JSON serializers will
 strip off .0 if nothing after decimal point.
 The version is just a hint. Always do is-defined checking and look for desired
@@ -1090,13 +1106,13 @@ Remember that some files have multiple dots or even omit the extension.
 .apps           - An array of objects with info about supporting apps, in order
 of priority. Recommended for non-mainstream types.
 
-.zipoch         - ZIP Epoch, an integer that can help extend the range of the
+.zip.epoch      - ZIP Epoch, an integer that can help extend the range of the
 MS-DOS date time format which cannot go past 2107. ZIP files have an epoch of
 1980 and only a 0-127 year range in the date-time format used in ZIP file
 entries. If it is not past 2107 yet, this should probably be left undefined.
 If defined, the ZIP-stored date time will be interpreted differently by
 supporting unpackagers. In that case the date time year value will be
-interpreted as 'years since [.zipoch integer value]'.
+interpreted as 'years since [.zip.epoch integer value]'.
 Note that ZIP MS-DOS date times are based on UTC - 5. (U.S. Eastern Time)
 BC time could be represented with a negative number. This would be useful
 if archaeologists uncover pre-historic computers with files on them and those
@@ -1107,10 +1123,7 @@ Note that for this to work with no loss of date-time information, all files
 stored in the ZIP archive must have all date-times that are within a 128 year
 span.
 
-Timestamps in z.json may be based on milliseconds since *NIX epoch
-(Midnight January 1st, 1970). There may be thousandths of a millisecond
-precision after the decimal point.(microseconds)
-JSON does not limit integer size, but readers may have their limits.
+Timestamps in archive-metadata.json should be RFC 3339/ISO 8601 Strings.
 
 .created        - The date that the ZIP-based file was created. When
 unpacking and repacking together a ZIP after modifying the contained files, the
@@ -1178,6 +1191,10 @@ Note that an inch is 0.0254 meters if wanting to convert PPI.
 This is not the file name in file systems. Feel free to use spaces, symbols and
 characters that are avoided in file names.
 
+.description   - A string with a general description of the file.
+
+.keywords      - An array of strings containing keywords related to the file.
+
 .author        - A string containing the author of the file.
 
 .copyright     - A string to put copyright notices in.
@@ -1197,6 +1214,7 @@ or animation that have a simple duration of play.
 not needed. Since this is a website specifically, those protocols can be
 assumed and both can be attempted.
 
+(is id at the root too broad? some style guides reserve it...)
 .id            - A string that is an identifier representing the file.
 Some files may reference other files that they need to retrieve information or
 assets from.
@@ -1206,7 +1224,13 @@ for the foreseeable future and ought to be converted to a string.
 If it is a string representation of a number, it should be a normal base 10
 number string, allowing the most basic 'parseInt' logic possible to work on it.
 
-.version_needed - A numeric value representing the version of the associated
+.uuid           - A standard 128 bit Universal Unique Identifier in canonical
+string form such as: "89ABCDEF-0123-4567-89AB-CDEF-0123456789AB"
+The string form is used because JSON implementations will likely not be able
+to parse a number that big.
+The UUID can add a strong level of anti-collision for files that need it.
+
+.versionNeeded - A numeric value representing the version of the associated
 software needed to open this file. It can be an integer or a float depending on
 how the associated software formats the version number. Some software might
 present a string as the version like "beta 0.8.2c", but usually has a number
@@ -1214,15 +1238,16 @@ internally representing the version, as is the best practice.
 Doing a version >= version_needed comparison is easier and more reliable with
 numeric values.
 
-.version_used  - The same as version_needed, except this represent the version
+.versionUsed  - The same as version_needed, except this represent the version
 of the associated software that was used to create this file.
 
 .edit          - An integer representing the number of times this incarnation
 of the file has been edited.
 
-.internal_metadata - A string linking to a file within the ZIP file or archive
+.internalMetadata - A string linking to a file within the ZIP file or archive
 that contains internal metadata specific to the format, which is not general
-enough to be included in z.json. Example: "internal_folder/m.json"
+enough to be included in archive-metadata.json.
+Example: "internal-folder/m.json"
 
 
 
@@ -1241,42 +1266,30 @@ A website could use this to generate protocol links for files that should launch
 
 	*/
 	
-	//The default, ZIP, is ubiquitous enough that it should be handleable with just the mime and extension, so leave .apps undefined if no specific info sent.
-	//The following is an example of an app entry:
-	/*if(!apps){
-		apps = [
-			{
-				"title": ".ZIP Archive Software",
-				"scheme": "archive"
-			}
-		];
-	}
-	Only .title is decided on, a string description of the suggested software to open this file. The strings can be the name of a specific program or a general description like "Animated PNG Image Editor". This could be used to launch a search request for the string if the software is not installed or cannot be located.
-	*/
+	
 	var aFile = {};
-	aFile.p = 'z.json';//z.json is always put at the root of the archive and can be read to confirm the content type.
+	aFile.p = 'archive-metadata.json';//archive-metadata.json is always put at the root of the archive and can be read to confirm the content type.
 	aFile.j = {};
-	aFile.j.z_signature = 'z.json metadata';
-	aFile.j.z_version = 1.0;
+	aFile.j.archiveMetadata = {};
+	aFile.j.archiveMetadata.signature = 'archive metadata';
+	aFile.j.archiveMetadata.version = 0.7;//Set low pre-1.0 version since archive-metadata.json design is still being finalized.
 	aFile.j.mime = 'application/octet-stream';
-	aFile.j.type = 'zip';
-	aFile.j.zipoch = 1980;//optional, not really needed until 2107 (there is a 0x5455 extra field out there that adds 'extended timestamps' but it still has the 2107 limitation, only adds created/accessed in addition to modified. It would not be reliable to assume other packagers would retain extra fields anyways.)
-	var timeNow = GraFlicUtil.getMicrosecondsTimestamp();//Get time in microseconds.
+	aFile.j.type = 'zip';//default to zip until type is specified.
+	var timeNow = (new Date()).toISOString();//Get RFC 3339 / ISO 8601 String
 	aFile.j.created = timeNow;
 	aFile.j.modified = timeNow;
 	//aFile.j.locale = 'en';
+
+	//aFile.j.zip = {};
+	//aFile.j.zip.epoch = 1980;//optional, not really needed until 2107 (there is a 0x5455 extra field out there that adds 'extended timestamps' but it still has the 2107 limitation, only adds created/accessed in addition to modified. It would not be reliable to assume other packagers would retain extra fields anyways.)
+
+
 	this.addFile(aFile);
 	return aFile;
-	//While z.json would be at the root, an optional filetypes/ could contain things like filetypes/fext.json with the file json properties for the extension. This will help identify how to deal with uncommon file types contained within the archive. If z.json or filetypes/ is used for something else, then prefix to 0z and increment(...3z) until a name that is not taken is found.
+	//While archive-metadata.json would be at the root, an optional filetypes/ could contain things like filetypes/fext.json with the file json properties for the extension. This will help identify how to deal with uncommon file types contained within the archive. If archive-metadata.json or filetypes/ is used for something else, then prefix to 0z and increment(...3z) until a name that is not taken is found.
 };
 
-//-----------------------------------------------------------
-GraFlicUtil.getMicrosecondsTimestamp = function(){
-	if(window.performance && window.performance.timing && window.performance.timing.navigationStart && window.performance.now){
-		return  window.performance.now() + window.performance.timing.navigationStart;
-	}
-	return Date.now();
-};
+
 GraFlicUtil.RGB2HSL = function(v_srcR,v_srcG,v_srcB){
  var v_destH;var v_destS;var v_destL;
  //v_srcR/=255;v_srcG/=255;v_srcB/=255;//keep the main RGB selected a float. 48 bit color could someday be supported and 0-255 int would cause problems with that.

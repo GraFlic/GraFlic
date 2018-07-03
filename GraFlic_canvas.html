@@ -511,6 +511,7 @@ x
 <script>
 'use strict';
 
+
 //var v_ jsv;//JSON savable data. anything that can be stringified into JSON and is part of the image should be stored here for easy load/save
 //var this.metadata;//JSON data for the metadata of the project(Title, Author, Description, etc).
 
@@ -1029,8 +1030,8 @@ function f_metadataRefreshUI(v_evt){
 	//update the textarea to match what is in the selected metadata
 	//(Can be called with no parameter to just refresh whatever is selected.)
 	var v_metaKey = GraFlicC_metadata_sel.value.replace(/^meta_/, '');
-	if(v_curGraFlic.z[v_metaKey]){
-		GraFlicC_metadata_txt.value = v_curGraFlic.z[v_metaKey];
+	if(v_curGraFlic.archiveMetadata[v_metaKey]){
+		GraFlicC_metadata_txt.value = v_curGraFlic.archiveMetadata[v_metaKey];
 	}else{
 		GraFlicC_metadata_txt.value = '';
 	}
@@ -1039,11 +1040,11 @@ function f_metadataInput(v_evt){
 	var v_metaKey = GraFlicC_metadata_sel.value.replace(/^meta_/, '');
 	var v_inputStr = v_evt.target.value;
 	if(!v_inputStr.length){//If the text is fully erased, make sure the metadata value is deleted if present
-		if(v_curGraFlic.z[v_metaKey]){
-			delete v_curGraFlic.z[v_metaKey];
+		if(v_curGraFlic.archiveMetadata[v_metaKey]){
+			delete v_curGraFlic.archiveMetadata[v_metaKey];
 		}
 	}else{
-		v_curGraFlic.z[v_metaKey] = v_inputStr;
+		v_curGraFlic.archiveMetadata[v_metaKey] = v_inputStr;
 	}
 }
 
@@ -1265,10 +1266,10 @@ function f_makeFilename(){
 	//v_hostname = v_hostname.replace(/anim/gi, 'Anim');
 	//v_hostname = v_hostname.replace(/png/gi, 'PNG');
 	//v_hostname = v_hostname.replace(/apng/gi, 'APNG');
-	if(!v_curGraFlic.z.title){
+	if(!v_curGraFlic.archiveMetadata.title){
 		v_filename = Date.now().toString();//v_hostname + '_' + Date.now();
 	}else{
-		v_filename = GraFlicEncoder.filenameSafe(v_curGraFlic.z.title);// + '_' + v_hostname;
+		v_filename = GraFlicEncoder.filenameSafe(v_curGraFlic.archiveMetadata.title);// + '_' + v_hostname;
 	}
 	return v_filename;
 }
@@ -1414,6 +1415,8 @@ f_init();
 function f_saveWorkWithThumb(){
 	//with mode 2 it will call f_saveWork once the thumbnail is ready.
 	//f_saveAnimatedPNG(2);//mode 2 thumbnail
+	//Store original filename in the metadata in case altered.
+	v_curGraFlic.archiveMetadata.file = f_makeFilename() + '.graflic';
 	v_curGraFlic.saveArchive();
 }
 
